@@ -1,0 +1,130 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to xTool Laser",
+        "description": "Select a device found on your network, or enter an IP address manually.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "manual": {
+        "title": "Manual connection",
+        "description": "Enter the IP address of your xTool laser cutter.",
+        "data": {
+          "host": "IP Address"
+        }
+      },
+      "discovery_confirm": {
+        "title": "xTool Laser discovered",
+        "description": "An xTool laser **{name}** was discovered on your network. Do you want to set it up?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device. Please check the IP address and ensure the device is powered on and connected to WiFi.",
+      "already_configured": "This device is already configured."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "power_switch_entity_id": "Power switch"
+        },
+        "data_description": {
+          "power_switch_entity_id": "Select a switch that controls the laser's power supply (e.g. a smart plug). Leave empty if not applicable."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Off",
+          "initializing": "Initializing",
+          "idle": "Idle",
+          "wifi_setup": "WiFi setup",
+          "measuring": "Measuring",
+          "frame_ready": "Frame ready",
+          "framing": "Framing",
+          "processing_ready": "Ready",
+          "processing": "Processing",
+          "paused": "Paused",
+          "firmware_update": "Updating firmware",
+          "sleeping": "Sleeping",
+          "cancelling": "Cancelling",
+          "finished": "Finished",
+          "error_limit": "Error (limit)",
+          "error_laser_control": "Error (laser control)",
+          "error_laser_module": "Error (laser module)",
+          "measure_area": "Measuring area",
+          "unknown": "Unknown"
+        }
+      },
+      "laser_position_x": { "name": "Laser position X" },
+      "laser_position_y": { "name": "Laser position Y" },
+      "laser_position_z": { "name": "Laser position Z" },
+      "fire_level": { "name": "Fire level" },
+      "air_assist_level": { "name": "Air assist level" },
+      "task_id": { "name": "Task ID" },
+      "task_time": { "name": "Task time" },
+      "working_time": { "name": "Working time" },
+      "session_count": { "name": "Session count" },
+      "standby_time": { "name": "Standby time" },
+      "tool_runtime": { "name": "Tool runtime" },
+      "ip_address": { "name": "IP address" },
+      "laser_power": { "name": "Laser power" },
+      "laser_module": { "name": "Laser module" },
+      "sd_card": {
+        "name": "SD card",
+        "state": {
+          "inserted": "Inserted",
+          "not_inserted": "Not inserted"
+        }
+      }
+    },
+    "binary_sensor": {
+      "accessories": { "name": "Accessories" }
+    },
+    "camera": {
+      "camera_overview": { "name": "Overview camera" },
+      "camera_closeup": { "name": "Close-up camera" }
+    },
+    "light": {
+      "fill_light": { "name": "Fill light" }
+    },
+    "switch": {
+      "flame_alarm": { "name": "Flame alarm" },
+      "buzzer": { "name": "Buzzer" },
+      "move_stop": { "name": "Move stop" },
+      "smoking_fan": { "name": "Exhaust fan" },
+      "power_switch": { "name": "Power" }
+    },
+    "number": {
+      "air_assist_close_delay": { "name": "Air assist delay" },
+      "smoking_fan_duration": { "name": "Exhaust fan duration" }
+    },
+    "select": {
+      "flame_alarm_sensitivity": {
+        "name": "Flame alarm sensitivity",
+        "state": {
+          "high": "High",
+          "low": "Low"
+        }
+      }
+    },
+    "button": {
+      "pause_job": { "name": "Pause job" },
+      "resume_job": { "name": "Resume job" },
+      "cancel_job": { "name": "Cancel job" },
+      "home_all": { "name": "Home all axes" },
+      "home_xy": { "name": "Home XY" },
+      "home_z": { "name": "Home Z" }
+    }
+  }
+}

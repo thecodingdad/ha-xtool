@@ -1,0 +1,130 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "xTool Laser verbinden",
+        "description": "Wähle ein Gerät aus deinem Netzwerk oder gib die IP-Adresse manuell ein.",
+        "data": {
+          "device": "Gerät"
+        }
+      },
+      "manual": {
+        "title": "Manuelle Verbindung",
+        "description": "Gib die IP-Adresse deines xTool Lasers ein.",
+        "data": {
+          "host": "IP-Adresse"
+        }
+      },
+      "discovery_confirm": {
+        "title": "xTool Laser entdeckt",
+        "description": "Ein xTool Laser **{name}** wurde in deinem Netzwerk gefunden. Möchtest du ihn einrichten?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Gerät fehlgeschlagen. Bitte prüfe die IP-Adresse und stelle sicher, dass das Gerät eingeschaltet und mit dem WLAN verbunden ist.",
+      "already_configured": "Dieses Gerät ist bereits konfiguriert."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "power_switch_entity_id": "Steckdose"
+        },
+        "data_description": {
+          "power_switch_entity_id": "Wähle einen Schalter, der die Stromversorgung des Lasers steuert (z.B. eine Funksteckdose). Leer lassen, wenn nicht vorhanden."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Aus",
+          "initializing": "Initialisierung",
+          "idle": "Bereit",
+          "wifi_setup": "WLAN-Einrichtung",
+          "measuring": "Messen",
+          "frame_ready": "Rahmen bereit",
+          "framing": "Rahmen wird erstellt",
+          "processing_ready": "Verarbeitungsbereit",
+          "processing": "Verarbeitung",
+          "paused": "Pausiert",
+          "firmware_update": "Firmware-Update",
+          "sleeping": "Ruhemodus",
+          "cancelling": "Abbrechen",
+          "finished": "Fertig",
+          "error_limit": "Fehler (Grenzwert)",
+          "error_laser_control": "Fehler (Lasersteuerung)",
+          "error_laser_module": "Fehler (Lasermodul)",
+          "measure_area": "Bereich messen",
+          "unknown": "Unbekannt"
+        }
+      },
+      "laser_position_x": { "name": "Laserposition X" },
+      "laser_position_y": { "name": "Laserposition Y" },
+      "laser_position_z": { "name": "Laserposition Z" },
+      "fire_level": { "name": "Feuerlevel" },
+      "air_assist_level": { "name": "Air-Assist Stufe" },
+      "task_id": { "name": "Auftrags-ID" },
+      "task_time": { "name": "Auftragszeit" },
+      "working_time": { "name": "Betriebszeit" },
+      "session_count": { "name": "Aufträge gesamt" },
+      "standby_time": { "name": "Standby-Zeit" },
+      "tool_runtime": { "name": "Werkzeug-Laufzeit" },
+      "ip_address": { "name": "IP-Adresse" },
+      "laser_power": { "name": "Laserleistung" },
+      "laser_module": { "name": "Lasermodul" },
+      "sd_card": {
+        "name": "SD-Karte",
+        "state": {
+          "inserted": "Eingelegt",
+          "not_inserted": "Nicht eingelegt"
+        }
+      }
+    },
+    "binary_sensor": {
+      "accessories": { "name": "Zubehör" }
+    },
+    "camera": {
+      "camera_overview": { "name": "Übersichtskamera" },
+      "camera_closeup": { "name": "Nahaufnahme-Kamera" }
+    },
+    "light": {
+      "fill_light": { "name": "Arbeitslicht" }
+    },
+    "switch": {
+      "flame_alarm": { "name": "Feueralarm" },
+      "buzzer": { "name": "Signalton" },
+      "move_stop": { "name": "Bewegungsstopp" },
+      "smoking_fan": { "name": "Absaugung" },
+      "power_switch": { "name": "Strom" }
+    },
+    "number": {
+      "air_assist_close_delay": { "name": "Absaugungsnachlauf" },
+      "smoking_fan_duration": { "name": "Absaugungsdauer" }
+    },
+    "select": {
+      "flame_alarm_sensitivity": {
+        "name": "Feueralarm-Empfindlichkeit",
+        "state": {
+          "high": "Hoch",
+          "low": "Niedrig"
+        }
+      }
+    },
+    "button": {
+      "pause_job": { "name": "Auftrag pausieren" },
+      "resume_job": { "name": "Auftrag fortsetzen" },
+      "cancel_job": { "name": "Auftrag abbrechen" },
+      "home_all": { "name": "Alle Achsen homen" },
+      "home_xy": { "name": "XY homen" },
+      "home_z": { "name": "Z homen" }
+    }
+  }
+}
