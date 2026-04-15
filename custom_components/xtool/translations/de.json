@@ -32,10 +32,20 @@
     "step": {
       "init": {
         "data": {
-          "power_switch_entity_id": "Steckdose"
+          "power_switch_entity_id": "Steckdose",
+          "enable_firmware_updates": "Firmware-Updates aktivieren"
         },
         "data_description": {
-          "power_switch_entity_id": "Wähle einen Schalter, der die Stromversorgung des Lasers steuert (z.B. eine Funksteckdose). Leer lassen, wenn nicht vorhanden."
+          "power_switch_entity_id": "Wähle einen Schalter, der die Stromversorgung des Lasers steuert (z.B. eine Funksteckdose). Leer lassen, wenn nicht vorhanden.",
+          "enable_firmware_updates": "Wenn aktiviert, kann die Firmware-Update-Entität neue Firmware installieren. Wenn deaktiviert, zeigt sie nur an, dass ein Update verfügbar ist."
+        }
+      },
+      "confirm_updates": {
+        "title": "Firmware-Updates aktivieren?",
+        "description": "Das Flashen der Firmware birgt Risiken.\n\n- Gerät während des Updates **nicht** ausschalten — ein abgebrochener Flash-Vorgang kann den Laser unbrauchbar machen.\n- Stabile WLAN-Verbindung zwischen Home Assistant und dem Laser sicherstellen.\n- Das Gerät startet nach erfolgreichem Flash automatisch neu.",
+        "menu_options": {
+          "enable_updates": "Firmware-Updates aktivieren",
+          "cancel_updates": "Abbrechen"
         }
       }
     }
@@ -117,6 +127,9 @@
           "low": "Niedrig"
         }
       }
+    },
+    "update": {
+      "firmware": { "name": "Firmware" }
     },
     "button": {
       "pause_job": { "name": "Auftrag pausieren" },

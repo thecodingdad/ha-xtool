@@ -24,6 +24,9 @@ class XtoolDeviceModel:
     has_drawer: bool = False
     has_cover_sensor: bool = False
     has_camera: bool = False
+    firmware_content_id: str = ""  # Cloud API content ID for update checks
+    firmware_multi_package: bool = False  # True for S1 (multiple board firmwares)
+    firmware_board_ids: tuple[str, ...] = ()  # Board IDs for multi-package updates
 
 
 # Known device models based on APK analysis
@@ -37,6 +40,9 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
         has_xtouch=True,
         has_z_axis=True,
         has_cover_sensor=True,
+        firmware_content_id="xcs-d2-firmware",
+        firmware_multi_package=True,
+        firmware_board_ids=("xcs-d2-0x20", "xcs-d2-0x21", "xcs-d2-0x22"),
     ),
     # D-series: HTTP M-code protocol
     "D1": XtoolDeviceModel(
@@ -44,16 +50,19 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
         name="xTool D1",
         protocol_family="http_mcode",
         has_smoking_fan=False,
+        firmware_content_id="xcs-ext-d1",
     ),
     "D1Pro": XtoolDeviceModel(
         model_id="D1Pro",
         name="xTool D1 Pro",
         protocol_family="http_mcode",
+        firmware_content_id="xcs-ext-d1-pro",
     ),
     "D1Pro 2.0": XtoolDeviceModel(
         model_id="D1Pro 2.0",
         name="xTool D1 Pro 2.0",
         protocol_family="http_mcode",
+        firmware_content_id="xcs-ext-d1-pro2",
     ),
     # M-series: REST API
     "M1": XtoolDeviceModel(
@@ -61,6 +70,7 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
         name="xTool M1",
         protocol_family="rest",
         has_z_axis=True,
+        firmware_content_id="xcs-ext-m1",
     ),
     "M1Ultra": XtoolDeviceModel(
         model_id="M1Ultra",
@@ -68,6 +78,7 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
         protocol_family="rest",
         has_z_axis=True,
         has_drawer=True,
+        firmware_content_id="xcs-ext-m1-lite",
     ),
     # P-series: REST API
     "P2": XtoolDeviceModel(
@@ -78,6 +89,7 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
         has_drawer=True,
         has_cover_sensor=True,
         has_camera=True,
+        firmware_content_id="xcs-ext-p2",
     ),
     "P2S": XtoolDeviceModel(
         model_id="P2S",
@@ -87,27 +99,32 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
         has_drawer=True,
         has_cover_sensor=True,
         has_camera=True,
+        firmware_content_id="xcs-ext-p2s",
     ),
     "P1": XtoolDeviceModel(
         model_id="P1",
         name="xTool Laserbox",
         protocol_family="rest",
+        firmware_content_id="xcs-ext-p1",
     ),
     # F-series: REST API
     "F1": XtoolDeviceModel(
         model_id="F1",
         name="xTool F1",
         protocol_family="rest",
+        firmware_content_id="xcs-ext-f1",
     ),
     "F1Ultra": XtoolDeviceModel(
         model_id="F1Ultra",
         name="xTool F1 Ultra",
         protocol_family="rest",
+        firmware_content_id="xcs-ext-f1-ultra",
     ),
     "GS005": XtoolDeviceModel(
         model_id="GS005",
         name="xTool F1 Lite",
         protocol_family="rest",
+        firmware_content_id="xcs-ext-gs005",
     ),
 }
 

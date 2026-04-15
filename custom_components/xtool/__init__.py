@@ -6,7 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_POWER_SWITCH, DEFAULT_DEVICE_NAME, DOMAIN
+from .const import CONF_ENABLE_UPDATES, CONF_POWER_SWITCH, DEFAULT_DEVICE_NAME, DOMAIN
 from .coordinator import XtoolCoordinator
 from .http_mcode_protocol import HttpMcodeProtocol
 from .models import detect_model
@@ -23,6 +23,7 @@ PLATFORMS = [
     Platform.NUMBER,
     Platform.SELECT,
     Platform.BUTTON,
+    Platform.UPDATE,
 ]
 
 type XtoolConfigEntry = ConfigEntry[XtoolCoordinator]
@@ -52,6 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     model = detect_model(device_name)
 
     power_switch_entity_id = entry.options.get(CONF_POWER_SWITCH)
+    enable_firmware_updates = entry.options.get(CONF_ENABLE_UPDATES, False)
 
     protocol = _create_protocol(host, protocol_type)
 
@@ -63,6 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         firmware_version=firmware_version,
         model=model,
         power_switch_entity_id=power_switch_entity_id,
+        enable_firmware_updates=enable_firmware_updates,
     )
     laser_power_watts = entry.data.get("laser_power_watts", 0)
     if laser_power_watts:

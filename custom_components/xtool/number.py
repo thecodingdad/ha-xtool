@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from homeassistant.components.number import NumberEntity, NumberEntityDescription
-from homeassistant.const import UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -32,6 +32,7 @@ NUMBER_DESCRIPTIONS: tuple[XtoolNumberEntityDescription, ...] = (
         key="air_assist_close_delay",
         translation_key="air_assist_close_delay",
         icon="mdi:timer-sand",
+        entity_category=EntityCategory.CONFIG,
         native_min_value=0,
         native_max_value=600,
         native_step=1,
@@ -44,6 +45,7 @@ NUMBER_DESCRIPTIONS: tuple[XtoolNumberEntityDescription, ...] = (
         key="smoking_fan_duration",
         translation_key="smoking_fan_duration",
         icon="mdi:fan-clock",
+        entity_category=EntityCategory.CONFIG,
         native_min_value=1,
         native_max_value=600,
         native_step=1,

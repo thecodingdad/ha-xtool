@@ -17,7 +17,12 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
 from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
 
-from .const import CONF_POWER_SWITCH, DEFAULT_DEVICE_NAME, DOMAIN
+from .const import (
+    CONF_ENABLE_UPDATES,
+    CONF_POWER_SWITCH,
+    DEFAULT_DEVICE_NAME,
+    DOMAIN,
+)
 from .discovery import DiscoveredDevice, discover_devices
 from .protocol import validate_connection
 
@@ -180,15 +185,23 @@ class XtoolOptionsFlow(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize the options flow."""
         self._config_entry = config_entry
+        self._pending_options: dict[str, Any] = {}
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the options form."""
+        current_options = self._config_entry.options
+        currently_enabled = current_options.get(CONF_ENABLE_UPDATES, False)
+
         if user_input is not None:
+            # If user is turning updates ON (False -> True), require confirmation
+            if user_input.get(CONF_ENABLE_UPDATES) and not currently_enabled:
+                self._pending_options = user_input
+                return await self.async_step_confirm_updates()
             return self.async_create_entry(data=user_input)
 
-        current_switch = self._config_entry.options.get(CONF_POWER_SWITCH)
+        current_switch = current_options.get(CONF_POWER_SWITCH)
 
         return self.async_show_form(
             step_id="init",
@@ -200,6 +213,32 @@ class XtoolOptionsFlow(OptionsFlow):
                     ): EntitySelector(
                         EntitySelectorConfig(filter={"domain": "switch"})
                     ),
+                    vol.Optional(
+                        CONF_ENABLE_UPDATES,
+                        default=currently_enabled,
+                    ): bool,
                 }
             ),
         )
+
+    async def async_step_confirm_updates(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show a menu warning about firmware update risks."""
+        return self.async_show_menu(
+            step_id="confirm_updates",
+            menu_options=["enable_updates", "cancel_updates"],
+        )
+
+    async def async_step_enable_updates(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """User confirmed — persist pending options with updates enabled."""
+        return self.async_create_entry(data=self._pending_options)
+
+    async def async_step_cancel_updates(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """User cancelled — persist pending options with updates disabled."""
+        self._pending_options[CONF_ENABLE_UPDATES] = False
+        return self.async_create_entry(data=self._pending_options)

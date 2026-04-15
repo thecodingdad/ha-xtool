@@ -32,10 +32,20 @@
     "step": {
       "init": {
         "data": {
-          "power_switch_entity_id": "Power switch"
+          "power_switch_entity_id": "Power switch",
+          "enable_firmware_updates": "Enable firmware updates"
         },
         "data_description": {
-          "power_switch_entity_id": "Select a switch that controls the laser's power supply (e.g. a smart plug). Leave empty if not applicable."
+          "power_switch_entity_id": "Select a switch that controls the laser's power supply (e.g. a smart plug). Leave empty if not applicable.",
+          "enable_firmware_updates": "When enabled, the firmware update entity can install new firmware. When disabled, it only shows that an update is available."
+        }
+      },
+      "confirm_updates": {
+        "title": "Enable firmware updates?",
+        "description": "Flashing firmware carries risk.\n\n- Do **not** power off the device during an update — an interrupted flash can brick the laser.\n- Ensure stable Wi-Fi between Home Assistant and the laser.\n- The device will reboot automatically when the flash completes.",
+        "menu_options": {
+          "enable_updates": "Enable firmware updates",
+          "cancel_updates": "Cancel"
         }
       }
     }
@@ -117,6 +127,9 @@
           "low": "Low"
         }
       }
+    },
+    "update": {
+      "firmware": { "name": "Firmware" }
     },
     "button": {
       "pause_job": { "name": "Pause job" },

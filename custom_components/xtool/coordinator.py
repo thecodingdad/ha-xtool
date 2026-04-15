@@ -34,6 +34,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         firmware_version: str,
         model: XtoolDeviceModel,
         power_switch_entity_id: str | None = None,
+        enable_firmware_updates: bool = False,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -50,6 +51,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.model = model
         self.laser = LaserInfo()
         self.power_switch_entity_id = power_switch_entity_id
+        self.enable_firmware_updates = enable_firmware_updates
         self._device_info_fetched = False
 
     @property
@@ -130,6 +132,8 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
                 self.serial_number = info.serial_number
             if info.laser.power_watts:
                 self.laser = info.laser
+            # Cache for firmware update entity (per-board versions)
+            self._device_info_cache = info
         except Exception as err:
             _LOGGER.debug("Failed to fetch device info: %s", err)
 

@@ -21,6 +21,7 @@ This integration communicates directly with your xTool device over the local net
 - Laser module detection (type, power, producer)
 - Attached accessories detection (air pump, fire extinguisher, riser base)
 - Camera support for P2/P2S models (overview + close-up)
+- Firmware update entity — checks the xTool cloud for new firmware (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
 - Push state updates via WebSocket (S1) — minimal polling delay
 - Automatic reconnect on network interruption
@@ -79,6 +80,7 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 | Option | Description |
 |--------|-------------|
 | Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off, the status shows "Off" and entities become unavailable. |
+| Enable firmware updates | Off by default — the firmware update entity only reports whether an update is available. Enabling this option arms the install action. |
 
 ## Entities
 
@@ -116,15 +118,13 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 
 ### Switches
 
-Not all entities are available on every model. Entities are only created when supported by the connected device.
-
 | Entity | Description |
 |--------|-------------|
-| Flame alarm | Enable/disable fire detection |
-| Buzzer | Enable/disable audio feedback |
 | Move stop | Enable/disable emergency movement stop |
 | Exhaust fan | Enable/disable smoke extraction fan |
 | Power | Controls the linked smart plug (only when configured in options) |
+| Flame alarm | Enable/disable fire detection |
+| Buzzer | Enable/disable audio feedback |
 
 ### Numbers
 
@@ -155,6 +155,12 @@ Not all entities are available on every model. Entities are only created when su
 | Entity | Description |
 |--------|-------------|
 | Accessories | On when accessories are attached. Attributes list the connected accessories (Air Pump, Fire Extinguisher, Riser Base) with firmware versions |
+
+### Update
+
+| Entity | Description |
+|--------|-------------|
+| Firmware | Reports the installed and latest firmware version by querying the xTool cloud (re-checked on reconnect and every 6 hours). Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it. |
 
 ### Cameras (P2/P2S only)
 

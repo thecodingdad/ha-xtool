@@ -11,7 +11,7 @@ from homeassistant.components.switch import (
     SwitchEntity,
     SwitchEntityDescription,
 )
-from homeassistant.const import SERVICE_TURN_OFF, SERVICE_TURN_ON
+from homeassistant.const import EntityCategory, SERVICE_TURN_OFF, SERVICE_TURN_ON
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -55,6 +55,7 @@ SWITCH_DESCRIPTIONS: tuple[XtoolSwitchEntityDescription, ...] = (
         key="flame_alarm",
         translation_key="flame_alarm",
         icon="mdi:fire-alert",
+        entity_category=EntityCategory.CONFIG,
         is_on_fn=lambda state: state.flame_alarm != 2,
         turn_on_cmd=lambda state: f"{CMD_FLAME_ALARM} A0",  # High sensitivity by default
         turn_off_cmd=lambda _: f"{CMD_FLAME_ALARM} A2",
@@ -65,6 +66,7 @@ SWITCH_DESCRIPTIONS: tuple[XtoolSwitchEntityDescription, ...] = (
         key="buzzer",
         translation_key="buzzer",
         icon="mdi:volume-high",
+        entity_category=EntityCategory.CONFIG,
         is_on_fn=lambda state: state.beeper_enabled,
         turn_on_cmd=lambda _: f"{CMD_BEEPER} S1",
         turn_off_cmd=lambda _: f"{CMD_BEEPER} S0",

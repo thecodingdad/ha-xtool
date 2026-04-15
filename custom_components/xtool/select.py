@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -34,6 +35,7 @@ class XtoolFlameAlarmSensitivity(XtoolEntity, SelectEntity):
 
     _attr_translation_key = "flame_alarm_sensitivity"
     _attr_icon = "mdi:fire-alert"
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_options = list(SENSITIVITY_OPTIONS.keys())
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:

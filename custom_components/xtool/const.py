@@ -6,6 +6,7 @@ from enum import IntEnum, StrEnum
 
 DOMAIN = "xtool"
 CONF_POWER_SWITCH = "power_switch_entity_id"
+CONF_ENABLE_UPDATES = "enable_firmware_updates"
 DEFAULT_DEVICE_NAME = "xTool Device"
 
 # --- Network ---
@@ -72,6 +73,10 @@ XCS_KICK_WINDOW = 30.0  # seconds
 XCS_RECOVERY_INTERVAL = 60.0  # seconds between WS reconnect attempts in XCS mode
 XCS_KICK_DETECTION_SECONDS = 10.0  # session shorter than this = "kicked"
 STATS_POLL_INTERVAL = 300  # seconds between M2008 polls (5 minutes)
+
+# --- Firmware Update API ---
+FIRMWARE_API_BASE = "https://api.xtool.com/efficacy/v1"
+FIRMWARE_CHECK_INTERVAL = 21600  # 6 hours between update checks
 
 # --- M2003 JSON Response Keys ---
 # Keys inside the JSON object returned by CMD_FULL_INFO (M2003)
