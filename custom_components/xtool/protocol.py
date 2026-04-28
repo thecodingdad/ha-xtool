@@ -49,11 +49,16 @@ class ProtocolType(StrEnum):
 
 @dataclass
 class LaserInfo:
-    """Parsed laser module info from M116 power info string."""
+    """Parsed laser module info from M116 power info string.
+
+    Format: "X{type}Y{watts}B{producer}P{process_type}L{laser_tube}"
+    """
 
     laser_type: int = 0
     power_watts: int = 0
     laser_producer: int = 0
+    process_type: int = 0
+    laser_tube: int = 0
 
     @property
     def type_name(self) -> str:
@@ -81,6 +86,10 @@ class DeviceInfo:
     laser_firmware: str = ""
     wifi_firmware: str = ""
     accessories: list[str] = field(default_factory=list)
+    # Workspace dimensions in mm (M223 response on S1, static per model)
+    workspace_x: float = 0.0
+    workspace_y: float = 0.0
+    workspace_z: float = 0.0
 
     @property
     def laser_power_watts(self) -> int:
@@ -168,28 +177,39 @@ def parse_m2003(raw: str) -> DeviceInfo:
 def parse_laser_info(raw: str) -> LaserInfo:
     """Parse M116 power info string into LaserInfo.
 
-    Format: "X{type}Y{watts}B{producer}P{?}L{?}"
-    Example: "X0Y20B1P1L3" -> type=0, watts=20, producer=1
+    Format: "X{type}Y{watts}B{producer}P{process_type}L{laser_tube}"
+    Example: "X0Y20B1P1L3" -> type=0, watts=20, producer=1, process_type=1, laser_tube=3
     """
     laser = LaserInfo()
     if not raw:
         return laser
 
     params = dict(_PARAM_RE.findall(raw))
-    try:
-        laser.laser_type = int(params.get("X", "0"))
-    except ValueError:
-        pass
-    try:
-        laser.power_watts = int(params.get("Y", "0"))
-    except ValueError:
-        pass
-    try:
-        laser.laser_producer = int(params.get("B", "0"))
-    except ValueError:
-        pass
+    for key, attr in (
+        ("X", "laser_type"),
+        ("Y", "power_watts"),
+        ("B", "laser_producer"),
+        ("P", "process_type"),
+        ("L", "laser_tube"),
+    ):
+        try:
+            setattr(laser, attr, int(params.get(key, "0")))
+        except ValueError:
+            pass
 
     return laser
+
+
+def parse_workspace_dims(raw: str) -> tuple[float, float, float]:
+    """Parse M223 response into workspace dimensions in mm.
+
+    Example: "M223 X498.00 Y330.00 Z58.00" -> (498.0, 330.0, 58.0)
+    """
+    return (
+        parse_param_float(raw, "X"),
+        parse_param_float(raw, "Y"),
+        parse_param_float(raw, "Z"),
+    )
 
 
 def parse_accessories(raw: str) -> list[str]:
@@ -249,11 +269,15 @@ class XtoolProtocol(ABC):
             await self.connect()
             info = await self.get_device_info()
             version = await self.get_version()
+            # Prefer M99/main_firmware from M2003 — get_version() on the WS
+            # protocol hits /system?action=version which returns the ESP32
+            # firmware (same as M2099), not the main MCU firmware.
+            firmware = info.main_firmware or version or ""
             return ConnectionInfo(
                 host=self.host,
                 name=info.device_name or DEFAULT_DEVICE_NAME,
                 serial_number=info.serial_number,
-                firmware_version=version or "",
+                firmware_version=firmware,
                 laser_power_watts=info.laser_power_watts,
                 device_info=info,
             )

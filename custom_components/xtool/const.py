@@ -45,13 +45,24 @@ CMD_LIGHT_INTERFERENCE = "M2240"
 CMD_Z_OFFSET = "M1113"
 CMD_AIRFLOW_V2 = "M9009"
 CMD_ACCESSORIES = "M1098"
-CMD_LIFETIME_STATS = "M2008"
+CMD_LIFETIME_STATS = "M2008 A1"  # bare M2008 returns nothing — needs any param
 CMD_LIGHT_ACTIVE = "M15"  # Also returns air assist status: A{enabled} S{gear}
 CMD_PROBE_Z = "M313"
 CMD_SERIAL_NUMBER = "M310"
 CMD_FIRMWARE_VERSION = "M99"
 CMD_LASER_INFO = "M116"
 CMD_RISER_BASE = "M54"
+CMD_WORKSPACE_DIMS = "M223"  # response: "M223 X<mm> Y<mm> Z<mm>"
+CMD_FULL_STATE_PUSH = "M2211"  # triggers full-state push frames (lighter than M2003)
+
+# HTTP system actions (GET /system?action=...)
+HTTP_ACTION_VERSION = "version"
+HTTP_ACTION_SOCKET_CONN = "socket_conn_num"
+HTTP_ACTION_UPGRADE_PROGRESS = "get_upgrade_progress"
+
+# Firmware upload endpoints
+HTTP_PATH_BURN = "/burn"  # multi-board flash (S1) — needs burnType + M22 S3 prelude
+HTTP_PATH_UPGRADE = "/upgrade"  # single-blob multipart upload (alternative)
 
 # D-series specific commands
 CMD_STATUS_D_SERIES = "M96"
@@ -62,6 +73,7 @@ CMD_FLAME_SENSITIVITY_D_SERIES = "M309"
 # Control commands
 CMD_PAUSE_JOB = "M22 S1"
 CMD_RESUME_JOB = "M22 S0"
+CMD_ENTER_UPGRADE_MODE = "M22 S3"
 CMD_CANCEL_JOB = "M108"
 CMD_HOME_ALL = "M111 S7"
 CMD_HOME_XY = "M111 S3"
@@ -112,6 +124,7 @@ class XtoolStatus(StrEnum):
     ERROR_LIMIT = "error_limit"
     ERROR_LASER_CONTROL = "error_laser_control"
     ERROR_LASER_MODULE = "error_laser_module"
+    ERROR_FIRE_WARNING = "error_fire_warning"  # stage-1 flame detect (pre-alarm)
     MEASURE_AREA = "measure_area"
     UNKNOWN = "unknown"
 

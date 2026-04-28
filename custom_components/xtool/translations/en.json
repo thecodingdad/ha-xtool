@@ -72,6 +72,7 @@
           "error_limit": "Error (limit)",
           "error_laser_control": "Error (laser control)",
           "error_laser_module": "Error (laser module)",
+          "error_fire_warning": "Fire warning",
           "measure_area": "Measuring area",
           "unknown": "Unknown"
         }
@@ -96,7 +97,8 @@
           "inserted": "Inserted",
           "not_inserted": "Not inserted"
         }
-      }
+      },
+      "workspace_size": { "name": "Workspace size" }
     },
     "binary_sensor": {
       "accessories": { "name": "Accessories" }

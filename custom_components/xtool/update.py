@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
+
+import aiohttp
 
 from homeassistant.components.update import (
     UpdateDeviceClass,
@@ -16,7 +19,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import XtoolConfigEntry
-from .const import DEFAULT_HTTP_PORT, FIRMWARE_CHECK_INTERVAL
+from .const import (
+    CMD_ENTER_UPGRADE_MODE,
+    DEFAULT_HTTP_PORT,
+    FIRMWARE_CHECK_INTERVAL,
+    HTTP_ACTION_UPGRADE_PROGRESS,
+    HTTP_PATH_BURN,
+    HTTP_PATH_UPGRADE,
+)
 from .coordinator import XtoolCoordinator
 from .entity import XtoolEntity
 from .firmware import (
@@ -26,6 +36,23 @@ from .firmware import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Display labels for S1 board IDs in the composite version string
+_BOARD_LABELS = {
+    "xcs-d2-0x20": "Main",
+    "xcs-d2-0x21": "Laser",
+    "xcs-d2-0x22": "WiFi",
+}
+
+
+def _short_version(raw: str) -> str:
+    """Strip the 'V' prefix and any trailing build suffix for compact display."""
+    if not raw:
+        return "?"
+    # Drop leading V/v
+    v = raw.lstrip("Vv")
+    # Cut off after first space (build suffixes like " B10")
+    return v.split()[0] if v else "?"
 
 
 async def async_setup_entry(
@@ -63,15 +90,53 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
 
     @property
     def installed_version(self) -> str | None:
-        """Return the currently installed firmware version."""
+        """Return installed firmware version (composite for multi-board models)."""
+        model = self.coordinator.model
+        if model.firmware_multi_package:
+            return self._build_composite(self._current_board_versions())
         return self.coordinator.firmware_version or None
 
     @property
     def latest_version(self) -> str | None:
-        """Return the latest available firmware version."""
+        """Return latest firmware version (composite for multi-board models)."""
+        model = self.coordinator.model
+        if model.firmware_multi_package:
+            current = self._current_board_versions()
+            new = dict(current)
+            if self._update_info and self._update_info.board_versions:
+                new.update(self._update_info.board_versions)
+            return self._build_composite(new)
         if self._update_info:
             return self._update_info.latest_version
         return self.installed_version
+
+    def _current_board_versions(self) -> dict[str, str]:
+        """Per-board installed versions for multi-package models."""
+        model = self.coordinator.model
+        if not (model.firmware_multi_package and model.firmware_board_ids):
+            return {}
+        ids = model.firmware_board_ids
+        # Order: 0x20 main, 0x21 laser, 0x22 wifi (per S1 board map)
+        sources = [
+            self.coordinator.firmware_version,  # main MCU (M99)
+            self.coordinator.laser_firmware,    # laser MCU (M1199)
+            self.coordinator.wifi_firmware,     # ESP32 (M2099)
+        ]
+        return {
+            board_id: src
+            for board_id, src in zip(ids, sources)
+            if src
+        }
+
+    def _build_composite(self, versions: dict[str, str]) -> str | None:
+        """Render '<Label> <version> / <Label> <version> / ...' for the entity."""
+        if not versions:
+            return None
+        parts = []
+        for board_id, ver in versions.items():
+            label = _BOARD_LABELS.get(board_id, board_id)
+            parts.append(f"{label} {_short_version(ver)}")
+        return " / ".join(parts)
 
     def release_notes(self) -> str | None:
         """Return release notes for the latest version."""
@@ -184,6 +249,12 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         try:
             _set_progress(0)
             for fw_file in self._update_info.files:
+                file_share = fw_file.file_size / total
+                base_pct = (completed_bytes / total) * 100
+                # Each file: download = first 30 % of its share, flash = remaining 70 %
+                download_end_pct = base_pct + file_share * 30
+                flash_end_pct = base_pct + file_share * 100
+
                 _LOGGER.info(
                     "Downloading firmware: %s (%d bytes)",
                     fw_file.name,
@@ -191,32 +262,36 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
                 )
 
                 def _on_download(done: int, file_total: int) -> None:
-                    # Download phase owns 0–50 % of total progress
                     file_bytes = file_total or fw_file.file_size or done
                     file_bytes = max(file_bytes, 1)
                     frac = min(done, file_bytes) / file_bytes
-                    bytes_progressed = completed_bytes + fw_file.file_size * frac
-                    _set_progress(int((bytes_progressed / total) * 50))
+                    _set_progress(int(base_pct + (download_end_pct - base_pct) * frac))
 
                 data = await download_firmware(
                     fw_file.url,
                     progress_cb=_on_download,
                     expected_size=fw_file.file_size,
                 )
+                _set_progress(int(download_end_pct))
 
                 _LOGGER.info("Flashing firmware: %s", fw_file.name)
                 if model.firmware_multi_package:
-                    await self._flash_s1(host, data, fw_file.burn_type)
+                    await self._flash_s1(
+                        host,
+                        data,
+                        fw_file.burn_type,
+                        flash_progress_cb=lambda f: _set_progress(
+                            int(download_end_pct + (flash_end_pct - download_end_pct) * f)
+                        ),
+                    )
                 else:
                     await self._flash_rest(host, data, fw_file.name)
 
                 completed_bytes += fw_file.file_size
-                # Flash phase owns 50–100 %; bump after each file completes
-                _set_progress(50 + int((completed_bytes / total) * 50))
+                _set_progress(int(flash_end_pct))
 
             _LOGGER.info("Firmware update complete — device will reboot")
             _set_progress(100)
-            # Clear update info so entity shows as up-to-date
             self._update_info = None
             self._checked_once = False  # Re-check after reboot
 
@@ -227,32 +302,92 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
             self._attr_in_progress = False
             self.async_write_ha_state()
 
-    async def _flash_s1(self, host: str, data: bytes, burn_type: str) -> None:
-        """Flash firmware on S1 via /burn endpoint."""
-        import aiohttp
-
+    async def _flash_s1(
+        self,
+        host: str,
+        data: bytes,
+        burn_type: str,
+        flash_progress_cb: Any = None,
+    ) -> None:
+        """Flash firmware on S1 via /burn endpoint with real progress polling."""
         # Enter upgrade mode
-        await self.coordinator.send_command("M22 S3")
+        await self.coordinator.send_command(CMD_ENTER_UPGRADE_MODE)
 
-        # Upload firmware
-        url = f"http://{host}:{DEFAULT_HTTP_PORT}/burn"
+        url = f"http://{host}:{DEFAULT_HTTP_PORT}{HTTP_PATH_BURN}"
         form = aiohttp.FormData()
         form.add_field("file", data, filename="mcu_firmware.bin", content_type="application/octet-stream")
         form.add_field("burnType", burn_type)
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=form, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"Firmware upload failed: HTTP {resp.status}")
-                _LOGGER.debug("Firmware upload response: %s", await resp.text())
+            # Run upload and progress poll concurrently
+            async def _upload() -> None:
+                async with session.post(
+                    url, data=form, timeout=aiohttp.ClientTimeout(total=600)
+                ) as resp:
+                    if resp.status != 200:
+                        raise RuntimeError(f"Firmware upload failed: HTTP {resp.status}")
+                    _LOGGER.debug("Firmware upload response: %s", await resp.text())
+
+            poll_task = asyncio.create_task(
+                self._poll_flash_progress(host, flash_progress_cb)
+            )
+            try:
+                await _upload()
+            finally:
+                poll_task.cancel()
+                try:
+                    await poll_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+    async def _poll_flash_progress(
+        self, host: str, progress_cb: Any
+    ) -> None:
+        """Poll /system?action=get_upgrade_progress and report real progress."""
+        if progress_cb is None:
+            return
+        url = (
+            f"http://{host}:{DEFAULT_HTTP_PORT}"
+            f"/system?action={HTTP_ACTION_UPGRADE_PROGRESS}"
+        )
+        async with aiohttp.ClientSession() as session:
+            while True:
+                try:
+                    async with session.get(
+                        url, timeout=aiohttp.ClientTimeout(total=5)
+                    ) as resp:
+                        if resp.status == 200:
+                            payload = await resp.json(content_type=None)
+                            curr = int(payload.get("curr_progress", 0))
+                            total = int(payload.get("total_progress", 0))
+                            if total > 0:
+                                progress_cb(min(curr / total, 1.0))
+                                if curr >= total:
+                                    return
+                except Exception as err:
+                    _LOGGER.debug("Flash progress poll error: %s", err)
+                await asyncio.sleep(2.0)
 
     async def _flash_rest(self, host: str, data: bytes, filename: str) -> None:
-        """Flash firmware on REST models via /package endpoint."""
-        import aiohttp
-
-        # Handshake
-        url_handshake = f"http://{host}:{DEFAULT_HTTP_PORT}/upgrade_version"
+        """Flash firmware on REST models — try /upgrade single-blob, fall back to /package."""
+        url_upgrade = f"http://{host}:{DEFAULT_HTTP_PORT}{HTTP_PATH_UPGRADE}"
         async with aiohttp.ClientSession() as session:
+            # Path 1: simple multipart upload to /upgrade (no handshake)
+            form = aiohttp.FormData()
+            form.add_field("file", data, filename=filename, content_type="application/octet-stream")
+            try:
+                async with session.post(
+                    url_upgrade, data=form, timeout=aiohttp.ClientTimeout(total=600)
+                ) as resp:
+                    if resp.status == 200:
+                        _LOGGER.debug("Firmware upload via /upgrade succeeded")
+                        return
+                    _LOGGER.debug("/upgrade returned HTTP %s, falling back", resp.status)
+            except Exception as err:
+                _LOGGER.debug("/upgrade failed (%s), falling back to /package", err)
+
+            # Path 2: legacy handshake + /package
+            url_handshake = f"http://{host}:{DEFAULT_HTTP_PORT}/upgrade_version"
             async with session.post(
                 url_handshake,
                 json={"filename": filename, "fileSize": len(data)},
@@ -261,10 +396,11 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
                 if resp.status != 200:
                     raise RuntimeError(f"Firmware handshake failed: HTTP {resp.status}")
 
-            # Upload
             url_upload = f"http://{host}:{DEFAULT_HTTP_PORT}/package"
             form = aiohttp.FormData()
             form.add_field("file", data, filename=filename, content_type="application/octet-stream")
-            async with session.post(url_upload, data=form, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+            async with session.post(
+                url_upload, data=form, timeout=aiohttp.ClientTimeout(total=600)
+            ) as resp:
                 if resp.status != 200:
                     raise RuntimeError(f"Firmware upload failed: HTTP {resp.status}")

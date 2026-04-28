@@ -34,6 +34,9 @@ class FirmwareUpdateInfo:
     release_summary: str
     files: list[FirmwareFile] = field(default_factory=list)
     total_size: int = 0
+    # Per-board map of new versions (multi-package only). Keys are the
+    # board_id values from FirmwareFile (e.g. "xcs-d2-0x20").
+    board_versions: dict[str, str] = field(default_factory=dict)
 
 
 def parse_firmware_version(raw: str) -> str:
@@ -112,6 +115,7 @@ async def _check_multi_package(
     files = []
     descriptions = []
     versions = []
+    board_versions: dict[str, str] = {}
     total_size = 0
 
     # S1 board ID to burnType mapping
@@ -124,6 +128,8 @@ async def _check_multi_package(
         desc = entry.get("description", {})
 
         versions.append(version)
+        if board_id and version:
+            board_versions[board_id] = version
         if desc.get("en"):
             descriptions.append(desc["en"])
 
@@ -143,6 +149,7 @@ async def _check_multi_package(
         release_summary="\n\n".join(descriptions),
         files=files,
         total_size=total_size,
+        board_versions=board_versions,
     )
 
 

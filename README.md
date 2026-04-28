@@ -109,6 +109,7 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 | Laser power | Laser module power in watts |
 | Laser module | Human-readable laser description (e.g. "20W Diode") |
 | SD card | SD card inserted / not inserted |
+| Workspace size | Device build dimensions (e.g. "498 × 330 × 58 mm") |
 
 ### Light
 
@@ -197,6 +198,8 @@ This integration communicates with xTool devices using protocols discovered thro
 - **REST API port 8080** (F1/P2/M1) — JSON REST endpoints for device control
 
 Commands use a G-code dialect (M-codes): `M222` (status), `M13` (light), `M340` (flame alarm), `M2003` (full device info), etc.
+
+A complete reference of all M-codes, HTTP endpoints, JSON formats, status mappings, and the firmware-update cloud API is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## Multilanguage Support
 

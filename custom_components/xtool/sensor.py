@@ -148,6 +148,16 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         options=["inserted", "not_inserted"],
         value_fn=lambda state, _: "inserted" if state.sd_card_present else "not_inserted",
     ),
+    XtoolSensorEntityDescription(
+        key="workspace_size",
+        translation_key="workspace_size",
+        icon="mdi:ruler-square",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda _, coord: (
+            f"{coord.workspace_x:.0f} × {coord.workspace_y:.0f} × {coord.workspace_z:.0f} mm"
+            if coord.workspace_x else None
+        ),
+    ),
 )
 
 

@@ -53,6 +53,11 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.power_switch_entity_id = power_switch_entity_id
         self.enable_firmware_updates = enable_firmware_updates
         self._device_info_fetched = False
+        self.laser_firmware: str = ""
+        self.wifi_firmware: str = ""
+        self.workspace_x: float = 0.0
+        self.workspace_y: float = 0.0
+        self.workspace_z: float = 0.0
 
     @property
     def power_switch_is_off(self) -> bool:
@@ -125,13 +130,25 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         return state
 
     async def _fetch_device_info(self) -> None:
-        """Fetch static device info (serial number, laser) from device."""
+        """Fetch static device info (serial, laser, firmware versions, workspace dims)."""
         try:
             info = await self.protocol.get_device_info()
             if info.serial_number and not self.serial_number:
                 self.serial_number = info.serial_number
             if info.laser.power_watts:
                 self.laser = info.laser
+            # Authoritative main firmware comes from M99 (in M2003 JSON).
+            # The HTTP /system?action=version endpoint on the S1 returns the
+            # ESP32 firmware instead, so older config entries may have stored
+            # the wrong version — override it here.
+            if info.main_firmware:
+                self.firmware_version = info.main_firmware
+            self.laser_firmware = info.laser_firmware
+            self.wifi_firmware = info.wifi_firmware
+            if info.workspace_x:
+                self.workspace_x = info.workspace_x
+                self.workspace_y = info.workspace_y
+                self.workspace_z = info.workspace_z
             # Cache for firmware update entity (per-board versions)
             self._device_info_cache = info
         except Exception as err:

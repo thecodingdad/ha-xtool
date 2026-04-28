@@ -33,6 +33,7 @@ from .const import (
     CMD_FIRE_LEVEL,
     CMD_FLAME_ALARM,
     CMD_FULL_INFO,
+    CMD_FULL_STATE_PUSH,
     CMD_LIFETIME_STATS,
     CMD_LIGHT_ACTIVE,
     CMD_MOVE_STOP,
@@ -43,9 +44,12 @@ from .const import (
     CMD_SMOKING_FAN,
     CMD_TASK_ID,
     CMD_TASK_TIME,
+    CMD_WORKSPACE_DIMS,
     CMD_XTOUCH_STATUS,
     DEFAULT_HTTP_PORT,
     DEFAULT_WS_PORT,
+    HTTP_ACTION_SOCKET_CONN,
+    HTTP_ACTION_VERSION,
     STATS_POLL_INTERVAL,
     XCS_KICK_DETECTION_SECONDS,
     XCS_KICK_LIMIT,
@@ -61,6 +65,7 @@ from .protocol import (
     parse_param_float,
     parse_param_int,
     parse_quoted_string,
+    parse_workspace_dims,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,6 +131,13 @@ class WsMcodeProtocol(XtoolProtocol):
         except Exception:
             await self._close_session()
             raise
+
+        # Kick a full-state push so all entities refresh quickly
+        # without paying for an M2003 round-trip.
+        try:
+            await self._ws.send_str(CMD_FULL_STATE_PUSH + "\n")
+        except Exception as err:
+            _LOGGER.debug("M2211 trigger failed: %s", err)
 
     async def disconnect(self) -> None:
         """Close WebSocket connection."""
@@ -237,7 +249,14 @@ class WsMcodeProtocol(XtoolProtocol):
                     self._handle_push_frame(response)
 
     async def _send_command_http(self, command: str, timeout: float = 5.0) -> str:
-        """Send a command via HTTP POST /cmd fallback."""
+        """Send a command via HTTP POST /cmd fallback.
+
+        NOTE: /cmd is fire-and-forget — the device always returns
+        '{"result":"ok"}' regardless of what the M-code does. Actual
+        responses (state values) come back via WebSocket push frames.
+        Only use this path for write/control commands during XCS
+        Compatibility Mode, never for queries.
+        """
         url = f"http://{self.host}:{self._http_port}/cmd"
         try:
             async with aiohttp.ClientSession() as session:
@@ -265,21 +284,30 @@ class WsMcodeProtocol(XtoolProtocol):
 
     async def get_version(self) -> str | None:
         """Get firmware version via HTTP."""
-        return await self._http_get("/system?action=version")
+        return await self._http_get(f"/system?action={HTTP_ACTION_VERSION}")
 
     async def get_device_info(self) -> DeviceInfo:
-        """Get full device info via M2003."""
+        """Get full device info via M2003 + M223 (workspace dimensions)."""
         info_raw = await self.send_command(CMD_FULL_INFO, timeout=5)
         info = parse_m2003(info_raw)
         name_raw = await self.send_command(CMD_DEVICE_NAME, timeout=5)
         name = parse_quoted_string(name_raw)
         if name:
             info.device_name = name
+        # Workspace dims (static; queried once on first connect)
+        try:
+            dims_raw = await self.send_command(CMD_WORKSPACE_DIMS, timeout=3)
+            if dims_raw:
+                info.workspace_x, info.workspace_y, info.workspace_z = (
+                    parse_workspace_dims(dims_raw)
+                )
+        except Exception as err:
+            _LOGGER.debug("M223 workspace query failed: %s", err)
         return info
 
     async def get_connection_count(self) -> int:
         """Get active connection count via HTTP."""
-        result = await self._http_get("/system?action=socket_conn_num")
+        result = await self._http_get(f"/system?action={HTTP_ACTION_SOCKET_CONN}")
         if result:
             try:
                 return int(result)
@@ -289,7 +317,7 @@ class WsMcodeProtocol(XtoolProtocol):
 
     async def check_http_heartbeat(self) -> bool:
         """Check if device is reachable via HTTP."""
-        result = await self._http_get("/system?action=version")
+        result = await self._http_get(f"/system?action={HTTP_ACTION_VERSION}")
         return result is not None
 
     async def try_xcs_recovery(self) -> bool:

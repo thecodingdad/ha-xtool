@@ -72,6 +72,7 @@
           "error_limit": "Fehler (Grenzwert)",
           "error_laser_control": "Fehler (Lasersteuerung)",
           "error_laser_module": "Fehler (Lasermodul)",
+          "error_fire_warning": "Feuerwarnung",
           "measure_area": "Bereich messen",
           "unknown": "Unbekannt"
         }
@@ -96,7 +97,8 @@
           "inserted": "Eingelegt",
           "not_inserted": "Nicht eingelegt"
         }
-      }
+      },
+      "workspace_size": { "name": "Arbeitsbereich" }
     },
     "binary_sensor": {
       "accessories": { "name": "Zubehör" }
