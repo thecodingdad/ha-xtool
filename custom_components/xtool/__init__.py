@@ -6,13 +6,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_ENABLE_UPDATES, CONF_POWER_SWITCH, DEFAULT_DEVICE_NAME, DOMAIN
+from .const import (
+    CONF_ENABLE_UPDATES,
+    CONF_HAS_AP2,
+    CONF_POWER_SWITCH,
+    DEFAULT_DEVICE_NAME,
+    DOMAIN,
+)
 from .coordinator import XtoolCoordinator
-from .http_mcode_protocol import HttpMcodeProtocol
-from .models import detect_model
-from .protocol import LaserInfo, ProtocolType, XtoolProtocol
-from .rest_protocol import RestProtocol
-from .ws_protocol import WsMcodeProtocol
+from .protocols import LaserInfo, detect_model
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -34,30 +36,25 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
-def _create_protocol(host: str, protocol_type: str) -> XtoolProtocol:
-    """Create the correct protocol instance based on the detected type."""
-    if protocol_type == ProtocolType.WS_MCODE:
-        return WsMcodeProtocol(host)
-    if protocol_type == ProtocolType.HTTP_MCODE:
-        return HttpMcodeProtocol(host)
-    return RestProtocol(host)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> bool:
     """Set up xTool Laser from a config entry."""
     host = entry.data[CONF_HOST]
     device_name = entry.data.get("device_name", DEFAULT_DEVICE_NAME)
     serial_number = entry.data.get("serial_number", "")
     firmware_version = entry.data.get("firmware_version", "")
-    protocol_type = entry.data.get("protocol_type", ProtocolType.WS_MCODE)
     model = detect_model(device_name)
+    if model.protocol_class is None or model.coordinator_class is None:
+        raise RuntimeError(
+            f"Unknown xTool model {device_name!r} — cannot pick a protocol"
+        )
 
     power_switch_entity_id = entry.options.get(CONF_POWER_SWITCH)
     enable_firmware_updates = entry.options.get(CONF_ENABLE_UPDATES, False)
+    has_ap2 = entry.options.get(CONF_HAS_AP2, False)
 
-    protocol = _create_protocol(host, protocol_type)
+    protocol = model.protocol_class(host)
 
-    coordinator = XtoolCoordinator(
+    coordinator = model.coordinator_class(
         hass,
         protocol=protocol,
         device_name=device_name,
@@ -66,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         model=model,
         power_switch_entity_id=power_switch_entity_id,
         enable_firmware_updates=enable_firmware_updates,
+        has_ap2=has_ap2,  # only S1Coordinator reads it; base ignores
     )
     laser_power_watts = entry.data.get("laser_power_watts", 0)
     if laser_power_watts:

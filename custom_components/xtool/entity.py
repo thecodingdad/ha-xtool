@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -21,8 +21,12 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info."""
+        connections: set[tuple[str, str]] = set()
+        if self.coordinator.mac_address:
+            connections.add((CONNECTION_NETWORK_MAC, self.coordinator.mac_address))
         return DeviceInfo(
             identifiers={(DOMAIN, self.coordinator.serial_number)},
+            connections=connections,
             name=self.coordinator.device_name,
             manufacturer="xTool",
             model=self.coordinator.model.name,

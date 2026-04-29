@@ -25,8 +25,10 @@ class DiscoveredDevice:
     version: str
 
 
-async def discover_devices(timeout: float = DISCOVERY_TIMEOUT) -> list[DiscoveredDevice]:
-    """Send UDP broadcast and collect xTool device responses."""
+async def _probe(
+    target: str, timeout: float, broadcast: bool
+) -> list[DiscoveredDevice]:
+    """Send UDP discovery packet to a target IP (or broadcast); collect replies."""
     devices: list[DiscoveredDevice] = []
     request_id = random.randint(100000, 999999)
     payload = json.dumps({"requestId": request_id}).encode()
@@ -46,7 +48,10 @@ async def discover_devices(timeout: float = DISCOVERY_TIMEOUT) -> list[Discovere
                             version=response.get("version", ""),
                         )
                     )
-                    _LOGGER.debug("Discovered xTool device: %s at %s", response.get("name"), response["ip"])
+                    _LOGGER.debug(
+                        "Discovered xTool device: %s at %s",
+                        response.get("name"), response["ip"],
+                    )
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
 
@@ -54,14 +59,36 @@ async def discover_devices(timeout: float = DISCOVERY_TIMEOUT) -> list[Discovere
         transport, _ = await loop.create_datagram_endpoint(
             _Protocol,
             local_addr=("0.0.0.0", 0),
-            allow_broadcast=True,
+            allow_broadcast=broadcast,
         )
-        transport.sendto(payload, ("255.255.255.255", DISCOVERY_PORT))
+        transport.sendto(payload, (target, DISCOVERY_PORT))
         await asyncio.sleep(timeout)
     except OSError as err:
-        _LOGGER.debug("UDP discovery failed: %s", err)
+        _LOGGER.debug("UDP probe to %s failed: %s", target, err)
     finally:
         if transport:
             transport.close()
 
     return devices
+
+
+async def discover_devices(
+    timeout: float = DISCOVERY_TIMEOUT,
+) -> list[DiscoveredDevice]:
+    """Broadcast the discovery packet and collect every responder."""
+    return await _probe("255.255.255.255", timeout, broadcast=True)
+
+
+async def identify_host(
+    host: str, timeout: float = 3.0
+) -> DiscoveredDevice | None:
+    """Send the discovery packet unicast to a single host.
+
+    Returns the device's reported name + version, or None if no reply arrives
+    within the timeout.
+    """
+    results = await _probe(host, timeout, broadcast=False)
+    for device in results:
+        if device.ip == host:
+            return device
+    return results[0] if results else None

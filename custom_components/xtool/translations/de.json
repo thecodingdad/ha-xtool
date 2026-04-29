@@ -33,11 +33,13 @@
       "init": {
         "data": {
           "power_switch_entity_id": "Steckdose",
-          "enable_firmware_updates": "Firmware-Updates aktivieren"
+          "enable_firmware_updates": "Firmware-Updates aktivieren",
+          "has_ap2": "AP2 Luftreiniger angeschlossen"
         },
         "data_description": {
           "power_switch_entity_id": "Wähle einen Schalter, der die Stromversorgung des Lasers steuert (z.B. eine Funksteckdose). Leer lassen, wenn nicht vorhanden.",
-          "enable_firmware_updates": "Wenn aktiviert, kann die Firmware-Update-Entität neue Firmware installieren. Wenn deaktiviert, zeigt sie nur an, dass ein Update verfügbar ist."
+          "enable_firmware_updates": "Wenn aktiviert, kann die Firmware-Update-Entität neue Firmware installieren. Wenn deaktiviert, zeigt sie nur an, dass ein Update verfügbar ist.",
+          "has_ap2": "Aktiviere um AP2-Luftreiniger-Sensoren (Filter-Restkapazität, Stufe, Partikelsensoren) anzuzeigen. Nur S1."
         }
       },
       "confirm_updates": {
@@ -73,6 +75,10 @@
           "error_laser_control": "Fehler (Lasersteuerung)",
           "error_laser_module": "Fehler (Lasermodul)",
           "error_fire_warning": "Feuerwarnung",
+          "error_tilt": "Fehler (Neigung)",
+          "error_moving": "Fehler (Bewegung)",
+          "working_api": "Auftrag (API)",
+          "working_button": "Auftrag (Taste)",
           "measure_area": "Bereich messen",
           "unknown": "Unbekannt"
         }
@@ -87,7 +93,7 @@
       "working_time": { "name": "Betriebszeit" },
       "session_count": { "name": "Aufträge gesamt" },
       "standby_time": { "name": "Standby-Zeit" },
-      "tool_runtime": { "name": "Werkzeug-Laufzeit" },
+      "tool_runtime": { "name": "Lasermodul-Laufzeit" },
       "ip_address": { "name": "IP-Adresse" },
       "laser_power": { "name": "Laserleistung" },
       "laser_module": { "name": "Lasermodul" },
@@ -98,35 +104,82 @@
           "not_inserted": "Nicht eingelegt"
         }
       },
-      "workspace_size": { "name": "Arbeitsbereich" }
+      "workspace_size": { "name": "Arbeitsbereich" },
+      "connection_count": { "name": "Aktive Verbindungen" },
+      "origin_offset_x": { "name": "Origin-Offset X" },
+      "origin_offset_y": { "name": "Origin-Offset Y" },
+      "last_job_time": { "name": "Letzte Auftragszeit" },
+      "working_mode": { "name": "Betriebsmodus" },
+      "last_button_event": { "name": "Letzter Tastendruck" },
+      "last_distance": { "name": "Letzte Distanz" },
+      "purifier_speed": { "name": "Reiniger-Stufe" },
+      "filter_pre": { "name": "Vorfilter Restkapazität" },
+      "filter_medium": { "name": "Mittelfilter Restkapazität" },
+      "filter_carbon": { "name": "Aktivkohle-Filter Restkapazität" },
+      "filter_dense_carbon": { "name": "Ultra-Aktivkohle-Filter Restkapazität" },
+      "filter_hepa": { "name": "HEPA-Filter Restkapazität" },
+      "purifier_sensor_d": { "name": "Reiniger Sensor D" },
+      "purifier_sensor_s": { "name": "Reiniger Sensor S" }
     },
     "binary_sensor": {
-      "accessories": { "name": "Zubehör" }
+      "accessories": { "name": "Zubehör" },
+      "cover_open": { "name": "Deckel" },
+      "machine_lock": { "name": "Geräteverriegelung" },
+      "alarm": { "name": "Alarm" },
+      "purifier_running": { "name": "Luftreiniger aktiv" },
+      "purifier_connected": { "name": "Luftreiniger verbunden" },
+      "air_assist_connected": { "name": "Air-Assist verbunden" }
     },
     "camera": {
       "camera_overview": { "name": "Übersichtskamera" },
-      "camera_closeup": { "name": "Nahaufnahme-Kamera" }
+      "camera_closeup": { "name": "Nahaufnahme-Kamera" },
+      "camera_fire_record": { "name": "Flammen-Aufnahme" }
     },
     "light": {
       "fill_light": { "name": "Arbeitslicht" }
     },
     "switch": {
-      "flame_alarm": { "name": "Feueralarm" },
       "buzzer": { "name": "Signalton" },
       "move_stop": { "name": "Bewegungsstopp" },
+      "tilt_stop": { "name": "Neigungsstopp" },
+      "limit_stop": { "name": "Endschalter-Stopp" },
       "smoking_fan": { "name": "Absaugung" },
-      "power_switch": { "name": "Strom" }
+      "power_switch": { "name": "Strom" },
+      "ir_led_close": { "name": "IR-LED (Nahaufnahme)" },
+      "ir_led_global": { "name": "IR-LED (Übersicht)" },
+      "digital_lock": { "name": "Deckelverriegelung" },
+      "flame_alarm_v2": { "name": "Feueralarm" },
+      "beep_v2": { "name": "Signalton" },
+      "gap_check": { "name": "Deckelüberwachung" },
+      "machine_lock_check": { "name": "Verriegelungsüberwachung" }
     },
     "number": {
-      "air_assist_close_delay": { "name": "Absaugungsnachlauf" },
-      "smoking_fan_duration": { "name": "Absaugungsdauer" }
+      "air_assist_close_delay": { "name": "Air-Assist-Nachlauf" },
+      "smoking_fan_duration": { "name": "Absaugung-Nachlauf" },
+      "tilt_threshold": { "name": "Neigungs-Schwellwert" },
+      "moving_threshold": { "name": "Bewegungs-Schwellwert" },
+      "camera_exposure_overview": { "name": "Belichtung (Übersicht)" },
+      "camera_exposure_closeup": { "name": "Belichtung (Nahaufnahme)" },
+      "air_assist_gear_cut": { "name": "Air-Assist Stufe (Schneiden)" },
+      "air_assist_gear_grave": { "name": "Air-Assist Stufe (Gravieren)" },
+      "purifier_timeout": { "name": "Filter-Nachlaufzeit" }
     },
     "select": {
       "flame_alarm_sensitivity": {
         "name": "Feueralarm-Empfindlichkeit",
         "state": {
           "high": "Hoch",
-          "low": "Niedrig"
+          "low": "Niedrig",
+          "off": "Aus"
+        }
+      },
+      "flame_alarm_mode": {
+        "name": "Feueralarm-Modus",
+        "state": {
+          "mode_1": "Modus 1",
+          "mode_2": "Modus 2",
+          "mode_3": "Modus 3",
+          "mode_4": "Modus 4"
         }
       }
     },
@@ -139,7 +192,10 @@
       "cancel_job": { "name": "Auftrag abbrechen" },
       "home_all": { "name": "Alle Achsen homen" },
       "home_xy": { "name": "XY homen" },
-      "home_z": { "name": "Z homen" }
+      "home_z": { "name": "Z homen" },
+      "home_laser_head": { "name": "Laserkopf homen" },
+      "measure_distance": { "name": "Distanz messen" },
+      "quit_lightburn": { "name": "LightBurn-Modus verlassen" }
     }
   }
 }

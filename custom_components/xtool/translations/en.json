@@ -33,11 +33,13 @@
       "init": {
         "data": {
           "power_switch_entity_id": "Power switch",
-          "enable_firmware_updates": "Enable firmware updates"
+          "enable_firmware_updates": "Enable firmware updates",
+          "has_ap2": "AP2 air cleaner attached"
         },
         "data_description": {
           "power_switch_entity_id": "Select a switch that controls the laser's power supply (e.g. a smart plug). Leave empty if not applicable.",
-          "enable_firmware_updates": "When enabled, the firmware update entity can install new firmware. When disabled, it only shows that an update is available."
+          "enable_firmware_updates": "When enabled, the firmware update entity can install new firmware. When disabled, it only shows that an update is available.",
+          "has_ap2": "Enable to expose AP2 air cleaner sensors (filter life, speed, particle sensors). S1 only."
         }
       },
       "confirm_updates": {
@@ -73,6 +75,10 @@
           "error_laser_control": "Error (laser control)",
           "error_laser_module": "Error (laser module)",
           "error_fire_warning": "Fire warning",
+          "error_tilt": "Error (tilt)",
+          "error_moving": "Error (movement)",
+          "working_api": "Running (API)",
+          "working_button": "Running (button)",
           "measure_area": "Measuring area",
           "unknown": "Unknown"
         }
@@ -87,7 +93,7 @@
       "working_time": { "name": "Working time" },
       "session_count": { "name": "Session count" },
       "standby_time": { "name": "Standby time" },
-      "tool_runtime": { "name": "Tool runtime" },
+      "tool_runtime": { "name": "Laser module runtime" },
       "ip_address": { "name": "IP address" },
       "laser_power": { "name": "Laser power" },
       "laser_module": { "name": "Laser module" },
@@ -98,35 +104,82 @@
           "not_inserted": "Not inserted"
         }
       },
-      "workspace_size": { "name": "Workspace size" }
+      "workspace_size": { "name": "Workspace size" },
+      "connection_count": { "name": "Active connections" },
+      "origin_offset_x": { "name": "Origin offset X" },
+      "origin_offset_y": { "name": "Origin offset Y" },
+      "last_job_time": { "name": "Last job time" },
+      "working_mode": { "name": "Working mode" },
+      "last_button_event": { "name": "Last button event" },
+      "last_distance": { "name": "Last distance" },
+      "purifier_speed": { "name": "Purifier speed" },
+      "filter_pre": { "name": "Pre-filter remaining" },
+      "filter_medium": { "name": "Medium efficiency filter remaining" },
+      "filter_carbon": { "name": "Activated carbon filter remaining" },
+      "filter_dense_carbon": { "name": "Ultra dense carbon mesh filter remaining" },
+      "filter_hepa": { "name": "HEPA filter remaining" },
+      "purifier_sensor_d": { "name": "Purifier sensor D" },
+      "purifier_sensor_s": { "name": "Purifier sensor S" }
     },
     "binary_sensor": {
-      "accessories": { "name": "Accessories" }
+      "accessories": { "name": "Accessories" },
+      "cover_open": { "name": "Cover" },
+      "machine_lock": { "name": "Machine lock" },
+      "alarm": { "name": "Alarm" },
+      "purifier_running": { "name": "Air cleaner running" },
+      "purifier_connected": { "name": "Air cleaner connected" },
+      "air_assist_connected": { "name": "Air-Assist connected" }
     },
     "camera": {
       "camera_overview": { "name": "Overview camera" },
-      "camera_closeup": { "name": "Close-up camera" }
+      "camera_closeup": { "name": "Close-up camera" },
+      "camera_fire_record": { "name": "Flame record" }
     },
     "light": {
       "fill_light": { "name": "Fill light" }
     },
     "switch": {
-      "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },
       "move_stop": { "name": "Move stop" },
+      "tilt_stop": { "name": "Tilt stop" },
+      "limit_stop": { "name": "Limit stop" },
       "smoking_fan": { "name": "Exhaust fan" },
-      "power_switch": { "name": "Power" }
+      "power_switch": { "name": "Power" },
+      "ir_led_close": { "name": "IR LED (close-up)" },
+      "ir_led_global": { "name": "IR LED (overview)" },
+      "digital_lock": { "name": "Cover lock" },
+      "flame_alarm_v2": { "name": "Flame alarm" },
+      "beep_v2": { "name": "Beep" },
+      "gap_check": { "name": "Cover check" },
+      "machine_lock_check": { "name": "Lock check" }
     },
     "number": {
-      "air_assist_close_delay": { "name": "Air assist delay" },
-      "smoking_fan_duration": { "name": "Exhaust fan duration" }
+      "air_assist_close_delay": { "name": "Air-assist post-run" },
+      "smoking_fan_duration": { "name": "Exhaust post-run" },
+      "tilt_threshold": { "name": "Tilt threshold" },
+      "moving_threshold": { "name": "Movement threshold" },
+      "camera_exposure_overview": { "name": "Camera exposure (overview)" },
+      "camera_exposure_closeup": { "name": "Camera exposure (close-up)" },
+      "air_assist_gear_cut": { "name": "Air-Assist gear (cut)" },
+      "air_assist_gear_grave": { "name": "Air-Assist gear (engrave)" },
+      "purifier_timeout": { "name": "Purifier auto-off" }
     },
     "select": {
       "flame_alarm_sensitivity": {
         "name": "Flame alarm sensitivity",
         "state": {
           "high": "High",
-          "low": "Low"
+          "low": "Low",
+          "off": "Off"
+        }
+      },
+      "flame_alarm_mode": {
+        "name": "Flame alarm mode",
+        "state": {
+          "mode_1": "Mode 1",
+          "mode_2": "Mode 2",
+          "mode_3": "Mode 3",
+          "mode_4": "Mode 4"
         }
       }
     },
@@ -139,7 +192,10 @@
       "cancel_job": { "name": "Cancel job" },
       "home_all": { "name": "Home all axes" },
       "home_xy": { "name": "Home XY" },
-      "home_z": { "name": "Home Z" }
+      "home_z": { "name": "Home Z" },
+      "home_laser_head": { "name": "Home laser head" },
+      "measure_distance": { "name": "Measure distance" },
+      "quit_lightburn": { "name": "Quit LightBurn mode" }
     }
   }
 }

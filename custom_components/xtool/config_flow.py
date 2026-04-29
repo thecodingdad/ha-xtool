@@ -19,12 +19,13 @@ from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
 
 from .const import (
     CONF_ENABLE_UPDATES,
+    CONF_HAS_AP2,
     CONF_POWER_SWITCH,
     DEFAULT_DEVICE_NAME,
     DOMAIN,
 )
 from .discovery import DiscoveredDevice, discover_devices
-from .protocol import validate_connection
+from .protocols import validate_connection
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,7 +175,6 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 "device_name": conn_info.name,
                 "firmware_version": conn_info.firmware_version,
                 "laser_power_watts": conn_info.laser_power_watts,
-                "protocol_type": conn_info.protocol_type,
             },
         )
 
@@ -202,23 +202,34 @@ class XtoolOptionsFlow(OptionsFlow):
             return self.async_create_entry(data=user_input)
 
         current_switch = current_options.get(CONF_POWER_SWITCH)
+        currently_has_ap2 = current_options.get(CONF_HAS_AP2, False)
+        device_name = self._config_entry.data.get("device_name", "")
+
+        schema_dict: dict[Any, Any] = {
+            vol.Optional(
+                CONF_POWER_SWITCH,
+                description={"suggested_value": current_switch},
+            ): EntitySelector(
+                EntitySelectorConfig(filter={"domain": "switch"})
+            ),
+            vol.Optional(
+                CONF_ENABLE_UPDATES,
+                default=currently_enabled,
+            ): bool,
+        }
+        # AP2 toggle only applies to S1.
+        from .protocols import detect_model
+        from .protocols.s1 import S1Protocol
+
+        if detect_model(device_name).protocol_class is S1Protocol:
+            schema_dict[vol.Optional(
+                CONF_HAS_AP2,
+                default=currently_has_ap2,
+            )] = bool
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_POWER_SWITCH,
-                        description={"suggested_value": current_switch},
-                    ): EntitySelector(
-                        EntitySelectorConfig(filter={"domain": "switch"})
-                    ),
-                    vol.Optional(
-                        CONF_ENABLE_UPDATES,
-                        default=currently_enabled,
-                    ): bool,
-                }
-            ),
+            data_schema=vol.Schema(schema_dict),
         )
 
     async def async_step_confirm_updates(

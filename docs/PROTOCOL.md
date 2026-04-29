@@ -1,21 +1,72 @@
 # xTool Device Protocols
 
 This document describes the network protocols used by xTool laser cutters,
-based on reverse engineering of the xTool XCS Android app and live probes
-against an xTool S1. It covers what the integration uses today and what was
-discovered during firmware analysis but is not yet wired up.
+based on three sources:
 
-The integration speaks three different families depending on the device
+1. Live probes against an xTool S1 (the only hardware available to me).
+2. Reverse engineering of the xTool XCS Android app — both the
+   per-model JavaScript extension modules under
+   `assets/exts/<model>/index.js` and the Java/Kotlin DEX files. **Note:**
+   the APK uses Pairip protection (encrypted DEX blobs decrypted at
+   runtime by `libpairipcore.so`); native protocol code is therefore
+   not visible in standard decompiler output. The JS extension layer
+   does expose the HTTP REST endpoints used by every model.
+3. Cross-checks against the community integrations
+   [Doormat1/XTool_D1_HA](https://github.com/Doormat1/XTool_D1_HA),
+   [BassXT/xtool](https://github.com/BassXT/xtool), and the
+   [1RandomDev/xTool-Connect protocol doc](https://github.com/1RandomDev/xTool-Connect/blob/master/XTOOL_PROTOCOL.md)
+   — which were built from packet captures, the most reliable source
+   for the bits Pairip hides.
+
+The integration speaks four different families depending on the device
 model:
 
 | Family | Models | Transport | Port(s) |
 |---|---|---|---|
-| `ws_mcode` | S1 | WebSocket M-code + HTTP fallback | 8081 (WS), 8080 (HTTP) |
-| `http_mcode` | D1, D1 Pro, D1 Pro 2.0 | HTTP POST M-code | 8080 |
+| `ws_mcode` | S1 | WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
+| `d_series` | D1, D1 Pro, D1 Pro 2.0 | HTTP REST + status-push WebSocket | 8080 (HTTP), 8081 (WS) |
 | `rest` | F1, F1 Ultra, F1 Lite, M1, M1 Ultra, P1, P2, P2S | HTTP REST (JSON) | 8080 |
+| `f1_v2` | F1 firmware 40.51+ | TLS WebSocket (listener-only) | 28900 (wss) |
 
-All three are local-only — no cloud dependency for runtime operation.
+WebSocket usage notes:
+
+- **S1**: bidirectional G-code dialect — both sends commands and
+  receives push frames over WS.
+- **D-series**: WebSocket is read-only — only status events
+  (e.g. `ok:IDLE`, `err:flameCheck`). All writes happen via HTTP.
+- **F1 V2**: TLS WebSocket on a custom port with a hand-shaken JSON
+  push channel. No documented command channel — listener only.
+
+All four are local-only — no cloud dependency for runtime operation.
 (The cloud is only contacted by the firmware-update entity.)
+
+### Capability matrix
+
+Per-model capability flags on `XtoolDeviceModel` gate the entities each
+device exposes. Live values are populated by the matching protocol;
+unsupported models simply do not register the entity.
+
+| Capability | S1 | D-series | P2/P2S | F1 / F1Ultra | M1 / M1U | F1 V2 |
+|---|---|---|---|---|---|---|
+| `has_flame_alarm` | yes | yes | yes | yes | yes | yes (push) |
+| `has_smoking_fan` | yes | — | — | — | — | — |
+| `has_move_stop` (S1 M318 only) | yes | — | — | — | — | — |
+| `has_tilt_sensor` | — | yes | — | — | — | — |
+| `has_moving_sensor` | — | yes | — | — | — | — |
+| `has_limit_switch` | — | yes | — | — | — | — |
+| `has_lid_sensor` (cover binary_sensor) | — | — | yes | — | — | yes |
+| `has_machine_lock` | — | — | — | — | — | yes |
+| `has_ir_led` | — | — | yes | — | — | — |
+| `has_digital_lock` | — | — | yes | — | — | — |
+| `has_distance_measure` | — | — | yes | — | — | — |
+| `has_camera_exposure` | — | — | yes | yes | — | — |
+| `has_fire_record` | — | — | — | F1U only | — | — |
+| `has_laser_head_position` | — | — | yes | yes | — | — |
+| `has_fill_light` (S1 M13) | yes | — | — | — | — | — |
+| `has_fill_light_rest` | — | — | yes | yes | yes | — |
+| `has_camera` (overview + close-up) | — | — | yes | F1U only | — | — |
+| `has_purifier_timeout` | — | — | — | — | — | yes |
+| `has_z_axis` (Z home + axis sensor) | yes | — | yes | — | yes | — |
 
 ## Discovery — UDP broadcast, port 20000
 
@@ -110,7 +161,7 @@ Codes marked **(WS-only)** do not work via HTTP `/cmd`.
 | `M810` | `M810 "<filename>"` | Current job filename |
 | `M815` | `M815 T<seconds>` | Job time |
 | `M321` | `M321 S<0/1>` | SD card present |
-| `M362` | `M362 S<0/1>` | xTouch connected |
+| `M362` | `M362 S<0/1>` | "xTouch" connected — refers to S1's **built-in** 3.5" touch panel, not an accessory; in practice always `S1`. Constant retained as documentation; no entity. |
 | `M1098` | `M1098 "<v0>","<v1>",...` | Accessories with firmware versions (10-element array) |
 | `M54` | `M54 T<0/1/2>` | Riser base / heightening kit |
 | `M2008 A1` | `M2008 A<work_s> B<jobs> C<standby_s> D<runtime_s>` | Lifetime statistics. **Bare `M2008` returns nothing — needs `A1` (or any single param)** |
@@ -217,40 +268,199 @@ Other `get_*` actions return empty.
 
 ---
 
-## HTTP M-code protocol (D-series)
+## D-series protocol (D1 / D1 Pro / D1 Pro 2.0)
 
-Same M-code dialect as the S1 but transported over plain HTTP instead of
-WebSocket. Each command is a `POST /cmd` with the M-code in the body and
-the response is the actual M-code reply (not fire-and-forget like S1's
-`/cmd`).
+Implemented in `d_series_protocol.py`.
 
-D-series-specific M-codes (different from S1):
+### HTTP REST API on port 8080
 
-| Code | Purpose |
+| Endpoint | Method | Returns / Effect |
+|---|---|---|
+| `/ping` | GET | `{"result":"ok"}` — liveness check |
+| `/getmachinetype` | GET | `{"result":"ok","type":"xTool D1Pro"}` |
+| `/getlaserpowertype` | GET | `{"result":"ok","power":10}` |
+| `/getlaserpowerinfo` | GET | `{"result":"ok","type":0,"power":10}` (type: 0=diode, 1=infrared) |
+| `/peripherystatus` | GET | sdCard + safety flags + thresholds + flame sensitivity (see below) |
+| `/progress` | GET | `{"progress":<float>,"working":<ms>,"line":<n>}` |
+| `/system?action=mac` | GET | MAC address |
+| `/system?action=version` | GET | `{"sn":"...","version":"V40.31.006.01 B2"}` |
+| `/system?action=get_working_sta` | GET | `{"working":"0"}` (`0` idle, `1` API job, `2` button job) |
+| `/system?action=offset` | GET | `{x,y}` work-area offset |
+| `/system?action=get_dev_name` / `set_dev_name&name=<n>` | GET | Read or write user-set device name |
+| `/system?action=setLimitStopSwitch&limitStopSwitch=0/1` | GET | Toggle limit-switch safety |
+| `/system?action=setTiltStopSwitch&tiltStopSwitch=0/1` | GET | Toggle tilt-sensor safety |
+| `/system?action=setMovingStopSwitch&movingStopSwitch=0/1` | GET | Toggle motion-sensor safety |
+| `/system?action=setTiltCheckThreshold&tiltCheckThreshold=N` | GET | Tilt threshold (0–255, default 15) |
+| `/system?action=setMovingCheckThreshold&movingCheckThreshold=N` | GET | Movement threshold (default 40) |
+| `/system?action=setFlameAlarmMode&flameAlarmMode=N` | GET | Flame algorithm |
+| `/system?action=setFlameAlarmSensitivity&flameAlarmSensitivity=1/2/3` | GET | High / Low / Off |
+| `/cmd?cmd=<gcode>` | GET | Single G-code |
+| `/cmd` | POST plain text | Multi-line G-code |
+| `/cnc/data?action=pause/resume/stop` | GET | Job control |
+| `/list?dir=…` / `/delete?file=…` | GET | SD card files |
+| `/upload` or `/cnc/data` | POST multipart | Upload G-code |
+| `/upgrade` | POST multipart | Firmware upload (used by Update entity) |
+| `/updater` | GET | Web UI for firmware uploads |
+
+`/peripherystatus` JSON shape:
+
+```json
+{
+  "result": "ok",
+  "status": "normal",
+  "sdCard": 1,
+  "limitStopFlag": 1,
+  "tiltStopFlag": 1,
+  "movingStopFlag": 1,
+  "tiltThreshold": 15,
+  "movingThreshold": 40,
+  "flameAlarmMode": 3,
+  "flameAlarmSensitivity": 1
+}
+```
+
+D-series flame sensitivity values are `1=high`, `2=low`, `3=off` —
+inverse of the S1 mapping (`0/1/2`). The integration converts them in
+`DSERIES_FLAME_SENSITIVITY_MAP` (see `const.py`).
+
+### Status-event WebSocket on port 8081
+
+Plain `ws://<ip>:8081/`. The device pushes single-line text frames
+whenever its state changes. There is **no command channel** — everything
+the integration writes goes via HTTP.
+
+| Frame | Mapped status |
 |---|---|
-| `M96` | Status query — returns `N0` (idle) or `N1` (working) |
-| `M304` | Position query (D-series) |
-| `M310` | Flame alarm setting |
-| `M309` | Flame sensitivity |
-| `M99` | Firmware version |
+| `ok:IDLE` | `idle` |
+| `ok:WORKING_ONLINE` | `processing` |
+| `ok:WORKING_ONLINE_READY` | `processing_ready` |
+| `ok:WORKING_OFFLINE` | `working_button` |
+| `ok:WORKING_FRAMING` | `framing` |
+| `ok:WORKING_FRAME_READY` | `frame_ready` |
+| `ok:PAUSING` | `paused` |
+| `WORK_STOPPED` | `cancelling` |
+| `ok:ERROR` | `error_limit` |
+| `err:flameCheck` | `error_fire_warning` |
+| `err:tiltCheck` | `error_tilt` |
+| `err:movingCheck` | `error_moving` |
+| `err:limitCheck` | `error_limit` |
 
-Implemented in `http_mcode_protocol.py`.
+The WebSocket listener is started lazily on first poll and runs until
+the protocol is disconnected. WS errors are absorbed silently — the
+HTTP poll fallback always provides at least the basic working state.
 
 ---
 
-## REST API (F1 / P2 / M1 / P1 / GS)
+## F1 V2 protocol (F1 firmware 40.51+)
 
-JSON over HTTP. Implemented in `rest_protocol.py`.
+Implemented in `f1v2_protocol.py`. **Listener-only** — no documented
+command channel; the integration consumes push events for status,
+lid, machine lock, and task ID/time.
+
+### Connection
+
+```
+wss://<ip>:28900/websocket?id=<random_uuid>&function=instruction
+```
+
+- TLS, certificate verification disabled (self-signed device cert).
+- Immediately after connect, send TEXT frame
+  `bWFrZWJsb2NrLXh0b29s` (handshake token, base64 of `"makeblock-xtool"`).
+- Heartbeat: send BINARY `\xC0\x00` every 2 s.
+- The probe in `validate_connection` waits up to 5 s for any frame
+  after the handshake — if one arrives, the device is F1 V2.
+
+### Frame parsing
+
+- TEXT: raw JSON.
+- BINARY: device prefixes a small framing header before the JSON.
+  Strategy: locate the first `{`, take everything from there. If the
+  payload starts with `{{` (firmware bug observed in BassXT), drop the
+  leading byte before parsing.
+
+Frame schema:
+
+```json
+{
+  "url": "<path>",
+  "data": {"module": "...", "type": "...", "info": <varies>},
+  "timestamp": 1700000000000
+}
+```
+
+### Event → state mapping
+
+| `url` | `module` | `type` | Mapped state |
+|---|---|---|---|
+| `/work/mode` | `STATUS_CONTROLLER` | `MODE_CHANGE` | `info.mode`: `P_SLEEP→sleeping`, `P_WORK/P_READY/P_ONLINE_READY_WORK/P_OFFLINE_READY_WORK→idle/processing_ready`, `P_WORKING→processing`, `P_WORK_DONE/P_FINISH→finished`, `P_ERROR→error_limit` |
+| `/device/status` | `STATUS_CONTROLLER` | `WORK_PREPARED` | `framing` if `info=="framing"` else `processing_ready` |
+| `/device/status` | `STATUS_CONTROLLER` | `WORK_STARTED` | `framing` or `processing` |
+| `/device/status` | `STATUS_CONTROLLER` | `WORK_FINISHED` | `idle` (if framing finished) or `finished` |
+| `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | `finished`, captures `info.timeUse`, `info.taskId` |
+| `/gap/status` | `GAP` | `OPEN`/`CLOSE` | `state.lid_open` |
+| `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | `state.machine_lock` (OPEN=unlocked, CLOSE=locked) |
+
+---
+
+## REST API (F1 / F1 Ultra / F1 Lite / M1 / M1 Ultra / P1 / P2 / P2S)
+
+JSON over HTTP, implemented in `rest_protocol.py`. Verified against the
+per-model `index.js` bundles in the XCS APK (`assets/exts/<model>/index.js`).
+
+REST models actually use **three different ports**:
+
+| Port | Purpose |
+|---|---|
+| 8080 | Main HTTP API — device info, running status, peripherals |
+| 8087 | Firmware upload (`/upgrade_version` handshake + `/package` flash) |
+| 8329 | Camera (`/camera/snap`, `/camera/exposure`) |
+
+### Main API on port 8080
 
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/device/machineInfo` | GET | Serial, model, name, firmware |
 | `/device/runningStatus` | GET | Job state, mode |
 | `/cnc/status` | GET | Status code mappable to M222 codes |
-| `/peripheral/...` | GET/POST | Camera, fans, fill light, drawer |
-| `/upgrade_version` | POST JSON | Firmware handshake (`{filename, fileSize}`) |
-| `/package` | POST multipart | Firmware binary upload |
-| `/upgrade` | POST multipart | Alternative single-step firmware upload (no handshake) |
+| `/cnc/data?action=upload&zip=false&id=-1` | POST | Upload G-code |
+| `/processing/upload` | POST multipart | Upload processing G-code (P2 family) |
+| `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness |
+| `/peripheral/laser_head` | POST | `{action:"go_to",x,y,waitTime}` move head, `{action:"get_coord"}` query |
+| `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close-up, 2=global) — P2/P2S |
+| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover open |
+| `/peripheral/airassist?action=get` | GET | Air-Assist V2 connect state — `state==="on"` means accessory attached. Used by M1 Ultra. |
+| `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
+| `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
+| `/peripheral/digital_lock` | POST | Lock cover |
+| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR distance |
+| `/device/modeSwitch` | POST | Switch mode |
+| `/parts` | POST multipart, port **8080** | Upload accessory firmware |
+| `/partsProgress` | GET, port **8080** | Accessory firmware update progress |
+| `/file?action=…` | GET | Download device files (calibration, machinetype.txt, …) |
+
+### Firmware update on port 8087
+
+Different from the S1's `/burn` flow. Two-step:
+
+| Endpoint | Method | Notes |
+|---|---|---|
+| `/upgrade_version?force_upgrade=1[&machine_type=<code>]` | GET (or POST) | Handshake. Some models require a `machine_type` param: P2/P2S = `MXP`, M1 Ultra = `MLM`. |
+| `/package?action=burn` | POST multipart `file=<bin>` | Upload + flash; device reboots on success |
+| `/script` | POST multipart, port **8087** | Upload firmware script (M1) |
+| `/burn?reboot=true` | POST, port **8087** | Direct burn (M1) |
+
+The integration's `_flash_rest` in `update.py` follows this flow.
+
+### Camera on port 8329
+
+P2/P2S/F1/F1 Ultra:
+
+| Endpoint | Method | Notes |
+|---|---|---|
+| `/camera/snap?stream=0` | GET, blob | Global / overview camera |
+| `/camera/snap?stream=1` | GET, blob | Local / close-up camera |
+| `/camera/exposure?stream=0/1` | POST `{value:<int>}` | Set exposure |
+| `/camera/fireRecord` | POST, blob | Recorded flame snapshot (F1 Ultra) |
 
 ### REST status mapping
 

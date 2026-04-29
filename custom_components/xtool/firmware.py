@@ -1,42 +1,30 @@
-"""xTool firmware update checker and installer via cloud API."""
+"""xTool firmware update cloud-API client.
+
+Speaks to ``api.xtool.com``; protocol-specific flashing lives on each
+``XtoolProtocol`` implementation (see ``protocols/base.py FirmwareFile`` /
+``flash_firmware``).
+"""
 
 from __future__ import annotations
 
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
 
 import aiohttp
 
 from .const import FIRMWARE_API_BASE
+from .protocols.base import FirmwareFile, FirmwareUpdateInfo  # re-exported
 
 _LOGGER = logging.getLogger(__name__)
 
-
-@dataclass
-class FirmwareFile:
-    """A single firmware file to download and flash."""
-
-    board_id: str
-    name: str
-    url: str
-    md5: str
-    file_size: int
-    burn_type: str = ""
-
-
-@dataclass
-class FirmwareUpdateInfo:
-    """Information about an available firmware update."""
-
-    latest_version: str
-    release_summary: str
-    files: list[FirmwareFile] = field(default_factory=list)
-    total_size: int = 0
-    # Per-board map of new versions (multi-package only). Keys are the
-    # board_id values from FirmwareFile (e.g. "xcs-d2-0x20").
-    board_versions: dict[str, str] = field(default_factory=dict)
+__all__ = [
+    "FirmwareFile",
+    "FirmwareUpdateInfo",
+    "check_firmware_update",
+    "download_firmware",
+    "parse_firmware_version",
+]
 
 
 def parse_firmware_version(raw: str) -> str:
