@@ -682,12 +682,17 @@ not exposed.**
 
 ## References
 
-- `discovery.py` — UDP scan
-- `protocol.py` — abstract base, dataclasses, parse helpers
-- `ws_protocol.py` — S1 WebSocket implementation, XCS compat mode
-- `http_mcode_protocol.py` — D-series HTTP M-code
-- `rest_protocol.py` — F1/P2/M1/P1/GS REST API
-- `firmware.py` — cloud update API client
-- `update.py` — `UpdateEntity` integration with progress polling
-- `const.py` — every M-code, HTTP path, action name as a constant. **No
-  string literal of an M-code or path may live outside this file.**
+Per-family layout — each family owns its protocol, models, coordinator and entity factories. M-codes / HTTP paths / status maps live next to the protocol that uses them.
+
+- [`custom_components/xtool/discovery.py`](../custom_components/xtool/discovery.py) — UDP broadcast scan + `identify_host` unicast probe.
+- [`custom_components/xtool/protocols/base.py`](../custom_components/xtool/protocols/base.py) — `XtoolProtocol` abstract base, `XtoolDeviceModel`, `XtoolDeviceState`, `DeviceInfo`, `LaserInfo`, parse helpers, firmware-update dataclasses.
+- [`custom_components/xtool/protocols/__init__.py`](../custom_components/xtool/protocols/__init__.py) — `DEVICE_MODELS` registry, `detect_model`, `validate_connection`.
+- **S1** — [`protocol.py`](../custom_components/xtool/protocols/s1/protocol.py) (WebSocket M-code + HTTP fallback + XCS Compatibility Mode + AP2 push parser + flash) · [`models.py`](../custom_components/xtool/protocols/s1/models.py) · [`coordinator.py`](../custom_components/xtool/protocols/s1/coordinator.py) (XCS hooks, AP2 toggle, multi-board firmware) · [`entities.py`](../custom_components/xtool/protocols/s1/entities.py) (switches, numbers, buttons, fill light, accessories / alarm / AP2 binary sensors, `S1FirmwareUpdate` composite, flame-alarm sensitivity select).
+- **D-series** — [`protocol.py`](../custom_components/xtool/protocols/d_series/protocol.py) (HTTP `/system?action=...` + WS push listener + flame setters) · [`models.py`](../custom_components/xtool/protocols/d_series/models.py) · [`coordinator.py`](../custom_components/xtool/protocols/d_series/coordinator.py) · [`entities.py`](../custom_components/xtool/protocols/d_series/entities.py) (tilt/limit/moving safety switches, thresholds, flame mode, origin offsets, quit-LightBurn).
+- **REST** — [`protocol.py`](../custom_components/xtool/protocols/rest/protocol.py) (port 8080 device control, port 8087 firmware flash, port 8329 cameras) · [`models.py`](../custom_components/xtool/protocols/rest/models.py) (F1 / F1 Ultra / F1 Lite / M1 / M1 Ultra / P1 / P2 / P2S) · [`coordinator.py`](../custom_components/xtool/protocols/rest/coordinator.py) (sets `machine_type` once at init) · [`entities.py`](../custom_components/xtool/protocols/rest/entities.py) (IR LEDs, digital lock, camera exposure, fill light, cameras, fire-record, last-distance, Air-Assist connected + gears).
+- **F1 V2** — [`protocol.py`](../custom_components/xtool/protocols/f1v2/protocol.py) (TLS WebSocket listener, port 28900) · [`models.py`](../custom_components/xtool/protocols/f1v2/models.py) · [`coordinator.py`](../custom_components/xtool/protocols/f1v2/coordinator.py) · [`entities.py`](../custom_components/xtool/protocols/f1v2/entities.py) (read-only push toggles, purifier timeout, machine lock, working-mode + last-button-event diagnostics, `F1V2FirmwareUpdate`).
+- [`custom_components/xtool/coordinator.py`](../custom_components/xtool/coordinator.py) — `XtoolCoordinator` base (generic state, polymorphic `build_<platform>()` hooks).
+- [`custom_components/xtool/firmware.py`](../custom_components/xtool/firmware.py) — cloud update API client (`check_firmware_update`, `download_firmware`, `parse_firmware_version`).
+- [`custom_components/xtool/update.py`](../custom_components/xtool/update.py) — base `XtoolFirmwareUpdate` orchestrator (cloud check + download/flash loop + progress UI). Per-family subclasses live in each family's `entities.py`.
+- Platform dispatchers — [`switch.py`](../custom_components/xtool/switch.py) · [`sensor.py`](../custom_components/xtool/sensor.py) · [`binary_sensor.py`](../custom_components/xtool/binary_sensor.py) · [`number.py`](../custom_components/xtool/number.py) · [`button.py`](../custom_components/xtool/button.py) · [`light.py`](../custom_components/xtool/light.py) · [`camera.py`](../custom_components/xtool/camera.py) · [`select.py`](../custom_components/xtool/select.py). Each one is a thin `coord.build_<platform>()` adapter.
+- [`custom_components/xtool/const.py`](../custom_components/xtool/const.py) — only truly cross-cutting values (`DOMAIN`, config keys, `XtoolStatus`, `FlameAlarmSensitivity`, brightness scale, firmware-cloud constants). M-code / HTTP-path constants live with their owning protocol.
