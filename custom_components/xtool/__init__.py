@@ -24,7 +24,7 @@ from .const import (
     FIRMWARE_CHECK_INTERVAL,
 )
 from .coordinator import XtoolCoordinator
-from .protocols import LaserInfo, detect_model
+from .protocols import DEVICE_MODELS, LaserInfo, detect_model
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -52,7 +52,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     device_name = entry.data.get("device_name", DEFAULT_DEVICE_NAME)
     serial_number = entry.data.get("serial_number", "")
     firmware_version = entry.data.get("firmware_version", "")
-    model = detect_model(device_name)
+
+    # Prefer the explicit (model_id, protocol_version) pair the config
+    # flow persisted; fall back to name-based detect_model for legacy
+    # entries that pre-date the V2 family split.
+    persisted_model_id = entry.data.get("model_id")
+    persisted_protocol_version = entry.data.get("protocol_version", "V1")
+    composite_key = f"{persisted_model_id}_{persisted_protocol_version}"
+    model = DEVICE_MODELS.get(composite_key) if persisted_model_id else None
+    if model is None:
+        model = detect_model(device_name)
     if model.protocol_class is None or model.coordinator_class is None:
         raise RuntimeError(
             f"Unknown xTool model {device_name!r} — cannot pick a protocol"
@@ -80,6 +89,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         CONF_DONGLE_POLL_INTERVAL, DEFAULT_DONGLE_POLL_INTERVAL
     )
 
+    # Each model entry already names its concrete protocol_class, so no
+    # V1/V2 switching is needed at runtime — the right entry was picked
+    # at config-flow validation time.
     protocol = model.protocol_class(host)
 
     coordinator = model.coordinator_class(

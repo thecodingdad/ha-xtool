@@ -19,7 +19,6 @@ from .d_series import (
     XTOOL_D1_PRO,
     XTOOL_D1_PRO_2_0,
 )
-from .f1v2 import F1V2Protocol, XTOOL_F1_V2
 from .rest import (
     RestProtocol,
     XTOOL_APPAREL_PRINTER,
@@ -40,78 +39,145 @@ from .rest import (
     XTOOL_P3,
 )
 from .s1 import S1Protocol, XTOOL_S1
+from .ws_v2 import (
+    WSV2_MODELS,
+    WSV2Protocol,
+    probe_v2,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _normalize(text: str) -> str:
+    return text.upper().replace(" ", "").replace("-", "")
+
+
+def _registry_key(model: XtoolDeviceModel) -> str:
+    """Composite key so V1/V2 siblings of one model_id don't collide."""
+    return f"{model.model_id}_{model.protocol_version}"
+
+
+_ALL_MODELS: tuple[XtoolDeviceModel, ...] = (
+    XTOOL_S1,
+    XTOOL_D1, XTOOL_D1_PRO, XTOOL_D1_PRO_2_0,
+    XTOOL_F1, XTOOL_F1_ULTRA, XTOOL_F1_ULTRA_V2, XTOOL_GS005,
+    XTOOL_F2, XTOOL_F2_ULTRA, XTOOL_F2_ULTRA_SINGLE, XTOOL_F2_ULTRA_UV,
+    XTOOL_M1, XTOOL_M1_ULTRA, XTOOL_METALFAB,
+    XTOOL_P1, XTOOL_P2, XTOOL_P2S, XTOOL_P3,
+    XTOOL_APPAREL_PRINTER,
+    *WSV2_MODELS,
+)
+
+
 DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
-    m.model_id: m
-    for m in (
-        XTOOL_S1,
-        XTOOL_D1, XTOOL_D1_PRO, XTOOL_D1_PRO_2_0,
-        XTOOL_F1, XTOOL_F1_ULTRA, XTOOL_F1_ULTRA_V2, XTOOL_F1_V2, XTOOL_GS005,
-        XTOOL_F2, XTOOL_F2_ULTRA, XTOOL_F2_ULTRA_SINGLE, XTOOL_F2_ULTRA_UV,
-        XTOOL_M1, XTOOL_M1_ULTRA, XTOOL_METALFAB,
-        XTOOL_P1, XTOOL_P2, XTOOL_P2S, XTOOL_P3,
-        XTOOL_APPAREL_PRINTER,
-    )
+    _registry_key(m): m for m in _ALL_MODELS
 }
 
 
-def detect_model(device_name: str) -> XtoolDeviceModel:
-    """Match a reported device name to a known model spec.
-
-    Iterates models sorted by ``model_id`` length descending so the longest
-    substring wins — without this, ``"xTool F1 Ultra"`` would match the
-    plain ``F1`` entry before the more specific ``F1Ultra`` one. Returns a
-    placeholder unknown model (no protocol_class) on miss so the caller can
-    present a clear error.
+def detect_models(device_name: str) -> list[XtoolDeviceModel]:
+    """All registered models whose discovery_match (or model_id) appears in
+    the discovered name. Sorted by match length descending so longer
+    matches rank first within each protocol_version. Returns ``[]`` on
+    no match.
     """
-    name_upper = device_name.upper().replace(" ", "").replace("-", "")
-    candidates = sorted(
-        DEVICE_MODELS.values(),
-        key=lambda m: len(m.model_id),
-        reverse=True,
-    )
+    name_norm = _normalize(device_name)
+    hits: list[tuple[int, XtoolDeviceModel]] = []
+    for model in _ALL_MODELS:
+        patterns = model.discovery_match or (model.model_id,)
+        for pattern in patterns:
+            if not pattern:
+                continue
+            if _normalize(pattern) in name_norm:
+                hits.append((len(_normalize(pattern)), model))
+                break
+    hits.sort(key=lambda h: h[0], reverse=True)
+    return [model for _, model in hits]
+
+
+def detect_model(device_name: str) -> XtoolDeviceModel:
+    """Backwards-compat: first V1 candidate, else first candidate, else
+    placeholder. Used by the options flow's "is this an S1?" check —
+    callers that need V1/V2 disambiguation should use ``detect_models``.
+    """
+    candidates = detect_models(device_name)
+    if not candidates:
+        return XtoolDeviceModel(model_id="unknown", name=device_name)
     for model in candidates:
-        if model.model_id.upper().replace(" ", "").replace("-", "") in name_upper:
+        if model.protocol_version == "V1":
             return model
-    return XtoolDeviceModel(model_id="unknown", name=device_name)
+    return candidates[0]
 
 
 async def validate_connection(host: str) -> ConnectionInfo | None:
-    """Identify a device by UDP probe, then validate via its protocol."""
+    """Identify a device by UDP probe, then validate via its protocol.
+
+    Selection algorithm:
+
+    1. UDP discovery → device name.
+    2. ``candidates = detect_models(name)``  (1..N entries)
+    3. Pick V2 candidate if probe_v2() succeeds; else V1; else V2-only.
+    4. Connect with that candidate's protocol_class and confirm.
+    """
     discovered = await identify_host(host)
     if discovered is None or not discovered.name:
         _LOGGER.debug("No UDP reply from %s — cannot identify device", host)
         return None
 
-    model = detect_model(discovered.name)
-    if model.protocol_class is None:
+    candidates = detect_models(discovered.name)
+    if not candidates:
         _LOGGER.warning(
-            "Unrecognised xTool device %r at %s — no matching protocol",
+            "Unrecognised xTool device %r at %s — no matching model",
             discovered.name, host,
         )
         return None
 
-    protocol = model.protocol_class(host)
+    v1_candidate = next(
+        (m for m in candidates if m.protocol_version == "V1"), None
+    )
+    v2_candidate = next(
+        (m for m in candidates if m.protocol_version == "V2"), None
+    )
+
+    chosen: XtoolDeviceModel | None = None
+    if v2_candidate is not None and await probe_v2(host):
+        chosen = v2_candidate
+        _LOGGER.info(
+            "xTool %s at %s answered V2 probe — using V2 protocol",
+            chosen.model_id, host,
+        )
+    elif v1_candidate is not None:
+        chosen = v1_candidate
+    elif v2_candidate is not None:
+        # V2-only model (no V1 sibling). Probe failed but try anyway —
+        # either it answers or the connect below fails cleanly.
+        chosen = v2_candidate
+
+    if chosen is None or chosen.protocol_class is None:
+        _LOGGER.warning(
+            "No usable protocol for xTool device %r at %s",
+            discovered.name, host,
+        )
+        return None
+
+    protocol = chosen.protocol_class(host)
     try:
         await protocol.connect()
         info = await protocol.get_device_info()
         version = await protocol.get_version()
-        # Prefer the main MCU firmware reported via M-code/JSON; fall back to
-        # whatever get_version() yielded.
         firmware = info.main_firmware or version or ""
         return ConnectionInfo(
             host=host,
-            name=info.device_name or model.name,
+            name=info.device_name or chosen.name,
             serial_number=info.serial_number,
             firmware_version=firmware,
             laser_power_watts=info.laser_power_watts,
             device_info=info,
+            protocol_version=chosen.protocol_version,
+            model_id=chosen.model_id,
         )
     except Exception as err:
         _LOGGER.debug("Validation against %s as %s failed: %s",
-                      host, model.model_id, err)
+                      host, chosen.model_id, err)
         return None
     finally:
         await protocol.disconnect()
@@ -122,13 +188,14 @@ __all__ = [
     "DEVICE_MODELS",
     "DSeriesProtocol",
     "DeviceInfo",
-    "F1V2Protocol",
     "LaserInfo",
     "RestProtocol",
     "S1Protocol",
+    "WSV2Protocol",
     "XtoolDeviceModel",
     "XtoolDeviceState",
     "XtoolProtocol",
     "detect_model",
+    "detect_models",
     "validate_connection",
 ]

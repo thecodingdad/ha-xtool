@@ -191,6 +191,8 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 "device_name": conn_info.name,
                 "firmware_version": conn_info.firmware_version,
                 "laser_power_watts": conn_info.laser_power_watts,
+                "protocol_version": conn_info.protocol_version,
+                "model_id": conn_info.model_id,
             },
         )
 

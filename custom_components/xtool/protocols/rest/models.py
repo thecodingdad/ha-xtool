@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..base import XtoolDeviceModel
+
 from .coordinator import RestCoordinator
 from .protocol import RestProtocol
 

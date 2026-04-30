@@ -80,6 +80,14 @@ class ConnectionInfo:
     firmware_version: str = ""
     laser_power_watts: int = 0
     device_info: DeviceInfo | None = None
+    # "V1" for legacy HTTP REST / WS-mcode / D-series, "V2" when the
+    # device's TLS WebSocket on port 28900 answered the probe. Persisted
+    # in the config entry so future setups skip the probe.
+    protocol_version: str = "V1"
+    # Resolved model id (matches ``XtoolDeviceModel.model_id`` of the
+    # candidate that won the V1/V2 selection). Persisted to entry data so
+    # ``async_setup_entry`` re-resolves the exact entry on every reload.
+    model_id: str = ""
 
 
 @dataclass
@@ -126,6 +134,17 @@ class XtoolDeviceModel:
     firmware_board_ids: tuple[str, ...] = ()
     firmware_machine_type: str = ""
     firmware_flash_strategy: str = "default"  # REST family: "default" or "m1_four_step"
+    # Protocol version this entry targets. ``"V1"`` for legacy HTTP REST /
+    # WS-mcode / D-series, ``"V2"`` for the WS-tunneled API on port 28900.
+    # Two registry entries can share the same ``model_id`` as long as they
+    # differ in ``protocol_version`` — they represent the same physical
+    # device on different firmware lines.
+    protocol_version: str = "V1"
+    # Substrings to match against the discovered device name. Empty defaults
+    # to ``(model_id,)``. Both V1 and V2 siblings of the same device share
+    # the same discovery_match so the candidate-list step in
+    # ``validate_connection`` returns both.
+    discovery_match: tuple[str, ...] = ()
 
 
 @dataclass
@@ -167,7 +186,7 @@ class XtoolDeviceState:
     air_assist_gear_cut: int = 0  # REST: airassistCut config (default cut gear)
     air_assist_gear_grave: int = 0  # REST: airassistGrave config (default engrave gear)
 
-    # REST diagnostic / config — last_button_event reused from F1V2
+    # REST diagnostic / config — last_button_event reused from WS-V2
     sleep_timeout: int | None = None  # /getsleeptimeout (seconds)
     sleep_timeout_open_gap: int | None = None  # /getsleeptimeoutopengap
     fill_light_auto_off: int | None = None  # /getFilllightAutoClosetimout
