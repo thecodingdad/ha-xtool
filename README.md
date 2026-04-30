@@ -25,9 +25,9 @@ This integration communicates directly with your xTool device over the local net
 - Camera support for P2 / P2S / F1 Ultra family / F2 Ultra family / P3 / MetalFab (overview + close-up + flame record)
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
-- Push state updates via WebSocket (S1, F1 V2, D-series) — minimal polling delay
+- Push state updates via WebSocket (S1, V2 firmware family, D-series) — minimal polling delay
 - Automatic reconnect on network interruption
-- Multi-model support with auto-detected protocol
+- Multi-model support with auto-detected protocol (V1 vs V2 firmware probed at setup)
 
 ## Prerequisites
 
@@ -42,8 +42,10 @@ The integration supports four protocol families that cover all current xTool mod
 |----------|--------|---------------|
 | WebSocket M-code | S1 | bidirectional WS (port 8081) + HTTP fallback (port 8080) |
 | HTTP REST + status push WS | D1, D1 Pro, D1 Pro 2.0 | HTTP `/cmd` writes (port 8080) + read-only WS status push (port 8081) |
-| REST API | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (ports 8080 main / 8087 firmware / 8329 camera) |
-| TLS WebSocket listener | F1 V2 (firmware 40.51+) | wss (port 28900), push-only |
+| REST API (V1 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (ports 8080 main / 8087 firmware / 8329 camera) |
+| WS-V2 (V2 firmware ≥ 40.51) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
+
+V1/V2 selection is automatic. At setup the integration probes port 28900; devices that answer use the WS-V2 family, devices that don't fall back to the legacy REST API on port 8080. Same physical device behind one config entry — re-add the device after a major firmware upgrade to switch families.
 
 > **Note:** The integration was developed and tested with an xTool S1. Other models are supported based on reverse-engineering the xTool XCS Android app and the newer xTool Studio Windows app, but have not been tested with real hardware. Community feedback is welcome!
 
@@ -111,8 +113,8 @@ The available options are gated by the device's protocol family — only relevan
 | Session count | Total number of job starts (total_increasing) |
 | Standby time | Lifetime standby hours (total_increasing) |
 | Laser module runtime | Current laser module runtime hours (total_increasing) |
-| Last button event | Last physical button event (single / long / double press). **REST family.** |
-| Working mode | Current device working mode (cut / engrave / ...). **REST family.** |
+| Last button event | Last physical button event (single / long / double press). **REST + WS-V2 families.** |
+| Working mode | Current device working mode (cut / engrave / ...). **REST + WS-V2 families.** |
 | Workhead | Detected workhead identity (laser / knife / inkjet / ...). **M1 Ultra.** |
 | Workhead Z height | Workhead Z height offset in mm. **M1 Ultra.** |
 | Z-axis temperature | Z-axis NTC temperature. **M1 Ultra.** |
@@ -132,7 +134,7 @@ The available options are gated by the device's protocol family — only relevan
 | Active connections | Number of WebSocket clients currently connected to the laser (HA + XCS app + …). Useful to spot when the XCS app has kicked the integration. **S1 only.** |
 | Origin offset X / Y | Last set work-area origin offset. **D-series only.** |
 | Last distance | Last IR distance measurement result. **P2 / P2S only.** |
-| Last job time | F1 V2 diagnostic snapshot from push frames. **F1 V2 only.** |
+| Last job time | Last completed job duration from push frames. **WS-V2 family.** |
 | Print tool type | Print tool kind reported by device. **REST family.** |
 | Hardware type | Hardware revision string. **REST family.** |
 
@@ -146,14 +148,13 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |--------|-------------|
-| Buzzer / Beep | Enable/disable audio feedback. (S1 + REST + F1 V2 push) |
+| Buzzer / Beep | Enable/disable audio feedback. (S1 + REST family) |
 | Move stop | Enable/disable emergency movement stop |
 | Exhaust fan | Enable/disable smoke extraction fan |
 | Power | Controls the linked smart plug (only when configured in options) |
 | Tilt stop / Limit stop / Move stop (D-series) | Per-sensor safety toggles. **D-series only.** |
 | IR LED close-up / IR LED global | Cover and global IR illumination. **P2 / P2S only.** |
 | Cover lock | Cover digital lock control. **P2 / P2S only.** |
-| Flame alarm / Cover check / Lock check | Read-only push toggles mirroring device config. **F1 V2 only.** |
 | Drawer check / Filter check / Purifier check | Safety enforcement toggles (require accessory present before job). **REST family.** |
 | Purifier auto-continue | Keep purifier running after job ends. **REST family.** |
 | Cooling fan | CPU + laser cooling fan toggle. **REST family.** |
@@ -167,7 +168,7 @@ The available options are gated by the device's protocol family — only relevan
 | Tilt threshold / Movement threshold | 0-255 | — | D-series sensor sensitivities |
 | Camera exposure (overview / close-up) | 0-255 | — | Camera exposure values. **All REST family models with cameras (F1 family / F2 family / P2 / P2S / P3).** |
 | Air-Assist gear (cut / engrave) | 0-4 | — | Default Air-Assist gear written to user config — applied to next job. **M1 Ultra only; only available when an Air-Assist accessory is attached.** |
-| Purifier auto-off | 0-3600 | seconds | Air-purifier auto-off delay (REST family + F1 V2 push) |
+| Purifier auto-off | 0-3600 | seconds | Air-purifier auto-off delay. **REST family.** |
 | Sleep timeout | 0-3600 | seconds | Idle sleep timeout. **REST family.** |
 | Sleep timeout (cover open) | 0-3600 | seconds | Idle sleep timeout while cover is open. **REST family.** |
 | Fill-light auto-off | 0-3600 | seconds | Built-in fill light auto-off. **REST family.** |
@@ -210,9 +211,9 @@ The available options are gated by the device's protocol family — only relevan
 | XCS compatibility mode | Diagnostic flag — on when the integration detects the XCS desktop app holding the WebSocket and switches all writes to HTTP `/cmd`. **S1 only.** |
 | Air cleaner running | AP2 air cleaner currently running. **S1 with AP2 only.** |
 | Air cleaner connected | AP2 module slot in the accessories array is populated. **S1 with AP2 only.** |
-| Air-Assist connected | Air-Assist V2 accessory connected. **M1 Ultra only.** |
-| Cover | Cover / lid open detection. **F1 V2 (push), P2 / P2S / P3 / MetalFab.** |
-| Machine lock | Machine lock state (LOCK device class — `on` = unlocked). **F1 V2 / F1 family / F2 family.** |
+| Air-Assist connected | Air-Assist V2 accessory connected. **M1 Ultra + WS-V2 family.** |
+| Cover | Cover / lid open detection. **WS-V2 family (push), P2 / P2S / P3 / MetalFab.** |
+| Machine lock | Machine lock state (LOCK device class — `on` = unlocked). **F1 family / F2 family / WS-V2.** |
 | Drawer | Front-drawer position. **M1 Ultra / P2 / P2S / P3 / MetalFab.** |
 | Cooling fan | Cooling fan running. **REST family.** |
 | Exhaust fan | Smoke extraction running. **REST family.** |
@@ -263,7 +264,7 @@ The integration speaks four protocol families, all reverse-engineered from the x
 - **WebSocket port 8081** (D-series) — read-only status push (`ok:IDLE`, `err:flameCheck`, …)
 - **HTTP port 8087** (REST family) — firmware handshake + flash
 - **HTTP port 8329** (REST family) — camera snap + exposure
-- **TLS WebSocket port 28900** (F1 V2, firmware 40.51+) — listener-only push channel
+- **TLS WebSocket port 28900** (WS-V2 family, V2 firmware ≥ 40.51) — three concurrent channels (`function=instruction` JSON request/response + push events, `function=file_stream` binary uploads, `function=media_stream` camera frames). Replaces the legacy REST API on devices running V2 firmware
 
 Commands use a G-code dialect (M-codes): `M222` (status), `M13` (light), `M340` (flame alarm), `M2003` (full device info), `M9098` (BLE accessories), etc.
 
