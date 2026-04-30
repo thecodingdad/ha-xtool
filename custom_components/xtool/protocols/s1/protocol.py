@@ -18,6 +18,7 @@ we switch to XCS Compatibility Mode (HTTP-only operation via POST /cmd).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -101,12 +102,26 @@ CMD_AIRFLOW_V2 = "M9009"
 CMD_ACCESSORIES = "M1098"
 CMD_LIFETIME_STATS = "M2008 A1"  # bare M2008 returns nothing — needs any param
 CMD_LIGHT_ACTIVE = "M15"  # Also returns air assist status: A{enabled} S{gear}
-CMD_PROBE_Z = "M313"
+# Z-probe / measure-mode M-codes (XCS startMeasure flow). Kept here for
+# documentation; the integration does not currently expose a Z-probe entity
+# because the on-device measure flow could not be reliably reproduced via
+# either WebSocket or the HTTP /cmd endpoint.
+CMD_PROBE_Z = "M313"               # XCS push frame "M313 X<f>Y<f>Z<f>" (Z value)
+CMD_ZPROBE_TRIGGER = "M311 S0"     # XCS startMeasure
+CMD_ZPROBE_RETRACT = "M311 R0"     # XCS resetFocusModel (only effective at xTouchResetPos)
+CMD_ENTER_MEASURE_MODE = "M312 S1" # XCS enterMeasureMode prelude
+CMD_EXIT_MEASURE_MODE = "M312 S0"  # XCS exitMeasureMode
+CMD_GET_XTOUCH_RESET_POS = "M366"  # XCS deviceInfo position 5 → "X<n> Y<n>"
+CMD_MOTION_INIT = "M110 X1 Y1 Z1"  # XCS prelude before raw G-code moves
+# After-measure speeds (XCS afterMeasure: J2*60 = 900 mm/min, Xb = 12000 mm/min)
+ZPROBE_Z_LIFT_SPEED = 900
+ZPROBE_RESET_MOVE_SPEED = 12000
 CMD_SERIAL_NUMBER = "M310"
 CMD_FIRMWARE_VERSION = "M99"
 CMD_LASER_INFO = "M116"
 CMD_RISER_BASE = "M54"
 CMD_WORKSPACE_DIMS = "M223"  # response: "M223 X<mm> Y<mm> Z<mm>"
+CMD_DONGLE_CONNECTED = "M9098"  # Dongle: list connected BLE accessories
 CMD_FULL_STATE_PUSH = "M2211"  # triggers full-state push frames (cheaper than M2003)
 CMD_AIRFLOW_PURIFIER = "M9039"  # AP2 air cleaner state (push frame + query trigger)
 AP2_POLL_INTERVAL = 30  # seconds between explicit M9039 queries when AP2 is enabled
@@ -115,6 +130,16 @@ AP2_POLL_INTERVAL = 30  # seconds between explicit M9039 queries when AP2 is ena
 CMD_PAUSE_JOB = "M22 S1"
 CMD_RESUME_JOB = "M22 S0"
 CMD_ENTER_UPGRADE_MODE = "M22 S3"
+
+# Per-board firmware filenames matching XCS / xTool Studio params.filename.
+# The S1 firmware routes based on this path during the /upload step.
+S1_FLASH_FILENAMES = {
+    "xTool-d2-0x20": "update/motion_firmware/mcu_firmware.bin",
+    "xTool-d2-0x21": "update/laser_firmware/mcu_firmware.bin",
+    # xTool Studio uses `network_firmware`; XCS Android used `wifi_firmware`.
+    # Newer firmware accepts the network_firmware path — switch to it.
+    "xTool-d2-0x22": "update/network_firmware/mcu_firmware.bin",
+}
 CMD_CANCEL_JOB = "M108"
 CMD_HOME_ALL = "M111 S7"
 CMD_HOME_XY = "M111 S3"
@@ -134,6 +159,7 @@ XCS_KICK_WINDOW = 30.0  # seconds
 XCS_RECOVERY_INTERVAL = 60.0
 XCS_KICK_DETECTION_SECONDS = 10.0
 STATS_POLL_INTERVAL = 300  # seconds between M2008 polls (5 minutes)
+DONGLE_POLL_INTERVAL = 60  # seconds between M9098 (BLE accessories) polls
 
 # M2003 JSON response keys
 INFO_KEY_SERIAL_NUMBER = "M310"
@@ -309,17 +335,38 @@ class S1Protocol(XtoolProtocol):
         # Rotating command order: failed commands get priority next cycle
         self._failed_cmds: list[str] = []
 
+        # Configurable poll intervals (seconds). Coordinator overrides these
+        # via set_poll_intervals based on the user's options.
+        self._stats_interval: int = STATS_POLL_INTERVAL
+        self._dongle_interval: int = DONGLE_POLL_INTERVAL
+        self._ap2_interval: int = AP2_POLL_INTERVAL
+
         # Lifetime stats slow poll
-        self._last_stats_poll: float = -STATS_POLL_INTERVAL
+        self._last_stats_poll: float = -float(self._stats_interval)
+        self._last_dongle_poll: float = -float(self._dongle_interval)
 
         # AP2 air-cleaner state (parsed from M9039 push frames)
         self._ap2_state: dict[str, Any] = {}
-        self._last_ap2_poll: float = -AP2_POLL_INTERVAL
+        self._last_ap2_poll: float = -float(self._ap2_interval)
         self._ap2_enabled: bool = False
 
     def set_ap2_enabled(self, enabled: bool) -> None:
         """Toggle AP2 polling. Called by coordinator from config option."""
         self._ap2_enabled = enabled
+
+    def set_poll_intervals(
+        self,
+        ap2: int | None = None,
+        stats: int | None = None,
+        dongle: int | None = None,
+    ) -> None:
+        """Override per-poll cadences from the user's options."""
+        if ap2 is not None:
+            self._ap2_interval = max(int(ap2), 1)
+        if stats is not None:
+            self._stats_interval = max(int(stats), 1)
+        if dongle is not None:
+            self._dongle_interval = max(int(dongle), 1)
 
     @property
     def connected(self) -> bool:
@@ -500,7 +547,7 @@ class S1Protocol(XtoolProtocol):
         if " " not in text:
             return
         head, _, tail = text.partition(" ")
-        if head in (CMD_DEVICE_STATUS, CMD_TASK_ID, CMD_FLAME_ALARM, CMD_PROBE_Z, CMD_LIGHT_ACTIVE):
+        if head in (CMD_DEVICE_STATUS, CMD_TASK_ID, CMD_FLAME_ALARM, CMD_LIGHT_ACTIVE):
             self._push_state[head] = tail.strip()
         elif head == CMD_AIRFLOW_PURIFIER:
             parsed = _parse_m9039(tail.strip())
@@ -695,7 +742,26 @@ class S1Protocol(XtoolProtocol):
             state.task_id = "" if task_id == "NULL" else task_id
 
         if r[CMD_TASK_TIME]:
-            state.task_time = parse_param_int(r[CMD_TASK_TIME], "T")
+            # M815 keeps incrementing on the device even when no job is
+            # active (it appears to track wall-clock seconds since the
+            # last process started). Only surface the value while the
+            # device is actually working — otherwise pin to 0 so the
+            # sensor doesn't drift forever.
+            active_states = {
+                XtoolStatus.PROCESSING,
+                XtoolStatus.PROCESSING_READY,
+                XtoolStatus.PAUSED,
+                XtoolStatus.FRAMING,
+                XtoolStatus.FRAME_READY,
+                XtoolStatus.MEASURING,
+                XtoolStatus.MEASURE_AREA,
+                XtoolStatus.WORKING_API,
+                XtoolStatus.WORKING_BUTTON,
+            }
+            if state.status in active_states:
+                state.task_time = parse_param_int(r[CMD_TASK_TIME], "T")
+            else:
+                state.task_time = 0
 
         if r[CMD_SD_CARD]:
             state.sd_card_present = parse_param_int(r[CMD_SD_CARD], "S") != 0
@@ -727,7 +793,7 @@ class S1Protocol(XtoolProtocol):
         # Periodically request M9039 to refresh AP2 state when armed
         if self._ap2_enabled:
             now2 = time.monotonic()
-            if now2 - self._last_ap2_poll >= AP2_POLL_INTERVAL:
+            if now2 - self._last_ap2_poll >= self._ap2_interval:
                 self._last_ap2_poll = now2
                 try:
                     raw = await self.send_command(CMD_AIRFLOW_PURIFIER, timeout=4)
@@ -748,7 +814,7 @@ class S1Protocol(XtoolProtocol):
 
         # Slow poll: lifetime statistics (every 5 minutes)
         now = time.monotonic()
-        if now - self._last_stats_poll >= STATS_POLL_INTERVAL:
+        if now - self._last_stats_poll >= self._stats_interval:
             self._last_stats_poll = now
             try:
                 stats_raw = await self.send_command(CMD_LIFETIME_STATS, timeout=8)
@@ -760,7 +826,18 @@ class S1Protocol(XtoolProtocol):
             except Exception as err:
                 _LOGGER.debug("M2008 poll failed: %s", err)
 
-
+        # Periodic poll: Bluetooth dongle connected accessories (M9098)
+        if now - self._last_dongle_poll >= self._dongle_interval:
+            self._last_dongle_poll = now
+            try:
+                raw = await self.send_command(CMD_DONGLE_CONNECTED, timeout=4)
+                if raw:
+                    macs = re.findall(
+                        r"[A-Z]([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})", raw,
+                    )
+                    state.ble_accessories = [{"mac": m.upper()} for m in macs]
+            except Exception as err:
+                _LOGGER.debug("M9098 poll failed: %s", err)
 
     # --- Firmware update overrides --------------------------------------
 
@@ -790,54 +867,130 @@ class S1Protocol(XtoolProtocol):
 
     async def flash_firmware(
         self,
-        fw_file: FirmwareFile,
-        data: bytes,
+        files: list[FirmwareFile],
+        blobs: list[bytes],
         progress_cb: Callable[[float], None] | None = None,
     ) -> None:
-        """Multi-board flash via M22 S3 + POST /burn + /system?action= poll."""
-        # Enter upgrade mode
-        await self.send_command(CMD_ENTER_UPGRADE_MODE)
+        """Multi-board flash: per-board upload + burn trigger + progress poll.
 
-        url = f"http://{self.host}:{self._http_port}{HTTP_PATH_BURN}"
-        form = aiohttp.FormData()
-        form.add_field(
-            "file", data,
-            filename="mcu_firmware.bin",
-            content_type="application/octet-stream",
-        )
-        form.add_field("burnType", fw_file.burn_type)
+        Mirrors the actual XCS / xTool Studio flow exactly. For each board
+        in turn:
+
+        1. ``M22 S3`` — enterUpgradeMode
+        2. ``POST /upload?filename=<path>&md5=<md5>`` — multipart with the
+           firmware blob in field ``file``. The S1 buffers the bytes
+           internally and returns ``{"result":"ok"}`` once accepted.
+        3. wait ~3 s (XCS does the same)
+        4. ``GET /burn?code=<burnType>`` — triggers the actual flash from
+           the previously uploaded file. Returns ``{"result":"ok"}``.
+        5. wait ~3 s, then poll ``/system?action=get_upgrade_progress``
+           for the live percentage; release once ``curr_progress >= total``.
+
+        ``burnType`` is ``1`` for the main MCU (0x20), ``2`` for the laser
+        controller (0x21), ``3`` for the WiFi/network MCU (0x22).
+        """
+        upload_url = f"http://{self.host}:{self._http_port}/upload"
+        burn_url = f"http://{self.host}:{self._http_port}{HTTP_PATH_BURN}"
 
         async with aiohttp.ClientSession() as session:
-            async def _upload() -> None:
+            for idx, (fw_file, data) in enumerate(zip(files, blobs)):
+                # 1. enter upgrade mode
+                await self.send_command(CMD_ENTER_UPGRADE_MODE)
+
+                # 2. upload the firmware blob to /upload with filename + md5
+                filename = S1_FLASH_FILENAMES.get(
+                    fw_file.board_id, "mcu_firmware.bin"
+                )
+                md5 = fw_file.md5 or hashlib.md5(data).hexdigest()
+                form = aiohttp.FormData()
+                form.add_field(
+                    "file", data,
+                    filename=filename,
+                    content_type="application/octet-stream",
+                )
+
                 async with session.post(
-                    url, data=form, timeout=aiohttp.ClientTimeout(total=600)
+                    upload_url,
+                    data=form,
+                    params={"filename": filename, "md5": md5},
+                    timeout=aiohttp.ClientTimeout(total=600),
                 ) as resp:
                     if resp.status != 200:
                         raise RuntimeError(
-                            f"Firmware upload failed: HTTP {resp.status}"
+                            f"S1 /upload HTTP {resp.status} for "
+                            f"{fw_file.board_id}"
+                        )
+                    body = await resp.text()
+                    try:
+                        payload = json.loads(body) if body else {}
+                    except (ValueError, TypeError):
+                        payload = {}
+                    if payload.get("result") != "ok":
+                        raise RuntimeError(
+                            f"S1 /upload rejected for "
+                            f"{fw_file.board_id}: {body!r}"
                         )
 
-            poll_task = asyncio.create_task(self._poll_flash_progress(progress_cb))
-            try:
-                await _upload()
-            finally:
-                poll_task.cancel()
-                try:
-                    await poll_task
-                except (asyncio.CancelledError, Exception):
-                    pass
+                # XCS waits 3 s between upload and burn trigger.
+                await asyncio.sleep(3)
+
+                # Per-board progress scaling for the burn phase
+                board_count = max(len(files), 1)
+                base = idx / board_count
+                step = 1.0 / board_count
+
+                def _scaled_cb(f: float) -> None:
+                    if progress_cb is not None:
+                        progress_cb(min(base + f * step, 1.0))
+
+                # 3. trigger flash via GET /burn?code=<burnType>
+                async with session.get(
+                    burn_url,
+                    params={"code": fw_file.burn_type},
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status != 200:
+                        raise RuntimeError(
+                            f"S1 /burn HTTP {resp.status} for "
+                            f"{fw_file.board_id}"
+                        )
+                    body = await resp.text()
+                    try:
+                        payload = json.loads(body) if body else {}
+                    except (ValueError, TypeError):
+                        payload = {}
+                    if payload.get("result") != "ok":
+                        raise RuntimeError(
+                            f"S1 /burn rejected for "
+                            f"{fw_file.board_id}: {body!r}"
+                        )
+
+                # XCS waits 3 s after burn trigger before polling progress.
+                await asyncio.sleep(3)
+
+                # 4. poll progress until done
+                await self._poll_flash_progress(_scaled_cb)
+
+                if progress_cb is not None:
+                    progress_cb(min(base + step, 1.0))
 
     async def _poll_flash_progress(
         self,
         progress_cb: Callable[[float], None] | None,
     ) -> None:
-        """Poll /system?action=get_upgrade_progress and report real progress."""
-        if progress_cb is None:
-            return
+        """Block on /system?action=get_upgrade_progress until the burn finishes.
+
+        Polls every 2 s, optionally pushing the fractional progress to
+        ``progress_cb``. Returns once ``curr_progress >= total_progress``.
+        Bails after 5 minutes of consecutive failures so a stuck burn
+        doesn't pin the install task forever.
+        """
         url = (
             f"http://{self.host}:{self._http_port}"
             f"/system?action={HTTP_ACTION_UPGRADE_PROGRESS}"
         )
+        max_consecutive_errors = 30  # ~60 s of failures
+        errors = 0
         async with aiohttp.ClientSession() as session:
             while True:
                 try:
@@ -848,10 +1001,17 @@ class S1Protocol(XtoolProtocol):
                             payload = await resp.json(content_type=None)
                             curr = int(payload.get("curr_progress", 0))
                             total = int(payload.get("total_progress", 0))
+                            errors = 0
                             if total > 0:
-                                progress_cb(min(curr / total, 1.0))
+                                if progress_cb is not None:
+                                    progress_cb(min(curr / total, 1.0))
                                 if curr >= total:
                                     return
                 except Exception as err:
+                    errors += 1
                     _LOGGER.debug("Flash progress poll error: %s", err)
+                    if errors >= max_consecutive_errors:
+                        raise RuntimeError(
+                            f"S1 flash progress poll failed {errors}x in a row"
+                        )
                 await asyncio.sleep(2.0)

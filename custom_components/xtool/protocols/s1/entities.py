@@ -528,6 +528,9 @@ class XtoolAccessoriesSensor(XtoolEntity, BinarySensorEntity):
                 self.coordinator.data.riser_base, RISER_BASE_NAMES[1]
             )
             attached.append({"name": riser_type, "firmware": ""})
+        # Bluetooth dongle (M9098 returned at least one paired MAC)
+        if self.coordinator.data.ble_accessories:
+            attached.append({"name": "Bluetooth dongle", "firmware": ""})
         return attached
 
 
@@ -548,6 +551,28 @@ class XtoolAlarmSensor(XtoolEntity, BinarySensorEntity):
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.alarm_present
+
+
+class XtoolXcsCompatMode(XtoolEntity, BinarySensorEntity):
+    """Diagnostic flag — true when XCS Compatibility Mode is active.
+
+    Set by the S1 protocol when it detects ≥3 WebSocket disconnects within
+    30 s with sessions shorter than 10 s, indicating that the XCS desktop
+    app holds the WS exclusively. Writes go via HTTP `/cmd` while this is
+    on; the integration probes recovery every 60 s.
+    """
+
+    _attr_translation_key = "xcs_compatibility_mode"
+    _attr_icon = "mdi:laptop"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_xcs_compat"
+
+    @property
+    def is_on(self) -> bool | None:
+        return getattr(self.coordinator, "xcs_compatibility_mode", False)
 
 
 class XtoolPurifierRunning(XtoolEntity, BinarySensorEntity):
@@ -664,9 +689,9 @@ class _PurifierSensorRaw(_AP2Sensor):
 
 # Display labels for the three S1 boards in the composite version string.
 _BOARD_LABELS = {
-    "xcs-d2-0x20": "Main",
-    "xcs-d2-0x21": "Laser",
-    "xcs-d2-0x22": "WiFi",
+    "xTool-d2-0x20": "Main",
+    "xTool-d2-0x21": "Laser",
+    "xTool-d2-0x22": "WiFi",
 }
 
 
@@ -777,7 +802,9 @@ def build_s1_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
 
 
 def build_s1_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
-    return [XtoolButton(coordinator, description) for description in BUTTON_DESCRIPTIONS]
+    return [
+        XtoolButton(coordinator, description) for description in BUTTON_DESCRIPTIONS
+    ]
 
 
 def build_s1_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
@@ -790,6 +817,7 @@ def build_s1_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorE
     entities: list[BinarySensorEntity] = [
         XtoolAccessoriesSensor(coordinator),
         XtoolAlarmSensor(coordinator),
+        XtoolXcsCompatMode(coordinator),
     ]
     if coordinator.has_ap2:
         entities.append(XtoolPurifierRunning(coordinator))

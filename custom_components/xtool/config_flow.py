@@ -15,14 +15,30 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
-from homeassistant.helpers.selector import EntitySelector, EntitySelectorConfig
+from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+)
 
 from .const import (
+    CONF_AP2_POLL_INTERVAL,
+    CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
+    CONF_FIRMWARE_CHECK_INTERVAL,
     CONF_HAS_AP2,
     CONF_POWER_SWITCH,
+    CONF_SCAN_INTERVAL,
+    CONF_STATS_POLL_INTERVAL,
+    DEFAULT_AP2_POLL_INTERVAL,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_DONGLE_POLL_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_STATS_POLL_INTERVAL,
     DOMAIN,
+    FIRMWARE_CHECK_INTERVAL,
 )
 from .discovery import DiscoveredDevice, discover_devices
 from .protocols import validate_connection
@@ -190,7 +206,8 @@ class XtoolOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the options form."""
+        """Handle the options form. Schema is model-aware — only options
+        relevant to the connected device's protocol family are shown."""
         current_options = self._config_entry.options
         currently_enabled = current_options.get(CONF_ENABLE_UPDATES, False)
 
@@ -205,6 +222,14 @@ class XtoolOptionsFlow(OptionsFlow):
         currently_has_ap2 = current_options.get(CONF_HAS_AP2, False)
         device_name = self._config_entry.data.get("device_name", "")
 
+        from .protocols import detect_model
+        from .protocols.s1 import S1Protocol
+
+        model = detect_model(device_name)
+        is_s1 = model.protocol_class is S1Protocol
+        has_firmware = bool(model.firmware_content_id)
+
+        # Power switch — universal
         schema_dict: dict[Any, Any] = {
             vol.Optional(
                 CONF_POWER_SWITCH,
@@ -213,19 +238,82 @@ class XtoolOptionsFlow(OptionsFlow):
                 EntitySelectorConfig(filter={"domain": "switch"})
             ),
             vol.Optional(
+                CONF_SCAN_INTERVAL,
+                default=current_options.get(
+                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+                ),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=60, step=1,
+                    unit_of_measurement="s",
+                    mode=NumberSelectorMode.BOX,
+                )
+            ),
+        }
+
+        # Firmware update toggle + cadence — only models with a known
+        # firmware_content_id can hit the cloud API meaningfully.
+        if has_firmware:
+            schema_dict[vol.Optional(
                 CONF_ENABLE_UPDATES,
                 default=currently_enabled,
-            ): bool,
-        }
-        # AP2 toggle only applies to S1.
-        from .protocols import detect_model
-        from .protocols.s1 import S1Protocol
+            )] = bool
+            schema_dict[vol.Optional(
+                CONF_FIRMWARE_CHECK_INTERVAL,
+                default=current_options.get(
+                    CONF_FIRMWARE_CHECK_INTERVAL,
+                    FIRMWARE_CHECK_INTERVAL // 3600,
+                ),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=24, step=1,
+                    unit_of_measurement="h",
+                    mode=NumberSelectorMode.BOX,
+                )
+            )
 
-        if detect_model(device_name).protocol_class is S1Protocol:
+        # S1-only: AP2 toggle + per-poll cadences
+        if is_s1:
             schema_dict[vol.Optional(
                 CONF_HAS_AP2,
                 default=currently_has_ap2,
             )] = bool
+            schema_dict[vol.Optional(
+                CONF_AP2_POLL_INTERVAL,
+                default=current_options.get(
+                    CONF_AP2_POLL_INTERVAL, DEFAULT_AP2_POLL_INTERVAL
+                ),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=5, max=300, step=1,
+                    unit_of_measurement="s",
+                    mode=NumberSelectorMode.BOX,
+                )
+            )
+            schema_dict[vol.Optional(
+                CONF_STATS_POLL_INTERVAL,
+                default=current_options.get(
+                    CONF_STATS_POLL_INTERVAL, DEFAULT_STATS_POLL_INTERVAL
+                ),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=60, max=3600, step=10,
+                    unit_of_measurement="s",
+                    mode=NumberSelectorMode.BOX,
+                )
+            )
+            schema_dict[vol.Optional(
+                CONF_DONGLE_POLL_INTERVAL,
+                default=current_options.get(
+                    CONF_DONGLE_POLL_INTERVAL, DEFAULT_DONGLE_POLL_INTERVAL
+                ),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=10, max=600, step=5,
+                    unit_of_measurement="s",
+                    mode=NumberSelectorMode.BOX,
+                )
+            )
 
         return self.async_show_form(
             step_id="init",

@@ -20,13 +20,20 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.components.number import NumberEntity
+from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import (
     SwitchDeviceClass,
     SwitchEntity,
 )
 from homeassistant.components.update import UpdateEntity
-from homeassistant.const import EntityCategory, UnitOfLength, UnitOfTime
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfLength,
+    UnitOfTemperature,
+    UnitOfTime,
+    UnitOfVolumeFlowRate,
+)
 from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
@@ -448,6 +455,17 @@ def build_rest_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         entities.append(XtoolIRLED(coordinator, "global"))
     if model.has_digital_lock:
         entities.append(XtoolDigitalLock(coordinator))
+    # Universal REST toggles (each gates itself on data presence via available)
+    entities.extend([
+        XtoolBeepEnable(coordinator),
+        XtoolFilterCheck(coordinator),
+        XtoolPurifierCheck(coordinator),
+        XtoolPurifierContinue(coordinator),
+        XtoolCoolingFan(coordinator),
+        XtoolSmokingFanRest(coordinator),
+    ])
+    if model.has_drawer:
+        entities.append(XtoolDrawerCheck(coordinator))
     return entities
 
 
@@ -459,6 +477,14 @@ def build_rest_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     if coordinator.model.has_air_assist_state:
         entities.append(XtoolAirAssistGear(coordinator, "cut"))
         entities.append(XtoolAirAssistGear(coordinator, "grave"))
+    entities.extend([
+        _sleep_timeout(coordinator),
+        _sleep_timeout_open_gap(coordinator),
+        _fill_light_auto_off(coordinator),
+        _ir_light_auto_off(coordinator),
+    ])
+    if coordinator.model.has_display_screen:
+        entities.append(XtoolDisplayBrightness(coordinator))
     return entities
 
 
@@ -469,6 +495,17 @@ def build_rest_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(XtoolHomeLaserHead(coordinator))
     if model.has_distance_measure:
         entities.append(XtoolMeasureDistance(coordinator))
+    entities.append(XtoolReboot(coordinator))
+    if model.has_water_cooling:
+        entities.append(XtoolTimeSync(coordinator))
+    return entities
+
+
+def build_rest_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
+    entities: list[SelectEntity] = [
+        XtoolPurifierSpeed(coordinator),
+        XtoolFlameLevelHL(coordinator),
+    ]
     return entities
 
 
@@ -496,8 +533,33 @@ def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
         XtoolSensor(coordinator, description)
         for description in SENSOR_DESCRIPTIONS
     ]
-    if coordinator.model.has_distance_measure:
+    model = coordinator.model
+    if model.has_distance_measure:
         entities.append(XtoolLastDistance(coordinator))
+    # Universal diagnostic sensors
+    entities.extend([
+        _RestStateSensor(coordinator, "last_button_event", "mdi:gesture-tap-button", "last_button_event"),
+        _RestStateSensor(coordinator, "working_mode", "mdi:cog-play", "working_mode"),
+        _RestStateSensor(coordinator, "print_tool_type", "mdi:tools", "print_tool_type"),
+        _RestStateSensor(coordinator, "hardware_type", "mdi:chip", "hardware_type"),
+    ])
+    if model.has_water_cooling:
+        entities.append(_RestTempSensor(coordinator, "water_temperature", "mdi:thermometer-water", "water_temperature"))
+        entities.append(_RestFlowSensor(coordinator, "water_flow", "mdi:waves", "water_flow"))
+    if model.has_z_temp:
+        entities.append(_RestTempSensor(coordinator, "z_temperature", "mdi:thermometer", "z_temperature"))
+    if model.has_workhead_id:
+        entities.append(_RestStateSensor(coordinator, "workhead_id", "mdi:tools", "workhead_id"))
+        entities.append(_RestNumericSensor(
+            coordinator, "workhead_z_height", "mdi:axis-z-arrow",
+            "workhead_z_height", unit=UnitOfLength.MILLIMETERS, precision=2,
+        ))
+    if model.has_gyro:
+        for axis in ("x", "y", "z"):
+            entities.append(_RestNumericSensor(
+                coordinator, f"gyro_{axis}", f"mdi:axis-{axis}-arrow",
+                f"gyro_{axis}", precision=2,
+            ))
     return entities
 
 
@@ -525,9 +587,448 @@ class XtoolAirAssistConnected(XtoolEntity, BinarySensorEntity):
 
 def build_rest_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorEntity]:
     entities: list[BinarySensorEntity] = []
-    if coordinator.model.has_air_assist_state:
+    model = coordinator.model
+    if model.has_air_assist_state:
         entities.append(XtoolAirAssistConnected(coordinator))
+    # Universal push-state binaries
+    entities.extend([
+        _RestPushBinary(coordinator, "cooling_fan_running", "mdi:fan",
+                        "cooling_fan_running", BinarySensorDeviceClass.RUNNING),
+        _RestPushBinary(coordinator, "smoking_fan_running", "mdi:fan",
+                        "smoking_fan_running", BinarySensorDeviceClass.RUNNING),
+    ])
+    if model.has_drawer:
+        entities.append(_RestPushBinary(coordinator, "drawer_open", "mdi:archive-arrow-up",
+                                        "drawer_open", BinarySensorDeviceClass.OPENING))
+    if model.has_cpu_fan:
+        entities.append(_RestPushBinary(coordinator, "cpu_fan_running", "mdi:fan",
+                                        "cpu_fan_running", BinarySensorDeviceClass.RUNNING))
+    if model.has_uv_fire:
+        entities.append(_RestPushBinary(coordinator, "uv_fire_alarm", "mdi:fire-alert",
+                                        "uv_fire_alarm", BinarySensorDeviceClass.PROBLEM))
+    if model.has_water_cooling:
+        entities.append(_RestPushBinary(coordinator, "water_pump_running", "mdi:pump",
+                                        "water_pump_running", BinarySensorDeviceClass.RUNNING))
+        entities.append(_RestPushBinary(coordinator, "water_line_ok", "mdi:waves",
+                                        "water_line_ok", BinarySensorDeviceClass.PROBLEM))
     return entities
+
+
+# --- Generic REST switches (universal endpoints) ---------------------------
+
+
+class _RestToggle(XtoolEntity, SwitchEntity):
+    """Base for REST /set*/get* boolean toggles."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _state_attr: str = ""
+    _setter: str = ""
+
+    def __init__(self, coordinator: XtoolCoordinator, key: str, icon: str) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._attr_translation_key = key
+        self._attr_icon = icon
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        d = self.coordinator.data
+        return bool(d and getattr(d, self._state_attr) is not None)
+
+    @property
+    def is_on(self) -> bool | None:
+        d = self.coordinator.data
+        return getattr(d, self._state_attr) if d else None
+
+    async def _call(self, on: bool) -> None:
+        await getattr(self.coordinator.protocol, self._setter)(on)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._call(True)
+        if self.coordinator.data:
+            setattr(self.coordinator.data, self._state_attr, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._call(False)
+        if self.coordinator.data:
+            setattr(self.coordinator.data, self._state_attr, False)
+        self.async_write_ha_state()
+
+
+class XtoolBeepEnable(_RestToggle):
+    _state_attr = "beep_enabled"
+    _setter = "set_beep_enabled"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "beep_enable", "mdi:volume-high")
+
+
+class XtoolDrawerCheck(_RestToggle):
+    _state_attr = "drawer_check"
+    _setter = "set_drawer_check"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "drawer_check", "mdi:archive-check")
+
+
+class XtoolFilterCheck(_RestToggle):
+    _state_attr = "filter_check"
+    _setter = "set_filter_check"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "filter_check", "mdi:air-filter")
+
+
+class XtoolPurifierCheck(_RestToggle):
+    _state_attr = "purifier_check"
+    _setter = "set_purifier_check"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "purifier_check", "mdi:air-purifier")
+
+
+class XtoolPurifierContinue(_RestToggle):
+    _state_attr = "purifier_continue"
+    _setter = "set_purifier_continue"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "purifier_continue", "mdi:autorenew")
+
+
+class XtoolCoolingFan(_RestToggle):
+    _state_attr = "cooling_fan_running"
+    _setter = "set_cooling_fan"
+    _attr_entity_category = None  # primary control, not config
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "cooling_fan", "mdi:fan")
+
+
+class XtoolSmokingFanRest(_RestToggle):
+    _state_attr = "smoking_fan_running"
+    _setter = "set_smoking_fan"
+    _attr_entity_category = None
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "smoking_fan", "mdi:fan")
+
+
+# --- Generic REST numbers --------------------------------------------------
+
+
+class _RestTimeoutNumber(XtoolEntity, NumberEntity):
+    """Generic seconds-based timeout number — reads ``state.<attr>``,
+    writes via ``coord.protocol.<setter>(int)``."""
+
+    _attr_icon = "mdi:timer-sand"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_native_step = 30
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _state_attr: str = ""
+    _setter: str = ""
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        key: str,
+        attr: str,
+        setter: str,
+        max_seconds: int = 3600,
+    ) -> None:
+        super().__init__(coordinator)
+        self._state_attr = attr
+        self._setter = setter
+        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._attr_translation_key = key
+        self._attr_native_min_value = 0
+        self._attr_native_max_value = max_seconds
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        d = self.coordinator.data
+        return bool(d and getattr(d, self._state_attr) is not None)
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        return getattr(d, self._state_attr) if d else None
+
+    async def async_set_native_value(self, value: float) -> None:
+        n = int(value)
+        await getattr(self.coordinator.protocol, self._setter)(n)
+        if self.coordinator.data:
+            setattr(self.coordinator.data, self._state_attr, n)
+        self.async_write_ha_state()
+
+
+def _sleep_timeout(coord):
+    return _RestTimeoutNumber(coord, "sleep_timeout", "sleep_timeout", "set_sleep_timeout")
+
+
+def _sleep_timeout_open_gap(coord):
+    return _RestTimeoutNumber(
+        coord, "sleep_timeout_open_gap", "sleep_timeout_open_gap", "set_sleep_timeout_open_gap"
+    )
+
+
+def _fill_light_auto_off(coord):
+    return _RestTimeoutNumber(
+        coord, "fill_light_auto_off", "fill_light_auto_off", "set_fill_light_auto_off"
+    )
+
+
+def _ir_light_auto_off(coord):
+    return _RestTimeoutNumber(
+        coord, "ir_light_auto_off", "ir_light_auto_off", "set_ir_light_auto_off"
+    )
+
+
+# --- Generic REST buttons --------------------------------------------------
+
+
+class XtoolReboot(XtoolEntity, ButtonEntity):
+    """Soft-reboot the device (REST family)."""
+
+    _attr_translation_key = "reboot"
+    _attr_icon = "mdi:restart"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_reboot"
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.reboot()
+
+
+# --- Generic REST diagnostic sensors ---------------------------------------
+
+
+class _RestStateSensor(XtoolEntity, SensorEntity):
+    """Sensor that reads ``state.<attr>`` on the coordinator."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr: str = ""
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        key: str,
+        icon: str,
+        attr: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr = attr
+        self._attr_translation_key = key
+        self._attr_icon = icon
+        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+
+    @property
+    def native_value(self) -> str | int | float | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        v = getattr(d, self._attr)
+        if isinstance(v, str):
+            return v or None
+        return v
+
+
+class _RestTempSensor(_RestStateSensor):
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_suggested_display_precision = 1
+
+
+class _RestFlowSensor(_RestStateSensor):
+    _attr_native_unit_of_measurement = UnitOfVolumeFlowRate.LITERS_PER_MINUTE
+    _attr_suggested_display_precision = 2
+
+
+class _RestNumericSensor(_RestStateSensor):
+    """Numeric sensor with optional unit + decimals."""
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        key: str,
+        icon: str,
+        attr: str,
+        unit: str | None = None,
+        precision: int | None = None,
+    ) -> None:
+        super().__init__(coordinator, key, icon, attr)
+        if unit is not None:
+            self._attr_native_unit_of_measurement = unit
+        if precision is not None:
+            self._attr_suggested_display_precision = precision
+
+
+class _RestPushBinary(XtoolEntity, BinarySensorEntity):
+    """Generic ``state.<attr>`` binary sensor (None = unavailable)."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _state_attr: str = ""
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        key: str,
+        icon: str,
+        attr: str,
+        device_class: BinarySensorDeviceClass | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._state_attr = attr
+        self._attr_translation_key = key
+        self._attr_icon = icon
+        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        if device_class is not None:
+            self._attr_device_class = device_class
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        d = self.coordinator.data
+        return bool(d and getattr(d, self._state_attr) is not None)
+
+    @property
+    def is_on(self) -> bool | None:
+        d = self.coordinator.data
+        return getattr(d, self._state_attr) if d else None
+
+
+class XtoolDisplayBrightness(XtoolEntity, NumberEntity):
+    """Touchscreen brightness 0-100 (F1 Ultra)."""
+
+    _attr_translation_key = "display_brightness"
+    _attr_icon = "mdi:brightness-percent"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_native_min_value = 0
+    _attr_native_max_value = 100
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = "%"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_display_brightness"
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        d = self.coordinator.data
+        return bool(d and d.display_brightness is not None)
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        return d.display_brightness if d else None
+
+    async def async_set_native_value(self, value: float) -> None:
+        n = int(value)
+        await self.coordinator.protocol.set_display_brightness(n)
+        if self.coordinator.data:
+            self.coordinator.data.display_brightness = n
+        self.async_write_ha_state()
+
+
+class XtoolTimeSync(XtoolEntity, ButtonEntity):
+    """Trigger device clock sync (F1 Ultra)."""
+
+    _attr_translation_key = "time_sync"
+    _attr_icon = "mdi:clock-sync"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_time_sync"
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.time_sync()
+
+
+# --- Selects ---------------------------------------------------------------
+
+
+class XtoolPurifierSpeed(XtoolEntity, SelectEntity):
+    """Air-purifier speed (config kv `purifierSpeed`)."""
+
+    _attr_translation_key = "purifier_speed_select"
+    _attr_icon = "mdi:fan"
+    _attr_entity_category = EntityCategory.CONFIG
+    _OPTIONS = ["off", "low", "medium", "high"]
+    _attr_options = _OPTIONS
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_purifier_speed_select"
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        d = self.coordinator.data
+        return bool(d and d.purifier_speed is not None)
+
+    @property
+    def current_option(self) -> str | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        v = d.purifier_speed or 0
+        if 0 <= v < len(self._OPTIONS):
+            return self._OPTIONS[v]
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in self._OPTIONS:
+            return
+        v = self._OPTIONS.index(option)
+        await self.coordinator.protocol.set_purifier_speed(v)
+        if self.coordinator.data:
+            self.coordinator.data.purifier_speed = v
+        self.async_write_ha_state()
+
+
+class XtoolFlameLevelHL(XtoolEntity, SelectEntity):
+    """Flame-detection level (config kv `flameLevelHLSelect`, 1=high, 2=low)."""
+
+    _attr_translation_key = "flame_level_hl"
+    _attr_icon = "mdi:fire-alert"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = ["high", "low"]
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_flame_level_hl"
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        d = self.coordinator.data
+        return bool(d and d.flame_level_hl is not None)
+
+    @property
+    def current_option(self) -> str | None:
+        d = self.coordinator.data
+        if d is None or d.flame_level_hl is None:
+            return None
+        return "high" if d.flame_level_hl == 1 else "low"
+
+    async def async_select_option(self, option: str) -> None:
+        v = 1 if option == "high" else 2
+        await self.coordinator.protocol.set_flame_level_hl(v)
+        if self.coordinator.data:
+            self.coordinator.data.flame_level_hl = v
+        self.async_write_ha_state()
 
 
 # --- Firmware update -------------------------------------------------------

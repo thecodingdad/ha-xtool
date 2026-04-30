@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from .models import (
+    XTOOL_APPAREL_PRINTER,
     XTOOL_F1,
     XTOOL_F1_ULTRA,
+    XTOOL_F1_ULTRA_V2,
+    XTOOL_F2,
+    XTOOL_F2_ULTRA,
+    XTOOL_F2_ULTRA_SINGLE,
+    XTOOL_F2_ULTRA_UV,
     XTOOL_GS005,
     XTOOL_M1,
     XTOOL_M1_ULTRA,
+    XTOOL_METALFAB,
     XTOOL_P1,
     XTOOL_P2,
     XTOOL_P2S,
+    XTOOL_P3,
 )
 from .protocol import (
     CAMERA_EXPOSURE_MAX,
@@ -72,12 +80,20 @@ __all__ = [
     "REST_PATH_LASER_HEAD",
     "REST_PATH_MODE_SWITCH",
     "RestProtocol",
+    "XTOOL_APPAREL_PRINTER",
     "XTOOL_F1",
     "XTOOL_F1_ULTRA",
+    "XTOOL_F1_ULTRA_V2",
+    "XTOOL_F2",
+    "XTOOL_F2_ULTRA",
+    "XTOOL_F2_ULTRA_SINGLE",
+    "XTOOL_F2_ULTRA_UV",
     "XTOOL_GS005",
     "XTOOL_M1",
     "XTOOL_M1_ULTRA",
+    "XTOOL_METALFAB",
     "XTOOL_P1",
     "XTOOL_P2",
     "XTOOL_P2S",
+    "XTOOL_P3",
 ]

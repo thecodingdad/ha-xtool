@@ -14,5 +14,5 @@ XTOOL_F1_V2 = XtoolDeviceModel(
     has_lid_sensor=True,
     has_machine_lock=True,
     has_purifier_timeout=True,
-    firmware_content_id="xcs-ext-f1",
+    firmware_content_id="xTool-f1-firmware",
 )

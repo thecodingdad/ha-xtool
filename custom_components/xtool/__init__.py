@@ -7,11 +7,21 @@ from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_AP2_POLL_INTERVAL,
+    CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
+    CONF_FIRMWARE_CHECK_INTERVAL,
     CONF_HAS_AP2,
     CONF_POWER_SWITCH,
+    CONF_SCAN_INTERVAL,
+    CONF_STATS_POLL_INTERVAL,
+    DEFAULT_AP2_POLL_INTERVAL,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_DONGLE_POLL_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_STATS_POLL_INTERVAL,
     DOMAIN,
+    FIRMWARE_CHECK_INTERVAL,
 )
 from .coordinator import XtoolCoordinator
 from .protocols import LaserInfo, detect_model
@@ -52,6 +62,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     enable_firmware_updates = entry.options.get(CONF_ENABLE_UPDATES, False)
     has_ap2 = entry.options.get(CONF_HAS_AP2, False)
 
+    # Polling intervals — options stored in user-friendly units (firmware in
+    # hours; everything else in seconds). Convert before handing to the
+    # coordinator, which always expects seconds.
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    firmware_check_hours = entry.options.get(
+        CONF_FIRMWARE_CHECK_INTERVAL, FIRMWARE_CHECK_INTERVAL // 3600
+    )
+    firmware_check_interval = int(firmware_check_hours) * 3600
+    ap2_poll_interval = entry.options.get(
+        CONF_AP2_POLL_INTERVAL, DEFAULT_AP2_POLL_INTERVAL
+    )
+    stats_poll_interval = entry.options.get(
+        CONF_STATS_POLL_INTERVAL, DEFAULT_STATS_POLL_INTERVAL
+    )
+    dongle_poll_interval = entry.options.get(
+        CONF_DONGLE_POLL_INTERVAL, DEFAULT_DONGLE_POLL_INTERVAL
+    )
+
     protocol = model.protocol_class(host)
 
     coordinator = model.coordinator_class(
@@ -64,6 +92,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         power_switch_entity_id=power_switch_entity_id,
         enable_firmware_updates=enable_firmware_updates,
         has_ap2=has_ap2,  # only S1Coordinator reads it; base ignores
+        scan_interval=scan_interval,
+        firmware_check_interval=firmware_check_interval,
+        ap2_poll_interval=ap2_poll_interval,
+        stats_poll_interval=stats_poll_interval,
+        dongle_poll_interval=dongle_poll_interval,
     )
     laser_power_watts = entry.data.get("laser_power_watts", 0)
     if laser_power_watts:

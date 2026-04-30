@@ -22,14 +22,22 @@ from .d_series import (
 from .f1v2 import F1V2Protocol, XTOOL_F1_V2
 from .rest import (
     RestProtocol,
+    XTOOL_APPAREL_PRINTER,
     XTOOL_F1,
     XTOOL_F1_ULTRA,
+    XTOOL_F1_ULTRA_V2,
+    XTOOL_F2,
+    XTOOL_F2_ULTRA,
+    XTOOL_F2_ULTRA_SINGLE,
+    XTOOL_F2_ULTRA_UV,
     XTOOL_GS005,
     XTOOL_M1,
     XTOOL_M1_ULTRA,
+    XTOOL_METALFAB,
     XTOOL_P1,
     XTOOL_P2,
     XTOOL_P2S,
+    XTOOL_P3,
 )
 from .s1 import S1Protocol, XTOOL_S1
 
@@ -40,9 +48,11 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
     for m in (
         XTOOL_S1,
         XTOOL_D1, XTOOL_D1_PRO, XTOOL_D1_PRO_2_0,
-        XTOOL_F1, XTOOL_F1_ULTRA, XTOOL_F1_V2, XTOOL_GS005,
-        XTOOL_M1, XTOOL_M1_ULTRA,
-        XTOOL_P1, XTOOL_P2, XTOOL_P2S,
+        XTOOL_F1, XTOOL_F1_ULTRA, XTOOL_F1_ULTRA_V2, XTOOL_F1_V2, XTOOL_GS005,
+        XTOOL_F2, XTOOL_F2_ULTRA, XTOOL_F2_ULTRA_SINGLE, XTOOL_F2_ULTRA_UV,
+        XTOOL_M1, XTOOL_M1_ULTRA, XTOOL_METALFAB,
+        XTOOL_P1, XTOOL_P2, XTOOL_P2S, XTOOL_P3,
+        XTOOL_APPAREL_PRINTER,
     )
 }
 
@@ -50,12 +60,20 @@ DEVICE_MODELS: dict[str, XtoolDeviceModel] = {
 def detect_model(device_name: str) -> XtoolDeviceModel:
     """Match a reported device name to a known model spec.
 
-    Returns a placeholder unknown model (no protocol_class) on miss so the
-    caller can present a clear error to the user.
+    Iterates models sorted by ``model_id`` length descending so the longest
+    substring wins — without this, ``"xTool F1 Ultra"`` would match the
+    plain ``F1`` entry before the more specific ``F1Ultra`` one. Returns a
+    placeholder unknown model (no protocol_class) on miss so the caller can
+    present a clear error.
     """
-    name_upper = device_name.upper().replace(" ", "")
-    for model in DEVICE_MODELS.values():
-        if model.model_id.upper().replace(" ", "") in name_upper:
+    name_upper = device_name.upper().replace(" ", "").replace("-", "")
+    candidates = sorted(
+        DEVICE_MODELS.values(),
+        key=lambda m: len(m.model_id),
+        reverse=True,
+    )
+    for model in candidates:
+        if model.model_id.upper().replace(" ", "").replace("-", "") in name_upper:
             return model
     return XtoolDeviceModel(model_id="unknown", name=device_name)
 

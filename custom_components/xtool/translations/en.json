@@ -34,12 +34,22 @@
         "data": {
           "power_switch_entity_id": "Power switch",
           "enable_firmware_updates": "Enable firmware updates",
-          "has_ap2": "AP2 air cleaner attached"
+          "has_ap2": "AP2 air cleaner attached",
+          "scan_interval": "Polling interval",
+          "firmware_check_interval": "Firmware-update check interval",
+          "ap2_poll_interval": "AP2 air-cleaner polling interval",
+          "stats_poll_interval": "Lifetime-stats polling interval",
+          "dongle_poll_interval": "Bluetooth-dongle polling interval"
         },
         "data_description": {
           "power_switch_entity_id": "Select a switch that controls the laser's power supply (e.g. a smart plug). Leave empty if not applicable.",
           "enable_firmware_updates": "When enabled, the firmware update entity can install new firmware. When disabled, it only shows that an update is available.",
-          "has_ap2": "Enable to expose AP2 air cleaner sensors (filter life, speed, particle sensors). S1 only."
+          "has_ap2": "Enable to expose AP2 air cleaner sensors (filter life, speed, particle sensors). S1 only.",
+          "scan_interval": "How often the integration polls the device for state updates. Lower values are more responsive but generate more network traffic.",
+          "firmware_check_interval": "How often the integration queries the xTool cloud for firmware updates.",
+          "ap2_poll_interval": "How often the integration polls the AP2 air-cleaner state (M9039). Only used when an AP2 is connected.",
+          "stats_poll_interval": "How often lifetime statistics are refreshed (M2008). Slow-changing values, default is 5 minutes.",
+          "dongle_poll_interval": "How often connected Bluetooth accessories are queried (M9098)."
         }
       },
       "confirm_updates": {
@@ -119,16 +129,34 @@
       "filter_dense_carbon": { "name": "Ultra dense carbon mesh filter remaining" },
       "filter_hepa": { "name": "HEPA filter remaining" },
       "purifier_sensor_d": { "name": "Purifier sensor D" },
-      "purifier_sensor_s": { "name": "Purifier sensor S" }
+      "purifier_sensor_s": { "name": "Purifier sensor S" },
+      "water_temperature": { "name": "Water temperature" },
+      "water_flow": { "name": "Water flow rate" },
+      "z_temperature": { "name": "Z-axis temperature" },
+      "workhead_id": { "name": "Workhead" },
+      "workhead_z_height": { "name": "Workhead Z height" },
+      "print_tool_type": { "name": "Print tool type" },
+      "hardware_type": { "name": "Hardware type" },
+      "gyro_x": { "name": "Gyro X" },
+      "gyro_y": { "name": "Gyro Y" },
+      "gyro_z": { "name": "Gyro Z" }
     },
     "binary_sensor": {
       "accessories": { "name": "Accessories" },
       "cover_open": { "name": "Cover" },
       "machine_lock": { "name": "Machine lock" },
       "alarm": { "name": "Alarm" },
+      "xcs_compatibility_mode": { "name": "XCS compatibility mode" },
       "purifier_running": { "name": "Air cleaner running" },
       "purifier_connected": { "name": "Air cleaner connected" },
-      "air_assist_connected": { "name": "Air-Assist connected" }
+      "air_assist_connected": { "name": "Air-Assist connected" },
+      "drawer_open": { "name": "Drawer" },
+      "cooling_fan_running": { "name": "Cooling fan" },
+      "smoking_fan_running": { "name": "Exhaust fan" },
+      "cpu_fan_running": { "name": "CPU fan" },
+      "uv_fire_alarm": { "name": "UV fire sensor" },
+      "water_pump_running": { "name": "Water pump" },
+      "water_line_ok": { "name": "Water line" }
     },
     "camera": {
       "camera_overview": { "name": "Overview camera" },
@@ -151,7 +179,13 @@
       "flame_alarm_v2": { "name": "Flame alarm" },
       "beep_v2": { "name": "Beep" },
       "gap_check": { "name": "Cover check" },
-      "machine_lock_check": { "name": "Lock check" }
+      "machine_lock_check": { "name": "Lock check" },
+      "beep_enable": { "name": "Beep" },
+      "drawer_check": { "name": "Drawer check" },
+      "filter_check": { "name": "Filter check" },
+      "purifier_check": { "name": "Purifier check" },
+      "purifier_continue": { "name": "Purifier auto-continue" },
+      "cooling_fan": { "name": "Cooling fan" }
     },
     "number": {
       "air_assist_close_delay": { "name": "Air-assist post-run" },
@@ -162,7 +196,16 @@
       "camera_exposure_closeup": { "name": "Camera exposure (close-up)" },
       "air_assist_gear_cut": { "name": "Air-Assist gear (cut)" },
       "air_assist_gear_grave": { "name": "Air-Assist gear (engrave)" },
-      "purifier_timeout": { "name": "Purifier auto-off" }
+      "purifier_timeout": { "name": "Purifier auto-off" },
+      "sleep_timeout": { "name": "Sleep timeout" },
+      "sleep_timeout_open_gap": { "name": "Sleep timeout (cover open)" },
+      "fill_light_auto_off": { "name": "Fill-light auto-off" },
+      "ir_light_auto_off": { "name": "IR-light auto-off" },
+      "display_brightness": { "name": "Display brightness" },
+      "work_area_left": { "name": "Work area limit (left)" },
+      "work_area_right": { "name": "Work area limit (right)" },
+      "work_area_up": { "name": "Work area limit (up)" },
+      "work_area_down": { "name": "Work area limit (down)" }
     },
     "select": {
       "flame_alarm_sensitivity": {
@@ -181,6 +224,29 @@
           "mode_3": "Mode 3",
           "mode_4": "Mode 4"
         }
+      },
+      "purifier_speed_select": {
+        "name": "Purifier speed",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        }
+      },
+      "flame_level_hl": {
+        "name": "Flame level",
+        "state": {
+          "high": "High",
+          "low": "Low"
+        }
+      },
+      "redcross_mode": {
+        "name": "Red-cross mode",
+        "state": {
+          "cross": "Cross-laser pointer",
+          "low_light": "Low-light mode"
+        }
       }
     },
     "update": {
@@ -195,7 +261,9 @@
       "home_z": { "name": "Home Z" },
       "home_laser_head": { "name": "Home laser head" },
       "measure_distance": { "name": "Measure distance" },
-      "quit_lightburn": { "name": "Quit LightBurn mode" }
+      "quit_lightburn": { "name": "Quit LightBurn mode" },
+      "reboot": { "name": "Reboot" },
+      "time_sync": { "name": "Sync time" }
     }
   }
 }

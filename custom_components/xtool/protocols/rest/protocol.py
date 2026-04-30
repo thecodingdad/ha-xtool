@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -70,6 +71,64 @@ CAMERA_EXPOSURE_MIN = 0
 CAMERA_EXPOSURE_MAX = 255
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _to_bool(v) -> bool:
+    """Loose bool coercion: handles 1/0, "on"/"off", "true"/"false", etc."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    s = str(v).strip().lower()
+    return s in ("1", "true", "on", "yes", "enabled", "ok")
+
+
+def _to_int(v) -> int:
+    return int(v)
+
+
+def _to_str(v) -> str:
+    if v is None:
+        return ""
+    return str(v)
+
+
+def _peri_float(d: dict | None) -> float | None:
+    """Pull a numeric value from a /peripheral/* response in either shape:
+    ``{"data":{"value":N}}`` or ``{"value":N}`` or ``{"temperature":N}``.
+    """
+    if not d or not isinstance(d, dict):
+        return None
+    inner = d.get("data", d)
+    if not isinstance(inner, dict):
+        return None
+    for k in ("value", "temperature", "tmp", "flow", "rate"):
+        if k in inner:
+            try:
+                return float(inner[k])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _check_rest_result(body: str, endpoint: str) -> None:
+    """Validate a REST firmware-endpoint JSON body. XCS uses ``Gd(t, ...)`` to
+    throw whenever ``result !== "ok"``; mirror that here. Empty body is
+    treated as success because some firmware responses return no body but a
+    plain HTTP 200.
+    """
+    body = (body or "").strip()
+    if not body:
+        return
+    try:
+        payload = json.loads(body)
+    except (ValueError, TypeError):
+        # Some endpoints return plain text "ok"
+        if body.lower() == "ok":
+            return
+        raise RuntimeError(f"REST {endpoint} unparseable response: {body!r}")
+    if isinstance(payload, dict) and payload.get("result") != "ok":
+        raise RuntimeError(f"REST {endpoint} rejected: {body!r}")
 
 
 class RestProtocol(XtoolProtocol):
@@ -233,6 +292,145 @@ class RestProtocol(XtoolProtocol):
                     except (TypeError, ValueError):
                         pass
 
+        # Generic /get* config endpoints — universal across REST family.
+        # Returned JSON shapes vary; _poll_simple_get tolerates the common ones.
+        await self._poll_simple_get(state, "/getsleeptimeout", "sleep_timeout", _to_int)
+        await self._poll_simple_get(state, "/getsleeptimeoutopengap", "sleep_timeout_open_gap", _to_int)
+        await self._poll_simple_get(state, "/getFilllightAutoClosetimout", "fill_light_auto_off", _to_int)
+        await self._poll_simple_get(state, "/getIrlightAutoClosetimout", "ir_light_auto_off", _to_int)
+        await self._poll_simple_get(state, "/getBeepEnable", "beep_enabled", _to_bool)
+        await self._poll_simple_get(state, "/getdrawercheck", "drawer_check", _to_bool)
+        await self._poll_simple_get(state, "/getfiltercheck", "filter_check", _to_bool)
+        await self._poll_simple_get(state, "/getpurifiercheck", "purifier_check", _to_bool)
+        await self._poll_simple_get(state, "/getpurifiercontinue", "purifier_continue", _to_bool)
+        await self._poll_simple_get(state, "/getmode", "working_mode", _to_str)
+        await self._poll_simple_get(state, "/getprintToolType", "print_tool_type", _to_str)
+        await self._poll_simple_get(state, "/gethardwaretype", "hardware_type", _to_str)
+
+        # Last button event push log
+        btn = await self._get_json("/peripheral/button?action=get")
+        if btn and isinstance(btn, dict):
+            inner = btn.get("data", btn)
+            if isinstance(inner, dict):
+                ev = inner.get("event") or inner.get("type") or inner.get("value")
+                if ev:
+                    state.last_button_event = str(ev)
+
+        # Push peripheral state — universal
+        await self._poll_peri_bool(state, "/peripheral/drawer", "drawer_open")
+        await self._poll_peri_bool(state, "/peripheral/cooling_fan", "cooling_fan_running")
+        await self._poll_peri_bool(state, "/peripheral/smoking_fan", "smoking_fan_running")
+
+        # Purifier user-config (speed + flame level)
+        cfg = await self._post_json(
+            "/config/get",
+            data={"alias": "config", "type": "user", "kv": ["purifierSpeed", "flameLevelHLSelect"]},
+        )
+        if cfg and isinstance(cfg, dict):
+            inner = cfg.get("data", cfg)
+            if isinstance(inner, dict):
+                try:
+                    if "purifierSpeed" in inner:
+                        state.purifier_speed = int(inner.get("purifierSpeed") or 0)
+                    if "flameLevelHLSelect" in inner:
+                        state.flame_level_hl = int(inner.get("flameLevelHLSelect") or 0)
+                except (TypeError, ValueError):
+                    pass
+
+        # Model-gated extras (poll only when capability flag set on the model).
+        # The coordinator stashes the model on the protocol via ``set_model``.
+        model = getattr(self, "_model", None)
+        if model is not None and getattr(model, "has_water_cooling", False):
+            wt = await self._get_json("/peripheral/water_tmp?action=get")
+            v = _peri_float(wt)
+            if v is not None:
+                state.water_temperature = v
+            wf = await self._get_json("/peripheral/water_flow?action=get")
+            v = _peri_float(wf)
+            if v is not None:
+                state.water_flow = v
+            await self._poll_peri_bool(state, "/peripheral/water_pump", "water_pump_running")
+            await self._poll_peri_bool(state, "/peripheral/water_line", "water_line_ok")
+        if model is not None and getattr(model, "has_z_temp", False):
+            z = await self._get_json("/peripheral/Z_ntc_temp?action=get")
+            v = _peri_float(z)
+            if v is not None:
+                state.z_temperature = v
+        if model is not None and getattr(model, "has_workhead_id", False):
+            wh = await self._get_json("/peripheral/workhead_ID?action=get")
+            if wh and isinstance(wh, dict):
+                inner = wh.get("data", wh)
+                if isinstance(inner, dict):
+                    wid = inner.get("id") or inner.get("type") or inner.get("value")
+                    if wid is not None:
+                        state.workhead_id = str(wid)
+            zh = await self._get_json("/peripheral/workhead_ZHeight?action=get")
+            v = _peri_float(zh)
+            if v is not None:
+                state.workhead_z_height = v
+        if model is not None and getattr(model, "has_cpu_fan", False):
+            await self._poll_peri_bool(state, "/peripheral/cpu_fan", "cpu_fan_running")
+        if model is not None and getattr(model, "has_uv_fire", False):
+            await self._poll_peri_bool(state, "/peripheral/uv_fire_sensor", "uv_fire_alarm")
+        if model is not None and getattr(model, "has_display_screen", False):
+            ds = await self._get_json("/peripheral/digital_screen?action=get")
+            if ds and isinstance(ds, dict):
+                inner = ds.get("data", ds)
+                if isinstance(inner, dict):
+                    for k in ("value", "brightness", "bri"):
+                        if k in inner:
+                            try:
+                                state.display_brightness = int(inner[k])
+                            except (TypeError, ValueError):
+                                pass
+                            break
+        if model is not None and getattr(model, "has_gyro", False):
+            g = await self._get_json("/peripheral/gyro?action=get")
+            if g and isinstance(g, dict):
+                inner = g.get("data", g)
+                if isinstance(inner, dict):
+                    for axis in ("x", "y", "z"):
+                        for k in (f"gyro_{axis}", axis, axis.upper()):
+                            if k in inner:
+                                try:
+                                    setattr(state, f"gyro_{axis}", float(inner[k]))
+                                except (TypeError, ValueError):
+                                    pass
+                                break
+
+    async def _poll_simple_get(self, state: XtoolDeviceState, path: str, attr: str, conv) -> None:
+        """Poll a ``/get*`` endpoint with a tolerant JSON-shape extractor."""
+        d = await self._get_json(path)
+        if not d or not isinstance(d, dict):
+            return
+        for key in ("value", "state", "enable", "data", "type", "mode"):
+            if key in d:
+                v = d[key]
+                if isinstance(v, dict):
+                    v = v.get("value") or v.get("state") or v.get("enable") or v.get("type") or v.get("mode")
+                try:
+                    setattr(state, attr, conv(v))
+                except (TypeError, ValueError):
+                    pass
+                return
+
+    async def _poll_peri_bool(self, state: XtoolDeviceState, path: str, attr: str) -> None:
+        """Poll ``/peripheral/<x>?action=get`` returning ``state:on/off``."""
+        d = await self._get_json(f"{path}?action=get")
+        if not d or not isinstance(d, dict):
+            return
+        inner = d.get("data", d)
+        if isinstance(inner, dict):
+            v = inner.get("state") or inner.get("value")
+            if v is not None:
+                s = str(v).lower()
+                if s in ("on", "off", "open", "close", "closed", "true", "false", "1", "0", "ok"):
+                    setattr(state, attr, s in ("on", "open", "true", "1", "ok"))
+
+    def set_model(self, model) -> None:
+        """Store the model so model-gated polls can decide to fire."""
+        self._model = model
+
     # --- REST setter helpers (called from entities) ---
 
     async def set_fill_light(self, level: int) -> None:
@@ -277,6 +475,72 @@ class RestProtocol(XtoolProtocol):
                 except (TypeError, ValueError):
                     return None
         return None
+
+    # --- Generic /set* config endpoints (universal across REST family) ----
+
+    async def set_beep_enabled(self, on: bool) -> None:
+        """Toggle the device buzzer."""
+        await self._post("/setBeepEnable", data={"value": 1 if on else 0})
+
+    async def set_sleep_timeout(self, seconds: int) -> None:
+        """Idle-sleep timeout (seconds)."""
+        await self._post("/setsleeptimeout", data={"value": int(seconds)})
+
+    async def set_sleep_timeout_open_gap(self, seconds: int) -> None:
+        await self._post("/setsleeptimeoutopengap", data={"value": int(seconds)})
+
+    async def set_fill_light_auto_off(self, seconds: int) -> None:
+        await self._post("/setFilllightAutoClosetimout", data={"value": int(seconds)})
+
+    async def set_ir_light_auto_off(self, seconds: int) -> None:
+        await self._post("/setIrlightAutoClosetimout", data={"value": int(seconds)})
+
+    async def set_drawer_check(self, on: bool) -> None:
+        await self._post("/setdrawercheck", data={"value": 1 if on else 0})
+
+    async def set_filter_check(self, on: bool) -> None:
+        await self._post("/setfiltercheck", data={"value": 1 if on else 0})
+
+    async def set_purifier_check(self, on: bool) -> None:
+        await self._post("/setpurifiercheck", data={"value": 1 if on else 0})
+
+    async def set_purifier_continue(self, on: bool) -> None:
+        await self._post("/setpurifiercontinue", data={"value": 1 if on else 0})
+
+    async def set_cooling_fan(self, on: bool) -> None:
+        action = PERIPHERAL_ACTION_ON if on else PERIPHERAL_ACTION_OFF
+        await self._post("/peripheral/cooling_fan", data={"action": action})
+
+    async def set_smoking_fan(self, on: bool) -> None:
+        action = PERIPHERAL_ACTION_ON if on else PERIPHERAL_ACTION_OFF
+        await self._post("/peripheral/smoking_fan", data={"action": action})
+
+    async def set_purifier_speed(self, value: int) -> None:
+        await self._post(
+            "/config/set",
+            data={"type": "user", "kv": {"purifierSpeed": int(value)}},
+        )
+
+    async def set_flame_level_hl(self, value: int) -> None:
+        await self._post(
+            "/config/set",
+            data={"type": "user", "kv": {"flameLevelHLSelect": int(value)}},
+        )
+
+    async def time_sync(self) -> None:
+        """Trigger device clock sync (F1 Ultra)."""
+        await self._post("/time/sync")
+
+    async def set_display_brightness(self, value: int) -> None:
+        """F1 Ultra touchscreen brightness 0-100."""
+        await self._post(
+            "/peripheral/digital_screen",
+            data={"action": PERIPHERAL_ACTION_SET_BRIGHTNESS, "value": int(value)},
+        )
+
+    async def reboot(self) -> None:
+        """Soft reboot the device."""
+        await self._post("/reboot")
 
     async def set_air_assist_gear(self, target: str, value: int) -> None:
         """Set the default Air-Assist gear (target: 'cut' or 'grave') via /config/set."""
@@ -401,72 +665,167 @@ class RestProtocol(XtoolProtocol):
 
     async def flash_firmware(
         self,
-        fw_file: FirmwareFile,
-        data: bytes,
+        files: list[FirmwareFile],
+        blobs: list[bytes],
         progress_cb: Callable[[float], None] | None = None,
     ) -> None:
-        """Two-step flash on port 8087: handshake then /package upload.
+        """REST family flash on port 8087.
 
-        Some models also require a ``machine_type`` query parameter
-        (P2/P2S = ``MXP``, M1 Ultra = ``MLM``). The integration's
-        XtoolFirmwareUpdate entity passes that via the protocol's
-        coordinator.model.firmware_machine_type.
+        Two strategies are supported, selected via
+        ``coordinator.model.firmware_flash_strategy`` (set by ``set_strategy``):
+
+        - ``"default"`` — F1, F1 Ultra, F1 Lite (GS005), M1 Ultra, P1, P2, P2S:
+          ``GET /upgrade_version?force_upgrade=1[&machine_type=...]`` →
+          ``POST /package?action=burn`` (multipart ``file=<bin>``).
+        - ``"m1_four_step"`` — M1: ``POST /upgrade_version`` →
+          ``POST /script`` (data) → ``POST /package`` (blob) →
+          ``POST /burn?reboot=true``.
+
+        Each step requires a JSON ``{"result":"ok"}`` response; HTTP 200
+        alone is not sufficient.
         """
-        # The model attribute lives on the coordinator; entities pass it
-        # explicitly via fw_file.board_id when needed. For now the only
-        # query parameter from the model is machine_type.
+        if not files or not blobs:
+            raise RuntimeError("REST flash: empty file list")
+        strategy = getattr(self, "_pending_strategy", "default")
+        if strategy == "m1_four_step":
+            await self._flash_m1_four_step(files, blobs, progress_cb)
+        else:
+            await self._flash_default(files, blobs, progress_cb)
+
+    async def _flash_default(
+        self,
+        files: list[FirmwareFile],
+        blobs: list[bytes],
+        progress_cb: Callable[[float], None] | None,
+    ) -> None:
+        """Two-step F1/P2/M1U/P1/GS005 flow: /upgrade_version then /package."""
         machine_type = getattr(self, "_pending_machine_type", "")
         base = f"http://{self.host}:{REST_FIRMWARE_PORT}"
         params = {"force_upgrade": "1"}
         if machine_type:
             params["machine_type"] = machine_type
+        # Single-blob path: take the first (and typically only) file.
+        fw_file = files[0]
+        data = blobs[0]
         async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(
-                    f"{base}/upgrade_version",
-                    params=params,
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status != 200:
-                        _LOGGER.debug(
-                            "REST handshake GET returned %s; trying POST",
-                            resp.status,
-                        )
-                        async with session.post(
-                            f"{base}/upgrade_version",
-                            params=params,
-                            json={
-                                "filename": fw_file.name,
-                                "fileSize": len(data),
-                            },
-                            timeout=aiohttp.ClientTimeout(total=30),
-                        ) as r2:
-                            if r2.status != 200:
-                                raise RuntimeError(
-                                    f"Firmware handshake failed: HTTP {r2.status}"
-                                )
-            except Exception as err:
-                _LOGGER.debug("REST firmware handshake error (%s) — continuing", err)
-
-            form = aiohttp.FormData()
-            form.add_field(
-                "file", data, filename=fw_file.name,
-                content_type="application/octet-stream",
-            )
-            async with session.post(
-                f"{base}/package",
-                data=form,
-                params={"action": "burn"},
-                timeout=aiohttp.ClientTimeout(total=600),
+            async with session.get(
+                f"{base}/upgrade_version",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 if resp.status != 200:
-                    raise RuntimeError(f"Firmware upload failed: HTTP {resp.status}")
+                    raise RuntimeError(
+                        f"REST firmware handshake HTTP {resp.status}"
+                    )
+                _check_rest_result(await resp.text(), "/upgrade_version")
+
+            # XCS / xTool Studio post the firmware blob directly as the
+            # request body (no multipart wrapping). axios sets
+            # Content-Type: application/octet-stream automatically; aiohttp
+            # does the same when given raw bytes.
+            async with session.post(
+                f"{base}/package",
+                data=data,
+                params={"action": "burn"},
+                timeout=aiohttp.ClientTimeout(total=600),
+                headers={"Content-Type": "application/octet-stream"},
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(
+                        f"REST /package HTTP {resp.status}"
+                    )
+                _check_rest_result(await resp.text(), "/package")
+        if progress_cb is not None:
+            progress_cb(1.0)
+
+    async def _flash_m1_four_step(
+        self,
+        files: list[FirmwareFile],
+        blobs: list[bytes],
+        progress_cb: Callable[[float], None] | None,
+    ) -> None:
+        """M1 specific four-step flow: handshake → script → package → burn.
+
+        XCS reference (``exts/M1/index.js``)::
+
+            await apis.updateFirmwareHandshake()
+            await apis.uploadFirmwareScript({data: script_payload})
+            await apis.uploadFirmwarePackage({data: package_blob, onUploadProgress})
+            await apis.uploadFirmwareBurn()
+
+        The cloud delivers the firmware as two ``contents[]`` entries — the
+        ``.script`` text/JSON payload first, then the ``.bin`` blob. Order in
+        ``files``/``blobs`` is preserved by ``firmware.py``.
+        """
+        if len(files) < 2 or len(blobs) < 2:
+            raise RuntimeError(
+                "M1 four-step flash needs script + package files; "
+                f"got {len(files)} entries"
+            )
+        script_data = blobs[0]
+        package_data = blobs[1]
+
+        base = f"http://{self.host}:{REST_FIRMWARE_PORT}"
+        async with aiohttp.ClientSession() as session:
+            # 1. handshake
+            async with session.post(
+                f"{base}/upgrade_version",
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(
+                        f"M1 /upgrade_version HTTP {resp.status}"
+                    )
+                _check_rest_result(await resp.text(), "/upgrade_version")
+            if progress_cb is not None:
+                progress_cb(0.05)
+
+            # 2. script — raw payload as POST body (no multipart wrapping
+            # in XCS / xTool Studio).
+            async with session.post(
+                f"{base}/script",
+                data=script_data,
+                timeout=aiohttp.ClientTimeout(total=120),
+                headers={"Content-Type": "application/octet-stream"},
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"M1 /script HTTP {resp.status}")
+                _check_rest_result(await resp.text(), "/script")
+            if progress_cb is not None:
+                progress_cb(0.2)
+
+            # 3. package — raw firmware blob as POST body
+            async with session.post(
+                f"{base}/package",
+                data=package_data,
+                timeout=aiohttp.ClientTimeout(total=600),
+                headers={"Content-Type": "application/octet-stream"},
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"M1 /package HTTP {resp.status}")
+                _check_rest_result(await resp.text(), "/package")
+            if progress_cb is not None:
+                progress_cb(0.85)
+
+            # 4. burn — empty body, query string carries reboot flag
+            async with session.post(
+                f"{base}/burn",
+                params={"reboot": "true"},
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"M1 /burn HTTP {resp.status}")
+                _check_rest_result(await resp.text(), "/burn")
         if progress_cb is not None:
             progress_cb(1.0)
 
     def set_machine_type(self, machine_type: str) -> None:
         """Stash the model's firmware_machine_type for the next flash call."""
         self._pending_machine_type = machine_type
+
+    def set_strategy(self, strategy: str) -> None:
+        """Stash the model's firmware_flash_strategy for the next flash call."""
+        self._pending_strategy = strategy
 
 
 _REST_STATUS_MAP: dict[str, XtoolStatus] = {

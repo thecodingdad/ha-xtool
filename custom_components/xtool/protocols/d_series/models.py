@@ -15,7 +15,7 @@ XTOOL_D1 = XtoolDeviceModel(
     has_tilt_sensor=True,
     has_moving_sensor=True,
     has_limit_switch=True,
-    firmware_content_id="xcs-ext-d1",
+    firmware_content_id="xTool-d1-firmware",
 )
 
 XTOOL_D1_PRO = XtoolDeviceModel(
@@ -26,7 +26,7 @@ XTOOL_D1_PRO = XtoolDeviceModel(
     has_tilt_sensor=True,
     has_moving_sensor=True,
     has_limit_switch=True,
-    firmware_content_id="xcs-ext-d1-pro",
+    firmware_content_id="xTool-d1pro-firmware",
 )
 
 XTOOL_D1_PRO_2_0 = XtoolDeviceModel(
@@ -37,5 +37,8 @@ XTOOL_D1_PRO_2_0 = XtoolDeviceModel(
     has_tilt_sensor=True,
     has_moving_sensor=True,
     has_limit_switch=True,
-    firmware_content_id="xcs-ext-d1-pro2",
+    # xTool Studio bundles a separate firmware archive for D1 Pro 2.0
+    # (`xTool-d1pro-firmware-2.0`); the legacy `xcs-d1pro-firmware` ID
+    # used by older XCS Android resolves to D1 Pro 1.0 binaries instead.
+    firmware_content_id="xTool-d1pro-firmware-2.0",
 )

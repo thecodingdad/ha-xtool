@@ -36,6 +36,12 @@ class S1Coordinator(XtoolCoordinator):
         self.workspace_z: float = 0.0
         # Push AP2 toggle into the protocol so it can use it before first poll.
         self.protocol.set_ap2_enabled(has_ap2)
+        # Forward poll intervals; protocol's defaults match const.py defaults.
+        self.protocol.set_poll_intervals(
+            ap2=self.ap2_poll_interval,
+            stats=self.stats_poll_interval,
+            dongle=self.dongle_poll_interval,
+        )
 
     @property
     def xcs_compatibility_mode(self) -> bool:

@@ -12,7 +12,7 @@ XTOOL_S1 = XtoolDeviceModel(
     protocol_class=S1Protocol,
     coordinator_class=S1Coordinator,
     has_z_axis=True,
-    firmware_content_id="xcs-d2-firmware",
+    firmware_content_id="xTool-d2-firmware",
     firmware_multi_package=True,
-    firmware_board_ids=("xcs-d2-0x20", "xcs-d2-0x21", "xcs-d2-0x22"),
+    firmware_board_ids=("xTool-d2-0x20", "xTool-d2-0x21", "xTool-d2-0x22"),
 )

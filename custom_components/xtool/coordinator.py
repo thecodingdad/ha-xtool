@@ -20,8 +20,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    DEFAULT_AP2_POLL_INTERVAL,
+    DEFAULT_DONGLE_POLL_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_STATS_POLL_INTERVAL,
     DOMAIN,
+    FIRMWARE_CHECK_INTERVAL,
     XtoolStatus,
 )
 
@@ -62,6 +66,11 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         model: XtoolDeviceModel,
         power_switch_entity_id: str | None = None,
         enable_firmware_updates: bool = False,
+        scan_interval: int = DEFAULT_SCAN_INTERVAL,
+        firmware_check_interval: int = FIRMWARE_CHECK_INTERVAL,
+        ap2_poll_interval: int = DEFAULT_AP2_POLL_INTERVAL,
+        stats_poll_interval: int = DEFAULT_STATS_POLL_INTERVAL,
+        dongle_poll_interval: int = DEFAULT_DONGLE_POLL_INTERVAL,
         **_unused: Any,
     ) -> None:
         """Initialize the coordinator. Subclasses consume any extra kwargs."""
@@ -69,7 +78,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{serial_number}",
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(seconds=max(int(scan_interval), 1)),
         )
         self.host = protocol.host
         self.protocol = protocol
@@ -80,6 +89,10 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.laser = LaserInfo()
         self.power_switch_entity_id = power_switch_entity_id
         self.enable_firmware_updates = enable_firmware_updates
+        self.firmware_check_interval = max(int(firmware_check_interval), 60)
+        self.ap2_poll_interval = max(int(ap2_poll_interval), 1)
+        self.stats_poll_interval = max(int(stats_poll_interval), 1)
+        self.dongle_poll_interval = max(int(dongle_poll_interval), 1)
         self._device_info_fetched = False
 
         # mac_address is populated by S1/D-series/REST. F1 V2 leaves it empty.

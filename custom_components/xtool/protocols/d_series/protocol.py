@@ -15,8 +15,11 @@ from typing import Any
 import aiohttp
 
 from ...const import FlameAlarmSensitivity, XtoolStatus
+from collections.abc import Callable
+
 from ..base import (
     DeviceInfo,
+    FirmwareFile,
     LaserInfo,
     XtoolDeviceState,
     XtoolProtocol,
@@ -64,6 +67,7 @@ DSERIES_CNC_STOP = "stop"
 
 # G-code sent via /cmd
 CMD_QUIT_LIGHTBURN_MODE = "M112 N0"
+CMD_REDCROSS_MODE = "M97"  # M97 S0=cross-laser pointer, S1=low-light mode
 
 # /system?action=get_working_sta returns "0" / "1" / "2"
 DSERIES_STATUS_MAP: dict[str, XtoolStatus] = {
@@ -239,6 +243,7 @@ class DSeriesProtocol(XtoolProtocol):
             except (TypeError, ValueError):
                 pass
 
+
     async def _system_action(self, action: str) -> dict[str, Any] | None:
         return await self._get_json(
             f"{DSERIES_PATH_SYSTEM}?action={action}"
@@ -307,6 +312,69 @@ class DSeriesProtocol(XtoolProtocol):
     async def quit_lightburn_mode(self) -> None:
         """Send M112 N0 to leave LightBurn standby."""
         await self.send_command(CMD_QUIT_LIGHTBURN_MODE)
+
+    async def set_redcross_mode(self, mode: int) -> None:
+        """M97 S0 = cross-laser pointer, M97 S1 = low-light mode."""
+        await self.send_command(f"{CMD_REDCROSS_MODE} S{int(mode)}")
+
+    async def set_work_area_limits(self, left: int, right: int, up: int, down: int) -> None:
+        """M311 L<l> R<r> U<u> D<d> — work-area soft limits in mm."""
+        await self.send_command(f"M311 L{int(left)} R{int(right)} U{int(up)} D{int(down)}")
+
+    async def flash_firmware(
+        self,
+        files: list[FirmwareFile],
+        blobs: list[bytes],
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """POST /upgrade with the firmware blob (D-series ESP32 OTA).
+
+        Mirrors the xTool Studio Windows app's flow:
+        ``Content-Type: multipart/form-data`` with a single field named
+        ``firmwareData`` carrying the raw firmware bytes (no explicit blob
+        type, no filename). The device handles bootloader entry internally.
+
+        Older XCS Android revisions used field name ``file`` and a
+        ``application/macbinary`` blob type — both styles seem to be
+        accepted by the firmware, but xTool Studio is the current
+        reference, so we match it.
+
+        Response body is the literal string ``"OK"`` on success (HTTP 200
+        alone is insufficient — the device sometimes returns 200 with an
+        error string).
+        """
+        if not files or not blobs:
+            raise RuntimeError("D-series flash: empty file list")
+        data = blobs[0]
+        url = f"{self._base_url}/upgrade"
+        form = aiohttp.FormData()
+        form.add_field("firmwareData", data, filename="firmware.bin")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                data=form,
+                timeout=aiohttp.ClientTimeout(total=600),
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(
+                        f"D-series firmware upload failed: HTTP {resp.status}"
+                    )
+                body = (await resp.text()).strip()
+                if body and body.upper() != "OK":
+                    # Some firmware returns JSON {"result":"OK"}; accept that too.
+                    try:
+                        import json as _json
+                        payload = _json.loads(body)
+                        if str(payload.get("result", "")).upper() == "OK":
+                            body = ""
+                    except (ValueError, TypeError):
+                        pass
+                    if body:
+                        raise RuntimeError(
+                            f"D-series /upgrade rejected: {body!r}"
+                        )
+        if progress_cb is not None:
+            progress_cb(1.0)
 
     async def _system_call(self, action: str, params: dict) -> None:
         """Issue a /system?action=… GET with extra query params."""

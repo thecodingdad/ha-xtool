@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from homeassistant.components.camera import Camera
     from homeassistant.components.light import LightEntity
     from homeassistant.components.number import NumberEntity
+    from homeassistant.components.select import SelectEntity
     from homeassistant.components.sensor import SensorEntity
     from homeassistant.components.switch import SwitchEntity
     from homeassistant.components.update import UpdateEntity
@@ -31,6 +32,9 @@ class RestCoordinator(XtoolCoordinator):
         # The value is constant per model — set once at init so the protocol
         # carries it through every flash without needing a runtime hook.
         self.protocol.set_machine_type(self.model.firmware_machine_type)
+        self.protocol.set_strategy(self.model.firmware_flash_strategy)
+        # Stash model on the protocol so capability-gated polls can fire.
+        self.protocol.set_model(self.model)
 
     async def _async_update_data(self) -> XtoolDeviceState:
         if self.data and self.data.available:
@@ -104,6 +108,10 @@ class RestCoordinator(XtoolCoordinator):
     def build_binary_sensors(self) -> list["BinarySensorEntity"]:
         from .entities import build_rest_binary_sensors
         return build_rest_binary_sensors(self)
+
+    def build_selects(self) -> list["SelectEntity"]:
+        from .entities import build_rest_selects
+        return build_rest_selects(self)
 
     def build_updates(self) -> list["UpdateEntity"]:
         from .entities import build_rest_updates

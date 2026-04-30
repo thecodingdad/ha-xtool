@@ -19,8 +19,18 @@ CONF_POWER_SWITCH = "power_switch_entity_id"
 CONF_ENABLE_UPDATES = "enable_firmware_updates"
 CONF_HAS_AP2 = "has_ap2"  # Opt-in toggle to enable AP2 air cleaner sensors
 
+# --- Polling intervals (overridable in the options flow) --------------------
+CONF_SCAN_INTERVAL = "scan_interval"  # main poll cadence (seconds)
+CONF_FIRMWARE_CHECK_INTERVAL = "firmware_check_interval"  # cloud check (hours)
+CONF_AP2_POLL_INTERVAL = "ap2_poll_interval"  # S1 + AP2 (seconds)
+CONF_STATS_POLL_INTERVAL = "stats_poll_interval"  # S1 M2008 (seconds)
+CONF_DONGLE_POLL_INTERVAL = "dongle_poll_interval"  # S1 M9098 (seconds)
+
 # --- Network ----------------------------------------------------------------
 DEFAULT_SCAN_INTERVAL = 5  # seconds, used by the coordinator
+DEFAULT_AP2_POLL_INTERVAL = 30  # seconds between explicit M9039 queries
+DEFAULT_STATS_POLL_INTERVAL = 300  # seconds between M2008 lifetime polls
+DEFAULT_DONGLE_POLL_INTERVAL = 60  # seconds between M9098 BLE polls
 
 # --- Brightness scaling (S1 fill light + REST fill light entity) ------------
 BRIGHTNESS_HA_MAX = 255
@@ -28,7 +38,7 @@ BRIGHTNESS_DEVICE_MAX = 100
 
 # --- Cloud firmware update API ---------------------------------------------
 FIRMWARE_API_BASE = "https://api.xtool.com/efficacy/v1"
-FIRMWARE_CHECK_INTERVAL = 21600  # 6 hours between cloud update checks
+FIRMWARE_CHECK_INTERVAL = 21600  # default 6 hours; user-overridable per entry
 
 
 # --- Cross-protocol status / sensitivity enums ------------------------------

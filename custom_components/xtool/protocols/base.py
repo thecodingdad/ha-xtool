@@ -114,10 +114,18 @@ class XtoolDeviceModel:
     has_mode_switch: bool = False
     has_purifier_timeout: bool = False
     has_fill_light_rest: bool = False
+    has_water_cooling: bool = False  # REST: F1 Ultra fiber-laser water loop
+    has_z_temp: bool = False  # REST: M1 Ultra Z-axis NTC temperature
+    has_workhead_id: bool = False  # REST: M1 Ultra detects mounted tool head
+    has_cpu_fan: bool = False  # REST: M1 Ultra CPU fan
+    has_uv_fire: bool = False  # REST: F1U / M1U / P2S UV-based fire sensor
+    has_gyro: bool = False  # REST: P2 / P2S / F1U / M1U accelerometer
+    has_display_screen: bool = False  # REST: F1 Ultra touchscreen brightness
     firmware_content_id: str = ""
     firmware_multi_package: bool = False
     firmware_board_ids: tuple[str, ...] = ()
     firmware_machine_type: str = ""
+    firmware_flash_strategy: str = "default"  # REST family: "default" or "m1_four_step"
 
 
 @dataclass
@@ -158,6 +166,45 @@ class XtoolDeviceState:
     air_assist_connected: bool | None = None  # REST: /peripheral/airassist state
     air_assist_gear_cut: int = 0  # REST: airassistCut config (default cut gear)
     air_assist_gear_grave: int = 0  # REST: airassistGrave config (default engrave gear)
+
+    # REST diagnostic / config — last_button_event reused from F1V2
+    sleep_timeout: int | None = None  # /getsleeptimeout (seconds)
+    sleep_timeout_open_gap: int | None = None  # /getsleeptimeoutopengap
+    fill_light_auto_off: int | None = None  # /getFilllightAutoClosetimout
+    ir_light_auto_off: int | None = None  # /getIrlightAutoClosetimout
+    beep_enabled: bool | None = None  # /getBeepEnable
+    drawer_check: bool | None = None  # /getdrawercheck
+    filter_check: bool | None = None  # /getfiltercheck
+    purifier_check: bool | None = None  # /getpurifiercheck
+    purifier_continue: bool | None = None  # /getpurifiercontinue
+    print_tool_type: str = ""  # /getprintToolType
+    hardware_type: str = ""  # /gethardwaretype
+    water_temperature: float | None = None  # F1 Ultra
+    water_flow: float | None = None  # F1 Ultra
+    z_temperature: float | None = None  # M1 Ultra
+    workhead_id: str = ""  # M1 Ultra mounted tool head
+    workhead_z_height: float | None = None  # M1 Ultra
+    flame_level_hl: int | None = None  # config kv flameLevelHLSelect (1=high, 2=low)
+    # Push peripheral states
+    drawer_open: bool | None = None  # /peripheral/drawer
+    cooling_fan_running: bool | None = None  # /peripheral/cooling_fan
+    smoking_fan_running: bool | None = None  # /peripheral/smoking_fan (REST)
+    cpu_fan_running: bool | None = None  # /peripheral/cpu_fan (M1U)
+    uv_fire_alarm: bool | None = None  # /peripheral/uv_fire_sensor
+    water_pump_running: bool | None = None  # /peripheral/water_pump (F1U)
+    water_line_ok: bool | None = None  # /peripheral/water_line (F1U)
+    gyro_x: float | None = None
+    gyro_y: float | None = None
+    gyro_z: float | None = None
+    # D-series
+    redcross_mode: int | None = None  # M97 S0=cross, S1=lowlight
+    work_area_left: int = 0
+    work_area_right: int = 0
+    work_area_up: int = 0
+    work_area_down: int = 0
+    display_brightness: int | None = None  # F1 Ultra digital_screen
+    # Bluetooth dongle accessories (S1)
+    ble_accessories: list[dict] | None = None
 
     # Task
     task_id: str = ""
@@ -347,11 +394,18 @@ class XtoolProtocol(ABC):
 
     async def flash_firmware(
         self,
-        fw_file: "FirmwareFile",
-        data: bytes,
+        files: list["FirmwareFile"],
+        blobs: list[bytes],
         progress_cb: Callable[[float], None] | None = None,
     ) -> None:
-        """Flash a single firmware file to the device.
+        """Flash one or more firmware files to the device.
+
+        Each protocol decides how to consume the list:
+
+        - S1 iterates the boards sequentially (each entry → one ``/burn`` POST).
+        - D-series receives a single-element list and POSTs the blob to ``/upgrade``.
+        - REST family default treats it as single-blob; the M1 four-step
+          strategy expects two entries (script + package) in that order.
 
         Default raises NotImplementedError so devices that do not implement
         flashing fail fast when the user attempts to install.

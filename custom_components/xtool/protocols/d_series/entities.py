@@ -96,6 +96,46 @@ class XtoolDSeriesMovingStop(_DSeriesSafetySwitch):
 # --- Numbers ----------------------------------------------------------------
 
 
+class XtoolWorkAreaLimit(XtoolEntity, NumberEntity):
+    """D-series work-area soft-limit in mm (M311 L/R/U/D).
+
+    Send-only — firmware doesn't expose a getter, so the entity caches the
+    last-set value locally. Setting any single edge re-sends the full M311
+    line (using the current cached values for the other three edges).
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_native_min_value = 0
+    _attr_native_max_value = 1000
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_icon = "mdi:vector-rectangle"
+
+    def __init__(self, coordinator: XtoolCoordinator, edge: str) -> None:
+        super().__init__(coordinator)
+        self._edge = edge  # left/right/up/down
+        self._attr_unique_id = f"{coordinator.serial_number}_work_area_{edge}"
+        self._attr_translation_key = f"work_area_{edge}"
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        return getattr(d, f"work_area_{self._edge}")
+
+    async def async_set_native_value(self, value: float) -> None:
+        n = int(value)
+        d = self.coordinator.data
+        if d is None:
+            return
+        setattr(d, f"work_area_{self._edge}", n)
+        await self.coordinator.protocol.set_work_area_limits(
+            d.work_area_left, d.work_area_right, d.work_area_up, d.work_area_down,
+        )
+        self.async_write_ha_state()
+
+
 class XtoolDSeriesThreshold(XtoolEntity, NumberEntity):
     """D-series tilt/moving threshold (0-255)."""
 
@@ -220,6 +260,33 @@ class XtoolQuitLightBurn(XtoolEntity, ButtonEntity):
         await self.coordinator.protocol.quit_lightburn_mode()
 
 
+class XtoolRedCrossMode(XtoolEntity, SelectEntity):
+    """D-series red-cross laser pointer mode (M97 S0/S1)."""
+
+    _attr_translation_key = "redcross_mode"
+    _attr_icon = "mdi:laser-pointer"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = ["cross", "low_light"]
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.serial_number}_redcross_mode"
+
+    @property
+    def current_option(self) -> str | None:
+        d = self.coordinator.data
+        if d is None or d.redcross_mode is None:
+            return None
+        return "cross" if d.redcross_mode == 0 else "low_light"
+
+    async def async_select_option(self, option: str) -> None:
+        v = 0 if option == "cross" else 1
+        await self.coordinator.protocol.set_redcross_mode(v)
+        if self.coordinator.data:
+            self.coordinator.data.redcross_mode = v
+        self.async_write_ha_state()
+
+
 # --- Diagnostic sensors -----------------------------------------------------
 
 
@@ -312,6 +379,8 @@ def build_d_series_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         entities.append(XtoolDSeriesThreshold(coordinator, "tilt"))
     if model.has_moving_sensor:
         entities.append(XtoolDSeriesThreshold(coordinator, "moving"))
+    for edge in ("left", "right", "up", "down"):
+        entities.append(XtoolWorkAreaLimit(coordinator, edge))
     return entities
 
 
@@ -320,6 +389,7 @@ def build_d_series_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
     if coordinator.model.has_flame_alarm:
         entities.append(DSeriesFlameAlarmSensitivity(coordinator))
     entities.append(XtoolFlameAlarmMode(coordinator))
+    entities.append(XtoolRedCrossMode(coordinator))
     return entities
 
 

@@ -34,12 +34,22 @@
         "data": {
           "power_switch_entity_id": "Steckdose",
           "enable_firmware_updates": "Firmware-Updates aktivieren",
-          "has_ap2": "AP2 Luftreiniger angeschlossen"
+          "has_ap2": "AP2 Luftreiniger angeschlossen",
+          "scan_interval": "Abfrageintervall",
+          "firmware_check_interval": "Intervall der Firmware-Update-Prüfung",
+          "ap2_poll_interval": "Abfrageintervall AP2 Luftreiniger",
+          "stats_poll_interval": "Abfrageintervall Lebensdauer-Statistik",
+          "dongle_poll_interval": "Abfrageintervall Bluetooth-Dongle"
         },
         "data_description": {
           "power_switch_entity_id": "Wähle einen Schalter, der die Stromversorgung des Lasers steuert (z.B. eine Funksteckdose). Leer lassen, wenn nicht vorhanden.",
           "enable_firmware_updates": "Wenn aktiviert, kann die Firmware-Update-Entität neue Firmware installieren. Wenn deaktiviert, zeigt sie nur an, dass ein Update verfügbar ist.",
-          "has_ap2": "Aktiviere um AP2-Luftreiniger-Sensoren (Filter-Restkapazität, Stufe, Partikelsensoren) anzuzeigen. Nur S1."
+          "has_ap2": "Aktiviere um AP2-Luftreiniger-Sensoren (Filter-Restkapazität, Stufe, Partikelsensoren) anzuzeigen. Nur S1.",
+          "scan_interval": "Wie oft die Integration den Gerätestatus abfragt. Kürzere Werte reagieren schneller, erzeugen aber mehr Netzwerk-Traffic.",
+          "firmware_check_interval": "Wie oft die Integration die xTool Cloud nach neuen Firmware-Versionen prüft.",
+          "ap2_poll_interval": "Wie oft der AP2-Luftreiniger-Status (M9039) abgefragt wird. Wird nur verwendet, wenn ein AP2 angeschlossen ist.",
+          "stats_poll_interval": "Wie oft Lebensdauer-Statistiken (M2008) aktualisiert werden. Langsam veränderliche Werte, Standard 5 Minuten.",
+          "dongle_poll_interval": "Wie oft die verbundenen Bluetooth-Zubehörteile (M9098) abgefragt werden."
         }
       },
       "confirm_updates": {
@@ -119,16 +129,34 @@
       "filter_dense_carbon": { "name": "Ultra-Aktivkohle-Filter Restkapazität" },
       "filter_hepa": { "name": "HEPA-Filter Restkapazität" },
       "purifier_sensor_d": { "name": "Reiniger Sensor D" },
-      "purifier_sensor_s": { "name": "Reiniger Sensor S" }
+      "purifier_sensor_s": { "name": "Reiniger Sensor S" },
+      "water_temperature": { "name": "Wassertemperatur" },
+      "water_flow": { "name": "Wasserdurchfluss" },
+      "z_temperature": { "name": "Z-Achsen-Temperatur" },
+      "workhead_id": { "name": "Werkzeug" },
+      "workhead_z_height": { "name": "Werkzeug Z-Höhe" },
+      "print_tool_type": { "name": "Werkzeugtyp" },
+      "hardware_type": { "name": "Hardware-Typ" },
+      "gyro_x": { "name": "Gyro X" },
+      "gyro_y": { "name": "Gyro Y" },
+      "gyro_z": { "name": "Gyro Z" }
     },
     "binary_sensor": {
       "accessories": { "name": "Zubehör" },
       "cover_open": { "name": "Deckel" },
       "machine_lock": { "name": "Geräteverriegelung" },
       "alarm": { "name": "Alarm" },
+      "xcs_compatibility_mode": { "name": "XCS-Kompatibilitätsmodus" },
       "purifier_running": { "name": "Luftreiniger aktiv" },
       "purifier_connected": { "name": "Luftreiniger verbunden" },
-      "air_assist_connected": { "name": "Air-Assist verbunden" }
+      "air_assist_connected": { "name": "Air-Assist verbunden" },
+      "drawer_open": { "name": "Schublade" },
+      "cooling_fan_running": { "name": "Kühllüfter" },
+      "smoking_fan_running": { "name": "Absauglüfter" },
+      "cpu_fan_running": { "name": "CPU-Lüfter" },
+      "uv_fire_alarm": { "name": "UV-Brandsensor" },
+      "water_pump_running": { "name": "Wasserpumpe" },
+      "water_line_ok": { "name": "Wasserkreislauf" }
     },
     "camera": {
       "camera_overview": { "name": "Übersichtskamera" },
@@ -151,7 +179,13 @@
       "flame_alarm_v2": { "name": "Feueralarm" },
       "beep_v2": { "name": "Signalton" },
       "gap_check": { "name": "Deckelüberwachung" },
-      "machine_lock_check": { "name": "Verriegelungsüberwachung" }
+      "machine_lock_check": { "name": "Verriegelungsüberwachung" },
+      "beep_enable": { "name": "Signalton" },
+      "drawer_check": { "name": "Schubladenprüfung" },
+      "filter_check": { "name": "Filterprüfung" },
+      "purifier_check": { "name": "Reiniger-Prüfung" },
+      "purifier_continue": { "name": "Reiniger Auto-Continue" },
+      "cooling_fan": { "name": "Kühllüfter" }
     },
     "number": {
       "air_assist_close_delay": { "name": "Air-Assist-Nachlauf" },
@@ -162,7 +196,16 @@
       "camera_exposure_closeup": { "name": "Belichtung (Nahaufnahme)" },
       "air_assist_gear_cut": { "name": "Air-Assist Stufe (Schneiden)" },
       "air_assist_gear_grave": { "name": "Air-Assist Stufe (Gravieren)" },
-      "purifier_timeout": { "name": "Filter-Nachlaufzeit" }
+      "purifier_timeout": { "name": "Filter-Nachlaufzeit" },
+      "sleep_timeout": { "name": "Schlaf-Timeout" },
+      "sleep_timeout_open_gap": { "name": "Schlaf-Timeout (Deckel offen)" },
+      "fill_light_auto_off": { "name": "Arbeitslicht Auto-Aus" },
+      "ir_light_auto_off": { "name": "IR-Licht Auto-Aus" },
+      "display_brightness": { "name": "Display-Helligkeit" },
+      "work_area_left": { "name": "Arbeitsbereich Links" },
+      "work_area_right": { "name": "Arbeitsbereich Rechts" },
+      "work_area_up": { "name": "Arbeitsbereich Oben" },
+      "work_area_down": { "name": "Arbeitsbereich Unten" }
     },
     "select": {
       "flame_alarm_sensitivity": {
@@ -181,6 +224,29 @@
           "mode_3": "Modus 3",
           "mode_4": "Modus 4"
         }
+      },
+      "purifier_speed_select": {
+        "name": "Reiniger-Stufe",
+        "state": {
+          "off": "Aus",
+          "low": "Niedrig",
+          "medium": "Mittel",
+          "high": "Hoch"
+        }
+      },
+      "flame_level_hl": {
+        "name": "Flammen-Stufe",
+        "state": {
+          "high": "Hoch",
+          "low": "Niedrig"
+        }
+      },
+      "redcross_mode": {
+        "name": "Red-Cross-Modus",
+        "state": {
+          "cross": "Kreuz-Laser",
+          "low_light": "Schwachlicht-Modus"
+        }
       }
     },
     "update": {
@@ -195,7 +261,9 @@
       "home_z": { "name": "Z homen" },
       "home_laser_head": { "name": "Laserkopf homen" },
       "measure_distance": { "name": "Distanz messen" },
-      "quit_lightburn": { "name": "LightBurn-Modus verlassen" }
+      "quit_lightburn": { "name": "LightBurn-Modus verlassen" },
+      "reboot": { "name": "Neustart" },
+      "time_sync": { "name": "Zeit synchronisieren" }
     }
   }
 }
