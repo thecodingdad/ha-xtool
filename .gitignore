@@ -2,6 +2,7 @@
 *.apk
 decompiled/
 extracted_assets/
+firmware/
 
 # Python
 __pycache__/
