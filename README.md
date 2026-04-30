@@ -1,6 +1,6 @@
 # xTool Laser
 
-Home Assistant integration for xTool laser cutters and engravers (S1, D1, D1 Pro, F1, P2, M1, and others).
+Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet printers (S1, D1 family, F1 family, F2 family, M1 family, P-family, MetalFab, Apparel Printer, …).
 
 This integration communicates directly with your xTool device over the local network using the reverse-engineered WebSocket and REST protocols. No cloud connection required.
 
@@ -11,19 +11,21 @@ This integration communicates directly with your xTool device over the local net
 
 - Full local control — no cloud, no xTool account required
 - Monitor device status (idle, processing, paused, finished, error, ...)
-- Control light brightness
-- Toggle buzzer, move stop, exhaust fan
-- Configure air-assist post-run, exhaust post-run
-- Flame alarm sensitivity (high / low / off)
-- Job control buttons (pause, resume, cancel, home axes)
-- Laser position tracking (X/Y/Z)
+- Control light brightness, buzzer, exhaust + cooling fans, safety toggles
+- Configure air-assist post-run, exhaust post-run, sleep timeouts, fill-/IR-light auto-off, work-area limits
+- Flame alarm sensitivity (high / low / off) and mode selection
+- Job control buttons (pause, resume, cancel, home axes, reboot, time-sync)
+- Laser position tracking (X/Y/Z), gyro/accelerometer (P2/P2S, F1 Ultra family, M1 Ultra, MetalFab), workhead identity + Z height (M1 Ultra)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
-- Laser module detection (type + power)
-- Attached accessories detection (air pump, fire extinguisher, riser base)
-- Camera support for P2 / P2S / F1 Ultra (overview + close-up + flame record)
-- Firmware update entity — checks the xTool cloud for new firmware (install off by default, opt-in with confirmation)
+- Laser module detection (type + power) and hardware type
+- Attached accessories detection (air pump, fire extinguisher, riser base, Bluetooth dongle)
+- AP2 air-cleaner sensors (filter remaining, particle dust sensors, speed)
+- Water-cooling telemetry — temperature / flow / pump / line OK (F1 Ultra family fiber laser)
+- Z-axis temperature + CPU fan (M1 Ultra), UV fire sensor (F1 Ultra family / F2 Ultra UV / M1 Ultra / P2S)
+- Camera support for P2 / P2S / F1 Ultra family / F2 Ultra family / P3 / MetalFab (overview + close-up + flame record)
+- Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
-- Push state updates via WebSocket (S1) — minimal polling delay
+- Push state updates via WebSocket (S1, F1 V2, D-series) — minimal polling delay
 - Automatic reconnect on network interruption
 - Multi-model support with auto-detected protocol
 
@@ -38,12 +40,12 @@ The integration supports four protocol families that cover all current xTool mod
 
 | Protocol | Models | Communication |
 |----------|--------|---------------|
-| WebSocket M-code | S1 | WebSocket (port 8081) + HTTP (port 8080) |
-| HTTP M-code | D1, D1 Pro, D1 Pro 2.0 | HTTP POST (port 8080) |
-| REST API | F1, F1 Ultra, F1 Lite (GS005), M1, M1 Ultra, P1, P2, P2S | HTTP REST (ports 8080 / 8087 / 8329) |
-| TLS WebSocket listener | F1 V2 (firmware 40.51+) | wss (port 28900), read-only push |
+| WebSocket M-code | S1 | bidirectional WS (port 8081) + HTTP fallback (port 8080) |
+| HTTP REST + status push WS | D1, D1 Pro, D1 Pro 2.0 | HTTP `/cmd` writes (port 8080) + read-only WS status push (port 8081) |
+| REST API | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (ports 8080 main / 8087 firmware / 8329 camera) |
+| TLS WebSocket listener | F1 V2 (firmware 40.51+) | wss (port 28900), push-only |
 
-> **Note:** The integration was developed and tested with an xTool S1. Other models are supported based on reverse engineering of the xTool Android app (XCS) but have not been tested with real hardware. Community feedback is welcome!
+> **Note:** The integration was developed and tested with an xTool S1. Other models are supported based on reverse-engineering the xTool XCS Android app and the newer xTool Studio Windows app, but have not been tested with real hardware. Community feedback is welcome!
 
 ## Installation
 
@@ -78,11 +80,18 @@ Or add manually:
 
 After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool Laser** > **Configure**:
 
+The available options are gated by the device's protocol family — only relevant fields appear.
+
 | Option | Description |
 |--------|-------------|
 | Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off, the status shows "Off" and entities become unavailable. |
-| Enable firmware updates | Off by default — the firmware update entity only reports whether an update is available. Enabling this option arms the install action. |
+| Polling interval | Main coordinator polling cadence in seconds (default 5). Lower = more responsive, higher network usage. |
+| Enable firmware updates | _(only when the model has a known firmware ID)._ Off by default — the firmware update entity only reports whether an update is available. Enabling this option arms the install action. |
+| Firmware-update check interval | _(only when firmware updates are supported.)_ How often the cloud is polled for new firmware (default 6 h). |
 | AP2 air cleaner | **S1 only.** Opt-in toggle that adds the AP2 air-cleaner sensors (running / connected / speed / filter remaining / dust sensors) and starts polling the air-cleaner push frame. Leave off if you do not own an AP2. |
+| AP2 air-cleaner polling interval | **S1 only.** How often the AP2 push frame is queried (default 30 s). |
+| Lifetime-stats polling interval | **S1 only.** How often `M2008` is polled for working time / session count / standby / runtime (default 300 s). |
+| Bluetooth-dongle polling interval | **S1 only.** How often `M9098` is polled for connected BLE accessories (default 60 s). |
 
 ## Entities
 
@@ -102,6 +111,14 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 | Session count | Total number of job starts (total_increasing) |
 | Standby time | Lifetime standby hours (total_increasing) |
 | Laser module runtime | Current laser module runtime hours (total_increasing) |
+| Last button event | Last physical button event (single / long / double press). **REST family.** |
+| Working mode | Current device working mode (cut / engrave / ...). **REST family.** |
+| Workhead | Detected workhead identity (laser / knife / inkjet / ...). **M1 Ultra.** |
+| Workhead Z height | Workhead Z height offset in mm. **M1 Ultra.** |
+| Z-axis temperature | Z-axis NTC temperature. **M1 Ultra.** |
+| Water temperature / Water flow rate | Water-cooling loop sensors. **F1 Ultra fiber laser.** |
+| Gyro X / Y / Z | 3-axis accelerometer. **F1 Ultra family / M1 Ultra / P2 / P2S / MetalFab.** |
+| Purifier speed / filter remaining (pre / medium / carbon / dense carbon / HEPA) / sensor D / sensor S | AP2 air-cleaner telemetry. **S1 with AP2 only.** |
 
 ### Diagnostic Sensors
 
@@ -115,8 +132,9 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 | Active connections | Number of WebSocket clients currently connected to the laser (HA + XCS app + …). Useful to spot when the XCS app has kicked the integration. **S1 only.** |
 | Origin offset X / Y | Last set work-area origin offset. **D-series only.** |
 | Last distance | Last IR distance measurement result. **P2 / P2S only.** |
-| Last job time / Working mode / Last button event | F1 V2 diagnostic snapshot from push frames. **F1 V2 only.** |
-| Purifier speed / filter remaining (pre / medium / carbon / dense carbon / HEPA) / sensor D / sensor S | AP2 air-cleaner telemetry. **S1 with AP2 only.** |
+| Last job time | F1 V2 diagnostic snapshot from push frames. **F1 V2 only.** |
+| Print tool type | Print tool kind reported by device. **REST family.** |
+| Hardware type | Hardware revision string. **REST family.** |
 
 ### Light
 
@@ -128,14 +146,17 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 
 | Entity | Description |
 |--------|-------------|
-| Buzzer | Enable/disable audio feedback |
+| Buzzer / Beep | Enable/disable audio feedback. (S1 + REST + F1 V2 push) |
 | Move stop | Enable/disable emergency movement stop |
 | Exhaust fan | Enable/disable smoke extraction fan |
 | Power | Controls the linked smart plug (only when configured in options) |
 | Tilt stop / Limit stop / Move stop (D-series) | Per-sensor safety toggles. **D-series only.** |
 | IR LED close-up / IR LED global | Cover and global IR illumination. **P2 / P2S only.** |
-| Digital lock | Cover digital lock control. **P2 / P2S only.** |
-| Flame alarm V2 / Beep V2 / Gap check / Machine lock check | Read-only push toggles mirroring device config. **F1 V2 only.** |
+| Cover lock | Cover digital lock control. **P2 / P2S only.** |
+| Flame alarm / Cover check / Lock check | Read-only push toggles mirroring device config. **F1 V2 only.** |
+| Drawer check / Filter check / Purifier check | Safety enforcement toggles (require accessory present before job). **REST family.** |
+| Purifier auto-continue | Keep purifier running after job ends. **REST family.** |
+| Cooling fan | CPU + laser cooling fan toggle. **REST family.** |
 
 ### Numbers
 
@@ -143,10 +164,16 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 |--------|-------|------|-------------|
 | Air-assist post-run | 0-600 | seconds | Time the air assist stays on after a job ends |
 | Exhaust post-run | 1-600 | seconds | Time the exhaust fan stays on after a job ends |
-| Tilt threshold / Moving threshold | 0-255 | — | D-series sensor sensitivities |
-| Camera exposure (overview / close-up) | 0-255 | — | Camera exposure values. **P2 / P2S / F1 / F1 Ultra only.** |
+| Tilt threshold / Movement threshold | 0-255 | — | D-series sensor sensitivities |
+| Camera exposure (overview / close-up) | 0-255 | — | Camera exposure values. **All REST family models with cameras (F1 family / F2 family / P2 / P2S / P3).** |
 | Air-Assist gear (cut / engrave) | 0-4 | — | Default Air-Assist gear written to user config — applied to next job. **M1 Ultra only; only available when an Air-Assist accessory is attached.** |
-| Purifier timeout | 0-3600 | seconds | F1 V2 air-purifier auto-off (read-only push) |
+| Purifier auto-off | 0-3600 | seconds | Air-purifier auto-off delay (REST family + F1 V2 push) |
+| Sleep timeout | 0-3600 | seconds | Idle sleep timeout. **REST family.** |
+| Sleep timeout (cover open) | 0-3600 | seconds | Idle sleep timeout while cover is open. **REST family.** |
+| Fill-light auto-off | 0-3600 | seconds | Built-in fill light auto-off. **REST family.** |
+| IR-light auto-off | 0-3600 | seconds | IR illumination auto-off. **REST family.** |
+| Display brightness | 0-100 | % | Built-in display brightness. **F1 Ultra / F1 Ultra V2 only.** |
+| Work area limit (left / right / up / down) | device-specific | mm | M311 work-area limits. **D-series only.** |
 
 ### Select
 
@@ -154,6 +181,9 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 |--------|---------|-------------|
 | Flame alarm sensitivity | High, Low, Off | Flame detection sensitivity level. "Off" disables the alarm. |
 | Flame alarm mode | Mode 1-4 | D-series detection mode preset. **D-series only.** |
+| Purifier speed | Off, Low, Medium, High | AP2 / external purifier speed. **REST family.** |
+| Flame level | High, Low | Flame-level threshold. **REST family.** |
+| Red-cross mode | Cross-laser pointer, Low-light mode | M97 red-cross laser mode. **D-series only.** |
 
 ### Buttons
 
@@ -165,35 +195,45 @@ After adding a device, you can configure it under **Settings** > **Devices & Ser
 | Home all axes | Move laser head to home position (all axes) |
 | Home XY | Move laser head to XY home position |
 | Home Z | Move laser head to Z home position |
-| Home laser head | Move REST laser head back to (0, 0). **P2 / P2S / F1 / F1 Ultra only.** |
-| Measure distance | Trigger an IR distance measurement. **P2 / P2S only.** |
+| Home laser head | Move REST laser head back to (0, 0). **F1 / F1 Ultra family / F2 family / P2 / P2S / P3.** |
+| Measure distance | Trigger an IR distance measurement. **P2 / P2S / P3.** |
 | Quit LightBurn | Leave LightBurn standby mode. **D-series only.** |
+| Reboot | Soft-reboot the device. **REST family.** |
+| Sync time | Push HA's local time to the device. **REST family.** |
 
 ### Binary Sensors
 
 | Entity | Description |
 |--------|-------------|
-| Accessories | On when accessories are attached. Attributes list the connected accessories (Air Pump, Fire Extinguisher, Riser Base) with firmware versions. **S1 only.** |
+| Accessories | On when accessories are attached. Attributes list connected accessories (Air Pump, Fire Extinguisher, Riser Base, Bluetooth dongle) with firmware versions. **S1 only.** |
 | Alarm | Generic problem flag — on when the device reports any active alarm. **S1 only.** |
+| XCS compatibility mode | Diagnostic flag — on when the integration detects the XCS desktop app holding the WebSocket and switches all writes to HTTP `/cmd`. **S1 only.** |
 | Air cleaner running | AP2 air cleaner currently running. **S1 with AP2 only.** |
 | Air cleaner connected | AP2 module slot in the accessories array is populated. **S1 with AP2 only.** |
 | Air-Assist connected | Air-Assist V2 accessory connected. **M1 Ultra only.** |
-| Cover | Cover / lid open detection. **F1 V2 (push) and REST cover models like P2 / P2S only.** |
-| Machine lock | Machine lock state (LOCK device class — `on` = unlocked). **F1 V2 only.** |
+| Cover | Cover / lid open detection. **F1 V2 (push), P2 / P2S / P3 / MetalFab.** |
+| Machine lock | Machine lock state (LOCK device class — `on` = unlocked). **F1 V2 / F1 family / F2 family.** |
+| Drawer | Front-drawer position. **M1 Ultra / P2 / P2S / P3 / MetalFab.** |
+| Cooling fan | Cooling fan running. **REST family.** |
+| Exhaust fan | Smoke extraction running. **REST family.** |
+| CPU fan | CPU fan running. **M1 / M1 Ultra.** |
+| UV fire sensor | UV-based fire detection alarm. **F1 Ultra / F1 Ultra V2 / F2 Ultra UV / M1 Ultra / P2S.** |
+| Water pump | Water-cooling pump running. **F1 Ultra family / P3.** |
+| Water line | Water-cooling line OK. **F1 Ultra family / P3.** |
 
 ### Update
 
 | Entity | Description |
 |--------|-------------|
-| Firmware | Reports the installed and latest firmware version by querying the xTool cloud (re-checked on reconnect and every 6 hours). Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it. |
+| Firmware | Reports the installed and latest firmware version by querying the xTool cloud (re-checked on reconnect and every 6 hours). The release notes (English title + description) from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it. |
 
 ### Cameras
 
 | Entity | Description |
 |--------|-------------|
-| Overview camera | Wide-angle workspace camera. **P2 / P2S / F1 Ultra.** |
-| Close-up camera | Detailed close-up camera. **P2 / P2S / F1 Ultra.** |
-| Flame record | Snapshot of the most recent flame detection event. **F1 Ultra only.** |
+| Overview camera | Wide-angle workspace camera. **F1 Ultra / F1 Ultra V2 / F2 Ultra / F2 Ultra Single / F2 Ultra UV / P2 / P2S / P3 / MetalFab.** |
+| Close-up camera | Detailed close-up camera. **F1 Ultra / F1 Ultra V2 / F2 Ultra / F2 Ultra Single / F2 Ultra UV / P2 / P2S / P3 / MetalFab.** |
+| Flame record | Snapshot of the most recent flame detection event. **F1 Ultra / F1 Ultra V2.** |
 
 ## Device Information
 
@@ -215,16 +255,21 @@ The xTool Creative Space (XCS) desktop app and this integration can be used in p
 
 ## Technical Details
 
-This integration communicates with xTool devices using protocols discovered through reverse engineering of the xTool XCS Android app:
+The integration speaks four protocol families, all reverse-engineered from the xTool XCS Android app and the newer xTool Studio Windows app (the current primary source):
 
-- **UDP port 20000** — Device discovery via broadcast (`{"requestId": <int>}`)
-- **WebSocket port 8081** (S1) — Real-time G-code command/response with push state updates
-- **HTTP port 8080** — System queries, file upload, command fallback
-- **REST API port 8080** (F1/P2/M1) — JSON REST endpoints for device control
+- **UDP port 20000** — device discovery via broadcast (`{"requestId": <int>}`)
+- **WebSocket port 8081** (S1) — bidirectional G-code RPC + push state updates
+- **HTTP port 8080** — S1 file upload + `/cmd` fallback; D-series + REST family main API
+- **WebSocket port 8081** (D-series) — read-only status push (`ok:IDLE`, `err:flameCheck`, …)
+- **HTTP port 8087** (REST family) — firmware handshake + flash
+- **HTTP port 8329** (REST family) — camera snap + exposure
+- **TLS WebSocket port 28900** (F1 V2, firmware 40.51+) — listener-only push channel
 
-Commands use a G-code dialect (M-codes): `M222` (status), `M13` (light), `M340` (flame alarm), `M2003` (full device info), etc.
+Commands use a G-code dialect (M-codes): `M222` (status), `M13` (light), `M340` (flame alarm), `M2003` (full device info), `M9098` (BLE accessories), etc.
 
-A complete reference of all M-codes, HTTP endpoints, JSON formats, status mappings, and the firmware-update cloud API is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The firmware-update entity hits the public xTool cloud API (`api.xtool.com`) on the `atomm` namespace using `xTool-*-firmware` content IDs.
+
+A complete reference of all M-codes, HTTP endpoints, JSON formats, status mappings, capability flags per model, and the firmware-update cloud API is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## Multilanguage Support
 
