@@ -61,8 +61,8 @@ import json
 import logging
 import ssl
 import time
-import uuid
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -79,10 +79,28 @@ from ..base import (
 
 WSV2_PORT = 28900
 WSV2_PATH = "/websocket"
-WSV2_HEARTBEAT_SECONDS = 5.0
+# Studio defaults observed in atomm-sharedworker.esm.*.js. Heartbeat
+# interval matches the worker's ``heartbeatInterval ?? 3e3``; pong
+# timeout matches ``heartbeatTimeout ?? 11e3``.
+WSV2_HEARTBEAT_SECONDS = 3.0
+WSV2_HEARTBEAT_TIMEOUT = 11.0
 WSV2_REQUEST_TIMEOUT = 8.0
 WSV2_PROBE_TIMEOUT = 4.0
 WSV2_FILE_UPLOAD_TIMEOUT = 600.0
+# First-message handshake. Studio's worker stamps every connection with
+# this ``socketFirstMessageCode`` (default ``bWFrZWJsb2NrLXh0b29s`` =
+# base64 of ``makeblock-xtool``) inside a /v1/user/parity request and
+# closes the WS if it isn't acknowledged. ``userUuid`` defaults to
+# ``mk-guest`` for guest sessions.
+WSV2_FIRST_MESSAGE_USER_KEY = "bWFrZWJsb2NrLXh0b29s"
+WSV2_USER_UUID = "mk-guest"
+WSV2_FIRST_MESSAGE_TIMEOUT = 5.0
+# Heartbeat ping uses a fixed transactionId (0xFFE6 in Studio's
+# HEART_MESSAGE_ID constant) so the user-request rotation can skip it.
+WSV2_PING_TRANSACTION_ID = 65510
+# Studio's generateTransactionId rotates a uint16-ish counter — we
+# wrap below the ping id to keep the two pools disjoint.
+WSV2_TRANSACTION_ID_WRAP = 65500
 
 # Mapping of V2 work-mode strings to the integration's normalised status enum.
 # Sources: xTool Studio bundle ``/work/mode`` push handler + the
@@ -122,6 +140,11 @@ async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
     and waits for any frame. Returns True on success, False on any error
     or timeout. No state is held — callers create a real protocol instance
     afterwards.
+
+    The parity handshake (`/v1/user/parity`) is *not* sent here — Studio
+    itself does not probe; it learns the device family via the binding
+    flow. A reachable TLS WS on port 28900 is enough to disambiguate V2
+    from the legacy REST family on port 8080.
     """
     url = (
         f"wss://{host}:{WSV2_PORT}{WSV2_PATH}"
@@ -156,13 +179,22 @@ async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
 
 
 class _PendingRequest:
-    """One in-flight request awaiting its response by ``requestId``."""
+    """One in-flight request awaiting its response by ``transactionId``."""
 
     __slots__ = ("future", "deadline")
 
     def __init__(self, deadline: float) -> None:
         self.future: asyncio.Future[dict[str, Any]] = asyncio.Future()
         self.deadline = deadline
+
+
+def _local_timezone() -> str:
+    """Best-effort IANA timezone string for the parity handshake."""
+    try:
+        tz = datetime.now().astimezone().tzinfo
+        return str(tz) if tz is not None else ""
+    except Exception:
+        return ""
 
 
 class WSV2Protocol(XtoolProtocol):
@@ -183,10 +215,20 @@ class WSV2Protocol(XtoolProtocol):
         self._ws_file: aiohttp.ClientWebSocketResponse | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
-        self._pending: dict[str, _PendingRequest] = {}
+        self._pending: dict[int, _PendingRequest] = {}
+        self._heartbeat_pending: asyncio.Future[dict[str, Any]] | None = None
+        self._transaction_counter = 0
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
+
+    def _next_transaction_id(self) -> int:
+        """Mirror Studio's ``generateTransactionId`` — wrap below the
+        reserved ping id so the two pools never collide."""
+        self._transaction_counter += 1
+        if self._transaction_counter > WSV2_TRANSACTION_ID_WRAP:
+            self._transaction_counter = 1
+        return self._transaction_counter
 
     @property
     def connected(self) -> bool:
@@ -221,6 +263,15 @@ class WSV2Protocol(XtoolProtocol):
             raise ConnectionError(f"V2 WebSocket connect failed: {err}") from err
         self._connected = True
         self._reader_task = asyncio.create_task(self._reader_loop())
+        # Parity handshake must complete before any user request fires
+        # — V2 firmware closes the WS otherwise.
+        try:
+            await self._send_first_message()
+        except Exception as err:
+            await self._close_quiet()
+            raise ConnectionError(
+                f"V2 parity handshake failed: {err}"
+            ) from err
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def disconnect(self) -> None:
@@ -252,6 +303,12 @@ class WSV2Protocol(XtoolProtocol):
                     ConnectionError("V2 WebSocket closed")
                 )
         self._pending.clear()
+        if self._heartbeat_pending is not None and not self._heartbeat_pending.done():
+            self._heartbeat_pending.set_exception(
+                ConnectionError("V2 WebSocket closed")
+            )
+        self._heartbeat_pending = None
+        self._transaction_counter = 0
         if self._session and not self._session.closed:
             try:
                 await self._session.close()
@@ -268,39 +325,43 @@ class WSV2Protocol(XtoolProtocol):
         params: dict | None = None,
         data: dict | None = None,
         timeout: float = WSV2_REQUEST_TIMEOUT,
+        _skip_connect: bool = False,
     ) -> dict[str, Any]:
         """Send a JSON request frame, await the matching response.
 
         Returns the parsed ``data`` field from the response. Raises
         ``ConnectionError`` on disconnect, ``asyncio.TimeoutError`` on
         timeout, ``RuntimeError`` on non-zero ``code``.
+
+        ``_skip_connect`` is used internally by ``_send_first_message``
+        which runs as part of the connect flow itself.
         """
-        if not self._connected or self._ws_instr is None:
+        if not _skip_connect and (not self._connected or self._ws_instr is None):
             await self.connect()
         if self._ws_instr is None:
             raise ConnectionError("V2 WebSocket not connected")
-        request_id = uuid.uuid4().hex
+        transaction_id = self._next_transaction_id()
         payload: dict[str, Any] = {
-            "url": url,
+            "type": "request",
             "method": method.upper(),
-            "requestId": request_id,
+            "url": url,
+            "params": params if params is not None else {},
+            "data": data if data is not None else {},
+            "timestamp": int(time.time() * 1000),
+            "transactionId": transaction_id,
         }
-        if params is not None:
-            payload["params"] = params
-        if data is not None:
-            payload["data"] = data
         deadline = time.monotonic() + timeout
         pending = _PendingRequest(deadline)
-        self._pending[request_id] = pending
+        self._pending[transaction_id] = pending
         try:
             await self._ws_instr.send_str(json.dumps(payload))
         except Exception as err:
-            self._pending.pop(request_id, None)
+            self._pending.pop(transaction_id, None)
             raise ConnectionError(f"V2 send failed: {err}") from err
         try:
             response = await asyncio.wait_for(pending.future, timeout=timeout)
         except asyncio.TimeoutError:
-            self._pending.pop(request_id, None)
+            self._pending.pop(transaction_id, None)
             raise
         code = response.get("code", 0) if isinstance(response, dict) else 0
         if code != 0:
@@ -311,6 +372,22 @@ class WSV2Protocol(XtoolProtocol):
         return (
             response.get("data") if isinstance(response, dict) else {}
         ) or {}
+
+    async def _send_first_message(self) -> None:
+        """Studio's ``sendFirstMessageCode`` — must succeed before any
+        other request fires, otherwise V2 firmware tears down the WS.
+        """
+        await self.request(
+            "/v1/user/parity",
+            "GET",
+            data={
+                "userID": WSV2_USER_UUID,
+                "userKey": WSV2_FIRST_MESSAGE_USER_KEY,
+                "timezone": _local_timezone(),
+            },
+            timeout=WSV2_FIRST_MESSAGE_TIMEOUT,
+            _skip_connect=True,
+        )
 
     # ── reader / heartbeat loops ──────────────────────────────────────
 
@@ -338,19 +415,54 @@ class WSV2Protocol(XtoolProtocol):
             self._connected = False
 
     async def _heartbeat_loop(self) -> None:
+        """Studio HEART_MESSAGE ping every ``WSV2_HEARTBEAT_SECONDS``.
+
+        Studio's worker fires `/v1/user/ping` with the fixed
+        transactionId 65510 and starts a pong-timeout watchdog
+        (`heartbeatTimeout`). If no response arrives within the window
+        the connection is closed and a reconnect is scheduled. We
+        mirror that behaviour: a missed pong tears down the WS so the
+        coordinator's ``_async_update_data`` reconnects on the next
+        poll.
+        """
         try:
             while self._connected:
                 await asyncio.sleep(WSV2_HEARTBEAT_SECONDS)
                 if self._ws_instr is None or self._ws_instr.closed:
                     return
+                payload = {
+                    "type": "request",
+                    "method": "GET",
+                    "url": "/v1/user/ping",
+                    "params": {},
+                    "data": {},
+                    "timestamp": int(time.time() * 1000),
+                    "transactionId": WSV2_PING_TRANSACTION_ID,
+                }
+                self._heartbeat_pending = asyncio.Future()
                 try:
-                    # V2 heartbeat: empty JSON ping ({}). Some firmware
-                    # accepts a `{"type":"ping"}` frame instead — both
-                    # have been observed in xTool Studio bundle traces.
-                    await self._ws_instr.send_str('{"type":"ping"}')
+                    await self._ws_instr.send_str(json.dumps(payload))
                 except Exception as err:
-                    _LOGGER.debug("V2 heartbeat failed: %s", err)
+                    _LOGGER.debug("V2 heartbeat send failed: %s", err)
+                    self._heartbeat_pending = None
+                    asyncio.create_task(self._close_quiet())
                     return
+                try:
+                    await asyncio.wait_for(
+                        self._heartbeat_pending,
+                        timeout=WSV2_HEARTBEAT_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    _LOGGER.info(
+                        "V2 heartbeat timeout (%.1fs) — closing %s",
+                        WSV2_HEARTBEAT_TIMEOUT, self.host,
+                    )
+                    asyncio.create_task(self._close_quiet())
+                    return
+                except ConnectionError:
+                    return
+                finally:
+                    self._heartbeat_pending = None
         except asyncio.CancelledError:
             raise
 
@@ -361,12 +473,29 @@ class WSV2Protocol(XtoolProtocol):
             return
         if not isinstance(event, dict):
             return
-        request_id = event.get("requestId")
-        if request_id and request_id in self._pending:
-            pending = self._pending.pop(request_id)
-            if not pending.future.done():
-                pending.future.set_result(event)
-            return
+        # Responses carry ``type:"response"`` and a numeric
+        # ``transactionId`` either at top-level or nested under
+        # ``data.transactionId`` (Studio's dispatcher checks both).
+        if event.get("type") == "response":
+            txn = event.get("transactionId")
+            if not isinstance(txn, int):
+                inner = event.get("data")
+                if isinstance(inner, dict):
+                    inner_txn = inner.get("transactionId")
+                    if isinstance(inner_txn, int):
+                        txn = inner_txn
+            if isinstance(txn, int):
+                if txn == WSV2_PING_TRANSACTION_ID:
+                    if (
+                        self._heartbeat_pending is not None
+                        and not self._heartbeat_pending.done()
+                    ):
+                        self._heartbeat_pending.set_result(event)
+                    return
+                pending = self._pending.pop(txn, None)
+                if pending is not None and not pending.future.done():
+                    pending.future.set_result(event)
+                return
         # Otherwise treat as a push event.
         self._dispatch_push(event)
 

@@ -1081,8 +1081,124 @@ Two distinct frame shapes coexist on the wire:
 The newer V2 surface mirrors a REST API one-to-one — every named API
 in the extension bundle has a `url`, `method`, optional `params`,
 optional `data` (request body), optional `transformResult` (server
-return shape). Frames carry a `requestId` to multiplex concurrent
-calls; responses arrive on the same WS with the matching `requestId`.
+return shape). Frames carry a numeric `transactionId` to multiplex
+concurrent calls; responses arrive on the same WS with the matching
+`transactionId` (see [Connection lifecycle](#connection-lifecycle-v2)
+below for the full envelope).
+
+### Connection lifecycle (V2)
+
+Reverse-engineered from the xTool Studio shared worker
+(`atomm-sharedworker.esm.*.js`). Counters and frame templates listed
+here are the live wire contract — diverging from them caused our
+earlier Python implementation to silently drop every response.
+
+**Defaults applied by Studio's worker:**
+
+| Knob | Default | Notes |
+|---|---|---|
+| `connectTimeout` | 3000 ms | TLS WS open timeout. |
+| `heartbeatInterval` | 3000 ms | Period between pings. |
+| `heartbeatTimeout` | 11000 ms | Watchdog: close WS if no pong. |
+| `useHeartBeat` | true | V2 device extension override. |
+| `needHeartBeatResponse` | true | V2 expects pong; close if missing. |
+| `dataStream` | true | Multiplex requests by `transactionId`. |
+| `userUuid` | `mk-guest` | Default for guest sessions. |
+| `socketFirstMessageCode` | `bWFrZWJsb2NrLXh0b29s` | Base64 of `makeblock-xtool`. |
+
+DT001 (Apparel Printer) extends the WS URL with `clientId=<localStorage>&type=xcs&time=<yyyy-MM-dd HH:mm:ss>`. All other V2 devices stick to `id=<Date.now()>&function=<channel>`.
+
+**Step 1 — Open WS:**
+
+```
+wss://<ip>:28900/websocket?id=<Date.now()>&function=instruction
+wss://<ip>:28900/websocket?id=<Date.now()>&function=file_stream
+wss://<ip>:28900/websocket?id=<Date.now()>&function=media_stream
+```
+
+TLS, certificate verification disabled (self-signed device cert).
+
+**Step 2 — Parity first-message handshake:**
+
+Right after `ws.open` and before any other request, Studio's
+`sendFirstMessageCode` issues a normal V2 JSON request:
+
+```json
+{
+  "type": "request",
+  "method": "GET",
+  "url": "/v1/user/parity",
+  "params": {},
+  "data": {
+    "userID": "<userUuid e.g. mk-guest>",
+    "userKey": "bWFrZWJsb2NrLXh0b29s",
+    "timezone": "<IANA timezone>"
+  },
+  "timestamp": <ms>,
+  "transactionId": <auto-incrementing number>
+}
+```
+
+If the response carries `code !== 0` or fails, Studio closes with
+`CloseCode.FirstMessageError` and does not retry until reconnect. The
+old "raw text frame `bWFrZWJsb2NrLXh0b29s` after connect" claim from
+older docs was a misread — the token still exists, but it lives inside
+the parity request body.
+
+**Step 3 — Request/response envelope:**
+
+Every API call sent on `function=instruction` carries:
+
+```json
+{
+  "type": "request",
+  "method": "GET" | "PUT" | "POST" | "DELETE",
+  "url": "/v1/...",
+  "params": { ... },
+  "data": { ... },
+  "timestamp": <Date.now()>,
+  "transactionId": <number, auto-incrementing, wraps below 65500>
+}
+```
+
+Responses arrive as:
+
+```json
+{
+  "type": "response",
+  "code": 0,
+  "transactionId": <same number — top-level OR data.transactionId>,
+  "data": <object>,
+  "msg": "ok"
+}
+```
+
+The dispatcher reads `response.transactionId ?? response.data.transactionId`,
+filters on `type === "response"`, then resolves the pending Promise.
+Anything else (`type` missing, or no `transactionId`) is treated as a
+push event.
+
+**Step 4 — Heartbeat:**
+
+Every `heartbeatInterval` (3 s) Studio sends a fixed-id ping:
+
+```json
+{
+  "type": "request",
+  "method": "GET",
+  "url": "/v1/user/ping",
+  "params": {},
+  "data": {},
+  "timestamp": <Date.now()>,
+  "transactionId": 65510
+}
+```
+
+After sending, a pong-timeout timer of `heartbeatTimeout` (11 s) fires;
+if no `type:"response"` frame with `transactionId 65510` arrives the
+worker closes the WS with `CloseCode.PingTimeout` and flags
+`needReconnect=true`. The fixed `65510` id keeps the ping pool
+disjoint from the user-request rotation (which wraps at 65500).
 
 ### V2 endpoint inventory
 
