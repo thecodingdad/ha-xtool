@@ -1016,32 +1016,57 @@ Models column ordered as: D1, D1Pro, D1Pro 2.0.
 
 ## F1 V2 protocol (F1 firmware 40.51+)
 
-**Listener-only** — no documented command channel. Push frames cover
-status (work mode, work-prepared/started/finished), lid open/close,
-machine lock, and task ID/time.
+F1 V2 (and the newer F1 Ultra V2 / GS003, F2 family / GS004-CLASS-4,
+GS006, GS007-CLASS-4, GS009-CLASS-4) replaces the older HTTP REST
+transport with a **full request/response API tunneled over three
+parallel WebSocket connections**. The earlier "listener-only" notes
+in the community integrations only covered the *broadcast* event
+channel — the actual API surface is full bidirectional and rivals
+the legacy REST family in scope.
 
 ### Connection
 
+Three concurrent WebSocket connections to the same endpoint, each
+with a different `function=` query parameter:
+
 ```
-wss://<ip>:28900/websocket?id=<random_uuid>&function=instruction
+wss://<ip>:28900/websocket?id=<timestamp>&function=instruction
+wss://<ip>:28900/websocket?id=<timestamp>&function=file_stream
+wss://<ip>:28900/websocket?id=<timestamp>&function=media_stream
 ```
 
-- TLS, certificate verification disabled (self-signed device cert).
-- Immediately after connect, send TEXT frame
-  `bWFrZWJsb2NrLXh0b29s` (handshake token, base64 of `"makeblock-xtool"`).
-- Heartbeat: send BINARY `\xC0\x00` every 2 s.
-- The probe in `validate_connection` waits up to 5 s for any frame
-  after the handshake — if one arrives, the device is F1 V2.
+- TLS with self-signed device cert (verification disabled in clients).
+- `id` = `Date.now()` at connect time (millisecond timestamp), reused
+  across all three connections to tie them to the same client session.
+- `function=instruction` carries the JSON request/response API plus
+  the unsolicited push events.
+- `function=file_stream` carries firmware/G-code uploads + log
+  downloads (POST blob frames with `fileType` + `fileName` query
+  params; see [File transfer](#file-transfer-f1-v2)).
+- `function=media_stream` carries the camera / live-preview frames.
+- Heartbeat: enabled on all three with `useHeartBeat: true`. V2
+  expects a heartbeat **response** (`needHeartBeatResponse: true`),
+  which differs from the V1 fallback below.
+- `dataStream: true` flag on V2 indicates the connection multiplexes
+  multiple in-flight requests by `requestId`.
+
+A V1 fallback connection profile is also published in the device's
+extension bundle (USB + WIFI, `useHeartBeat: true`,
+`needHeartBeatResponse: false`) — used by older firmware. The
+extension picks the highest mutually supported version at connect
+time.
 
 ### Frame parsing
 
-- TEXT: raw JSON.
-- BINARY: device prefixes a small framing header before the JSON.
-  Strategy: locate the first `{`, take everything from there. If the
-  payload starts with `{{` (firmware bug observed in BassXT), drop the
-  leading byte before parsing.
+- TEXT frames: raw JSON.
+- BINARY frames: device prefixes a small framing header before the
+  JSON. Strategy: locate the first `{`, parse from there. A firmware
+  bug occasionally double-encodes the leading byte (`{{`) — drop one
+  leading byte and retry.
 
-Frame schema:
+Two distinct frame shapes coexist on the wire:
+
+**1. Push event (broadcast / unsolicited):**
 
 ```json
 {
@@ -1051,17 +1076,192 @@ Frame schema:
 }
 ```
 
-### Event → state mapping
+**2. Request / response (initiated by client):**
 
-| `url` | `module` | `type` | Mapped state |
+The newer V2 surface mirrors a REST API one-to-one — every named API
+in the extension bundle has a `url`, `method`, optional `params`,
+optional `data` (request body), optional `transformResult` (server
+return shape). Frames carry a `requestId` to multiplex concurrent
+calls; responses arrive on the same WS with the matching `requestId`.
+
+### V2 endpoint inventory
+
+All paths below are sent as the `url` field of a JSON request frame
+on the `instruction` WS, with the matching HTTP method in the
+`method` field. Replies come back tagged with the same `requestId`.
+
+#### Device info / runtime
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/device/machineInfo` | GET | Device identity + firmware versions (returns `firmware.package_version`, `firmware.master_h3_laserservice`, …). |
+| `/v1/device/runtime-infos` | GET | Live state — `{curMode:{desc,mode,subMode,taskId}}`. `mode` is one of the `P_*` enum (see below). |
+| `/v1/device/configs` | GET / PUT | Persistent config blob. |
+| `/v1/device/statistics` | GET | Lifetime counters. |
+| `/v1/device/bind` | PUT | Pair/bind with the cloud account. |
+| `/v1/env/domain` | PUT | Switch device's cloud endpoint (`atomm` / `xcs` / regional). |
+
+#### Status / processing
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/processing/state` | GET | Current job state. |
+| `/v1/processing/progress` | GET | `{progress, workingTime, …}` for the active job. |
+| `/v1/processing/upload/config` | PUT | Apply config after pushing a G-code blob (`fileType, autoStart, taskId`). |
+| `/v1/processing/frame/replace` | PUT | Replace the currently-loaded framing G-code (`loopPrint, gcodeType, uMoveSpeed`). |
+
+#### Peripherals (state via shared `/v1/peripheral/param`)
+
+The V2 API consolidates all peripheral queries onto one path with a
+`type` query param:
+
+| `params.type` | Purpose |
+|---|---|
+| `ext_purifier` | External purifier status — `{current, exist, power, state}` |
+| `gap` | Cover state — `{state: "on"/"off"}` (`on` = closed) |
+| `machine_lock` | USB-key / safety-lock state — `{state: "on"/"off"}` |
+| `airassistV2` | Air-Assist V2 BLE accessory state |
+| `motion_control` | Low-level motion override |
+| `ext_purifier`, `gap`, `machine_lock` are pre-fanned out as the `addonStatus` aggregate api |
+
+Standalone peripheral paths (mostly carried over from V1):
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/peripheral/param` | GET / PUT | Polymorphic peripheral query (typed by `params.type`). |
+| `/v1/laser-head/focus/parameter` | GET / PUT | Read/write laser-head focus parameters. |
+| `/v1/laser-head/focus/control` | POST | Trigger focus operation. |
+| `/v1/motion_control/paramter` | GET / PUT | Motion control (typo `paramter` is the actual server path). |
+| `/v1/extender/control` | POST | Toggle SafetyPro IF2 / AP2 / etc. extender. |
+
+#### Net / Wi-Fi
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/wifi/ap-list` | GET | List nearby SSIDs. |
+| `/v1/wifi/connected-ssid` | GET | Current SSID. |
+| `/v1/wifi/credentials` | PUT | Set credentials (replaces V1 `M2001`). |
+| `/v1/wifi/interfaces` | GET | List interfaces. |
+| `/v1/net/wifi_signal_strength` | POST `{name:"wlan0"}` | Live RSSI for a named iface. |
+
+#### BLE accessories (parts / dongle)
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/parts/control` | POST `{link:"uart485", data_b64:<F0F7-encoded M-code>}` | Send raw M-code (`M9091`–`M9098`, `M9032`–`M9085` …) to a BLE accessory tunneled through the dongle. |
+| `/v1/parts/firmware/upgrade` | POST | Push firmware to an attached accessory. |
+| `/v1/parts/firmware/upgrade-progress` | GET | Poll accessory-flash progress. |
+| `/v1/platform/accessories/list` | GET | Cloud-platform accessory list. |
+| `/v1/platform/accessories/control` | POST `{id:<n>, command:"<M-code>"}` | Higher-level control wrapper. |
+| `/v1/platform/accessories/upgrade` | POST | Platform-mediated accessory upgrade. |
+| `/v1/platform/device/config` | GET / PUT | Cloud platform config. |
+| `/v1/project/accessory/list` | GET | Project-scoped accessory list. |
+| `/v1/project/api/mcode` | POST | Send a raw M-code via the project API. |
+| `/v1/project/device/accessory/control` | POST `{level:1\|2}` | Set accessory power level. |
+
+#### File transfer (F1 V2)
+
+File uploads + downloads happen on the **`function=file_stream`** WS,
+not on the `instruction` channel:
+
+| API | Method | `params` | Purpose |
 |---|---|---|---|
-| `/work/mode` | `STATUS_CONTROLLER` | `MODE_CHANGE` | `info.mode`: `P_SLEEP→sleeping`, `P_WORK/P_READY/P_ONLINE_READY_WORK/P_OFFLINE_READY_WORK→idle/processing_ready`, `P_WORKING→processing`, `P_WORK_DONE/P_FINISH→finished`, `P_ERROR→error_limit` |
-| `/device/status` | `STATUS_CONTROLLER` | `WORK_PREPARED` | `framing` if `info=="framing"` else `processing_ready` |
-| `/device/status` | `STATUS_CONTROLLER` | `WORK_STARTED` | `framing` or `processing` |
-| `/device/status` | `STATUS_CONTROLLER` | `WORK_FINISHED` | `idle` (if framing finished) or `finished` |
-| `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | `finished`, captures `info.timeUse`, `info.taskId` |
-| `/gap/status` | `GAP` | `OPEN`/`CLOSE` | `state.lid_open` |
-| `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | `state.machine_lock` (OPEN=unlocked, CLOSE=locked) |
+| `/v1/filetransfer/upload` | PUT | — | Initiate upload — returns a transfer handle. |
+| `/v1/filetransfer/download` | PUT | — | Initiate download. |
+| `/v1/filetransfer/finish` | PUT | — | Acknowledge end-of-stream. |
+| `uploadGcode` | POST blob, then PUT `/v1/processing/upload/config` | `fileType:1, fileName:"tmp.gcode"` | Upload G-code job (sequential 2-step). |
+| `uploadWalkBorder` | POST blob, then PUT `/v1/processing/upload/config` | `fileType:1, fileName:"tmpFrame.gcode"` | Upload framing G-code. |
+| `replaceWalkBorder` | POST blob, then PUT `/v1/processing/frame/replace` | `fileType:1, fileName:"tmpFrameNew.gcode"` | Replace framing G-code in-flight. |
+| `updateFirmware` | POST blob | `fileType:2, fileName:"package.img"` | Upload firmware image. |
+| `exportLog` | GET `/v1/log` then file download | `filetype:5` | Pull device log. |
+
+The F1 V2 firmware update is itself a 2-step API:
+
+1. `PUT /v1/device/upgrade-mode?mode=ready` with body `{machine_type:"MXF"}` — handshake, expects `{result:"ok"}`.
+2. `POST` blob with `fileType:2, fileName:"package.img"` on the
+   `file_stream` WS to push the firmware.
+3. `PUT /v1/device/upgrade-mode?mode=upgrade` with body
+   `{force_upgrade:1, action:"burn", atomm:1}` — trigger flash. Reply
+   `{success:true}`.
+
+#### Logging / debug
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/log` | GET | Returns `{filename}` of the next available log archive (paired with a download via `file_stream`). |
+
+### Push events
+
+Push frames arrive on the `instruction` WS without a matching
+`requestId`. Frame schema:
+
+```json
+{
+  "url": "<path>",
+  "data": {"module": "...", "type": "...", "info": <varies>},
+  "timestamp": 1700000000000
+}
+```
+
+**Modules observed:** `STATUS_CONTROLLER`, `GAP`, `MACHINE_LOCK`,
+`WORK_RESULT`, `BOARDS`, `DEVID_MCODE`, `REPORT_BY_ACCESSORY_NAME`.
+
+**Event → state mapping:**
+
+| `url` | `module` | `type` | Notes |
+|---|---|---|---|
+| `/work/mode` | `STATUS_CONTROLLER` | `MODE_CHANGE` | `info.mode` is one of the `P_*` enum (table below). |
+| `/device/status` | `STATUS_CONTROLLER` | `WORK_PREPARED` | `framing` when `info=="framing"` else `processing_ready`. |
+| `/device/status` | `STATUS_CONTROLLER` | `WORK_STARTED` | `framing` or `processing`. |
+| `/device/status` | `STATUS_CONTROLLER` | `WORK_FINISHED` | `idle` (if a framing run finished) or `finished`. |
+| `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | Captures `info.timeUse`, `info.taskId`. |
+| `/gap/status` | `GAP` | `OPEN`/`CLOSE` | Cover state. |
+| `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | LOCK device class — `OPEN`=unlocked, `CLOSE`=locked. |
+
+### `P_*` mode enum (V2 work-state)
+
+Used in `/v1/device/runtime-infos.curMode.mode` and the
+`/work/mode → MODE_CHANGE` push:
+
+| Mode | Meaning |
+|---|---|
+| `P_BOOT` | Device booting / not yet ready |
+| `P_SLEEP` | Sleep / standby |
+| `P_IDLE` | Idle |
+| `P_READY` | Ready (older firmware) |
+| `P_WORK` | Online job ready |
+| `P_ONLINE_READY_WORK` | Online job loaded, awaiting start |
+| `P_OFFLINE_READY_WORK` | Offline (button-mode) job loaded |
+| `P_WORKING` | Actively processing |
+| `P_WORK_DONE` | Job completed (transient) |
+| `P_FINISH` | Finished |
+| `P_MEASURE` | Measure / probe in progress |
+| `P_UPGRADE` | Firmware upgrade in progress |
+| `P_ERROR` | Error state |
+
+`subMode` carries the working-mode classifier (e.g. `LASER_PLANE`,
+`KNIFE_CUT`, `INK_PRINT`, `DTF_PRINT`, `ROTATE_ATTACHMENT`,
+`CURVE_PROCESS`, …) — the full enum has ~40 entries reflecting every
+job type the F1 V2 / F2 family / Apparel Printer can run.
+
+### Behaviour matrix (per-firmware overrides)
+
+Some V2 device behaviour is gated by a per-model + per-firmware map
+(`base + per-model overrides`). Observed flags:
+
+| Flag | Default | Override examples |
+|---|---|---|
+| `wifiSetLimit` | `true` | DT001 firmware `40.100.009.00` → `false` |
+| `wifiStrength` | `false` | DT001 firmware `40.100.009.00` → `true`; HJ003 some firmware → `true` |
+| `heartbeat` | `false` | DT001 firmware `40.100.009.00` → `true`; HJ003 firmware `40.70.006.2020` → `true` |
+
+Older variants of the F1 V2 docs (pre xTool Studio audit) described
+the connection as listener-only because the bundled extension only
+shipped a fixed set of push handlers — but the
+`function=instruction` channel in fact accepts the full V2 request
+schema. Implementations that only consume the broadcast channel will
+see status / gap / lock / work-result events but miss the rich query
++ control surface above.
 
 
 ---
