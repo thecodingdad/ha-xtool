@@ -378,6 +378,7 @@ class WSV2Protocol(XtoolProtocol):
         )
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
+        _LOGGER.debug("V2 connecting to %s", url)
         try:
             self._ws_instr = await self._session.ws_connect(
                 url,
@@ -390,6 +391,7 @@ class WSV2Protocol(XtoolProtocol):
             _LOGGER.debug("V2 connect failed for %s: %s", self.host, err)
             await self._close_quiet()
             raise ConnectionError(f"V2 WebSocket connect failed: {err}") from err
+        _LOGGER.debug("V2 WS open to %s — sending parity handshake", self.host)
         self._connected = True
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
@@ -397,10 +399,14 @@ class WSV2Protocol(XtoolProtocol):
         try:
             await self._send_first_message()
         except Exception as err:
+            _LOGGER.info(
+                "V2 parity handshake failed for %s: %s", self.host, err,
+            )
             await self._close_quiet()
             raise ConnectionError(
                 f"V2 parity handshake failed: {err}"
             ) from err
+        _LOGGER.debug("V2 parity handshake OK — starting heartbeat")
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
     async def disconnect(self) -> None:
@@ -484,6 +490,10 @@ class WSV2Protocol(XtoolProtocol):
         pending = _PendingRequest(deadline)
         self._pending[transaction_id] = pending
         frame = _encode_frame(json.dumps(payload).encode("utf-8"))
+        _LOGGER.debug(
+            "V2 TX %s %s txn=%d frame_len=%d",
+            method, url, transaction_id, len(frame),
+        )
         try:
             await self._ws_instr.send_bytes(frame)
         except Exception as err:
@@ -531,6 +541,10 @@ class WSV2Protocol(XtoolProtocol):
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     self._handle_binary(msg.data)
                 elif msg.type == aiohttp.WSMsgType.TEXT:
+                    _LOGGER.debug(
+                        "V2 RX TEXT (unexpected on V2): %r",
+                        msg.data[:200] if isinstance(msg.data, str) else msg.data,
+                    )
                     # V2 firmware doesn't normally send TEXT frames, but
                     # tolerate them in case a debug/firmware build does.
                     self._handle_text(msg.data)
@@ -539,6 +553,12 @@ class WSV2Protocol(XtoolProtocol):
                     aiohttp.WSMsgType.ERROR,
                     aiohttp.WSMsgType.CLOSING,
                 ):
+                    _LOGGER.info(
+                        "V2 WS closed by peer (msg.type=%s, close_code=%s, reason=%r)",
+                        msg.type,
+                        getattr(ws, "close_code", None),
+                        getattr(ws, "_close_message", None),
+                    )
                     break
         except asyncio.CancelledError:
             raise
@@ -638,8 +658,17 @@ class WSV2Protocol(XtoolProtocol):
 
     def _handle_binary(self, raw: bytes) -> None:
         """Decode CRC-wrapped V2 frames; aggregate across WS messages."""
+        _LOGGER.debug(
+            "V2 RX binary chunk len=%d head=%s",
+            len(raw), raw[:16].hex(),
+        )
         self._rx_buffer.extend(raw)
         frames, remainder = _decode_frames(bytes(self._rx_buffer))
+        if not frames and len(self._rx_buffer) > 0:
+            _LOGGER.debug(
+                "V2 RX no complete frame yet, buffer=%d bytes",
+                len(self._rx_buffer),
+            )
         self._rx_buffer = bytearray(remainder)
         for protocol_type, payload in frames:
             if protocol_type != WSV2_PROTOCOL_JSON:
@@ -650,8 +679,17 @@ class WSV2Protocol(XtoolProtocol):
                 continue
             try:
                 event = json.loads(payload.decode("utf-8"))
-            except Exception:
+            except Exception as err:
+                _LOGGER.debug(
+                    "V2 RX JSON parse failed: %s payload=%r",
+                    err, payload[:200],
+                )
                 continue
+            _LOGGER.debug(
+                "V2 RX event type=%s url=%s txn=%s",
+                event.get("type"), event.get("url"),
+                event.get("transactionId"),
+            )
             if isinstance(event, dict):
                 self._dispatch_event(event)
 
