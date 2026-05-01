@@ -41,7 +41,14 @@ from .const import (
     FIRMWARE_CHECK_INTERVAL,
 )
 from .discovery import DiscoveredDevice, discover_devices
-from .protocols import ConnectionInfo, validate_connection
+from .protocols import (
+    ConnectionInfo,
+    VALIDATION_ERROR_UDP_NO_REPLY,
+    VALIDATION_ERROR_UNKNOWN_MODEL,
+    manual_model_options,
+    validate_connection,
+    validate_with_model,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +63,9 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         self._discovered_host: str | None = None
         self._discovered_name: str | None = None
         self._discovered_devices: list[DiscoveredDevice] = []
+        # Carries the host across an `udp_no_reply` / `unknown_model`
+        # fallback into the manual model-picker step.
+        self._fallback_host: str | None = None
 
     @staticmethod
     @callback
@@ -173,6 +183,15 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         conn_info = await validate_connection(host)
         if not isinstance(conn_info, ConnectionInfo):
             reason = conn_info or "cannot_connect"
+            # Discovery couldn't identify the device — fall back to the
+            # manual model picker so the user can pick the right model
+            # (e.g. multicast blocked, firewall, custom firmware name).
+            if reason in (
+                VALIDATION_ERROR_UDP_NO_REPLY,
+                VALIDATION_ERROR_UNKNOWN_MODEL,
+            ):
+                self._fallback_host = host
+                return await self.async_step_pick_model()
             if errors is not None:
                 errors["base"] = reason
                 return self.async_show_form(
@@ -197,6 +216,52 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 "protocol_version": conn_info.protocol_version,
                 "model_id": conn_info.model_id,
             },
+        )
+
+    async def async_step_pick_model(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Manual model selection — fallback when discovery cannot
+        identify the device. The user picks the (model, firmware
+        version) pair from a dropdown and we go straight to the
+        protocol-level handshake.
+        """
+        errors: dict[str, str] = {}
+        host = self._fallback_host or ""
+
+        if user_input is not None:
+            host = user_input[CONF_HOST].strip()
+            composite_key = user_input["model"]
+            model_id, _, proto_ver = composite_key.rpartition("_")
+            conn_info = await validate_with_model(host, model_id, proto_ver)
+            if isinstance(conn_info, ConnectionInfo):
+                if conn_info.serial_number:
+                    await self.async_set_unique_id(conn_info.serial_number)
+                    self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=conn_info.name,
+                    data={
+                        CONF_HOST: host,
+                        "serial_number": conn_info.serial_number,
+                        "device_name": conn_info.name,
+                        "firmware_version": conn_info.firmware_version,
+                        "laser_power_watts": conn_info.laser_power_watts,
+                        "protocol_version": conn_info.protocol_version,
+                        "model_id": conn_info.model_id,
+                    },
+                )
+            errors["base"] = conn_info or "cannot_connect"
+            self._fallback_host = host
+
+        return self.async_show_form(
+            step_id="pick_model",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST, default=host): str,
+                    vol.Required("model"): vol.In(manual_model_options()),
+                }
+            ),
+            errors=errors,
         )
 
 

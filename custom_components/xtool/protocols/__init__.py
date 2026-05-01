@@ -202,6 +202,77 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
         await protocol.disconnect()
 
 
+async def validate_with_model(
+    host: str, model_id: str, protocol_version: str,
+) -> ConnectionInfo | str:
+    """Validate against an explicit model — bypasses UDP discovery.
+
+    Used by the config flow's manual fallback when discovery cannot
+    identify the device (firewall, multicast blocked, unknown model
+    name). The user picks the right (model, protocol_version) pair
+    via dropdown and we go straight to the protocol-level handshake.
+    """
+    composite_key = f"{model_id}_{protocol_version}"
+    chosen = DEVICE_MODELS.get(composite_key)
+    if chosen is None or chosen.protocol_class is None:
+        _LOGGER.warning(
+            "Unknown manual model selection: %s", composite_key,
+        )
+        return VALIDATION_ERROR_UNKNOWN_MODEL
+
+    protocol = chosen.protocol_class(host)
+    try:
+        await protocol.connect()
+        info = await protocol.get_device_info()
+        version = await protocol.get_version()
+        firmware = info.main_firmware or version or ""
+        return ConnectionInfo(
+            host=host,
+            name=info.device_name or chosen.name,
+            serial_number=info.serial_number,
+            firmware_version=firmware,
+            laser_power_watts=info.laser_power_watts,
+            device_info=info,
+            protocol_version=chosen.protocol_version,
+            model_id=chosen.model_id,
+        )
+    except Exception as err:
+        _LOGGER.debug(
+            "Manual validation against %s as %s/%s failed: %s",
+            host, chosen.model_id, chosen.protocol_version, err,
+        )
+        return VALIDATION_ERROR_PROTOCOL_FAILED
+    finally:
+        await protocol.disconnect()
+
+
+def manual_model_options() -> dict[str, str]:
+    """Return a ``{composite_key: label}`` mapping for the manual
+    model dropdown.
+
+    Models that exist in both V1 and V2 firmware lines get a
+    ``(V1 firmware)`` / ``(V2 firmware)`` suffix so the user can pick
+    the one matching their device's firmware version. Models with a
+    single line stay unsuffixed.
+    """
+    siblings: dict[str, set[str]] = {}
+    for model in DEVICE_MODELS.values():
+        if model.protocol_class is None:
+            continue
+        siblings.setdefault(model.model_id, set()).add(model.protocol_version)
+
+    options: dict[str, str] = {}
+    for key, model in DEVICE_MODELS.items():
+        if model.protocol_class is None:
+            continue
+        suffix = ""
+        if len(siblings.get(model.model_id, set())) > 1:
+            suffix = f" ({model.protocol_version} firmware)"
+        options[key] = f"{model.name}{suffix}"
+
+    return dict(sorted(options.items(), key=lambda kv: kv[1].lower()))
+
+
 __all__ = [
     "ConnectionInfo",
     "DEVICE_MODELS",
@@ -219,5 +290,7 @@ __all__ = [
     "VALIDATION_ERROR_UNKNOWN_MODEL",
     "detect_model",
     "detect_models",
+    "manual_model_options",
     "validate_connection",
+    "validate_with_model",
 ]

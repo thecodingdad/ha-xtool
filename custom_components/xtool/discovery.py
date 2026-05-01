@@ -189,34 +189,54 @@ async def _probe_v1(
 # --- V2 probe (encrypted multicast/unicast) -----------------------------
 
 
-def _make_v2_socket() -> socket.socket | None:
-    """Bind a UDP socket and join all four V2 multicast groups."""
+def _make_tx_socket() -> socket.socket | None:
+    """TX socket on a random port, used to send + receive unicast replies."""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # Bind on a random port — devices reply via unicast to whatever
-        # source-port we used, plus possibly via multicast (received via
-        # the group memberships joined below).
         sock.bind(("0.0.0.0", 0))
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 4)
         try:
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
         except OSError:
             pass
-        for group, _port, _ttl in V2_MULTICAST_TARGETS:
-            try:
-                mreq = struct.pack(
-                    "4sl", socket.inet_aton(group), socket.INADDR_ANY
-                )
-                sock.setsockopt(
-                    socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq,
-                )
-            except OSError as err:
-                _LOGGER.debug("V2 multicast join %s failed: %s", group, err)
         sock.setblocking(False)
         return sock
     except OSError as err:
-        _LOGGER.debug("V2 UDP socket setup failed: %s", err)
+        _LOGGER.debug("V2 TX socket setup failed: %s", err)
+        return None
+
+
+def _make_rx_socket(group: str, port: int) -> socket.socket | None:
+    """RX socket bound to the multicast port and joined to its group.
+
+    Studio's `initReceivers` opens four such sockets (one per multicast
+    target). Without binding to the multicast port the kernel never
+    delivers the device's reply — that was the v2.2.2 regression.
+    """
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # SO_REUSEPORT is Linux-only; ignore on platforms that lack it.
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except (AttributeError, OSError):
+            pass
+        sock.bind(("0.0.0.0", port))
+        mreq = struct.pack(
+            "4sl", socket.inet_aton(group), socket.INADDR_ANY,
+        )
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+        except OSError:
+            pass
+        sock.setblocking(False)
+        return sock
+    except OSError as err:
+        _LOGGER.debug(
+            "V2 RX socket setup failed for %s:%d: %s", group, port, err,
+        )
         return None
 
 
@@ -226,23 +246,32 @@ async def _probe_v2(
     """Encrypted V2 discovery — multicast (broadcast) or unicast.
 
     Broadcast mode: send to all four multicast targets. Unicast mode:
-    send to ``target:25353`` and ``target:25454``. RX socket joins the
-    multicast groups so replies on either path are picked up.
+    send to ``target:25353`` and ``target:25454``. Studio opens four
+    RX sockets (one per multicast port) plus a TX socket — this mirror
+    matches that to ensure multicast replies bound for the well-known
+    discovery ports actually reach us.
     """
     devices: list[DiscoveredDevice] = []
     seen: set[str] = set()
     request_id = random.randint(0, 0xFFFFFFFF)
     blob = _v2_build_request(request_id)
 
-    sock = _make_v2_socket()
-    if sock is None:
+    tx_sock = _make_tx_socket()
+    if tx_sock is None:
         return devices
+
+    rx_socks: list[socket.socket] = []
+    for group, port, _ttl in V2_MULTICAST_TARGETS:
+        rx = _make_rx_socket(group, port)
+        if rx is not None:
+            rx_socks.append(rx)
 
     loop = asyncio.get_event_loop()
 
     def _on_message(data: bytes, addr: tuple[str, int]) -> None:
         decoded = _v2_decrypt(data)
         if decoded is None:
+            _LOGGER.debug("V2 RX from %s undecodable (%d bytes)", addr, len(data))
             return
         device = _v2_parse_response(decoded, request_id, addr[0])
         if device is None or device.ip in seen:
@@ -258,18 +287,25 @@ async def _probe_v2(
         def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
             _on_message(data, addr)
 
-    transport = None
+    transports: list[asyncio.DatagramTransport] = []
     try:
-        transport, _ = await loop.create_datagram_endpoint(
-            _Protocol, sock=sock,
+        for sock in [tx_sock, *rx_socks]:
+            transport, _ = await loop.create_datagram_endpoint(
+                _Protocol, sock=sock,
+            )
+            transports.append(transport)
+        tx_transport = transports[0]
+        _LOGGER.debug(
+            "V2 probe target=%s broadcast=%s rx_sockets=%d request_id=%s",
+            target, broadcast, len(rx_socks), request_id,
         )
         if broadcast:
             for group, port, ttl in V2_MULTICAST_TARGETS:
                 try:
-                    sock.setsockopt(
+                    tx_sock.setsockopt(
                         socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl,
                     )
-                    transport.sendto(blob, (group, port))
+                    tx_transport.sendto(blob, (group, port))
                 except OSError as err:
                     _LOGGER.debug(
                         "V2 send to %s:%d failed: %s", group, port, err,
@@ -277,7 +313,7 @@ async def _probe_v2(
         else:
             for port in V2_UNICAST_PORTS:
                 try:
-                    transport.sendto(blob, (target, port))
+                    tx_transport.sendto(blob, (target, port))
                 except OSError as err:
                     _LOGGER.debug(
                         "V2 send to %s:%d failed: %s", target, port, err,
@@ -286,8 +322,11 @@ async def _probe_v2(
     except OSError as err:
         _LOGGER.debug("V2 probe to %s failed: %s", target, err)
     finally:
-        if transport:
-            transport.close()
+        for transport in transports:
+            try:
+                transport.close()
+            except Exception:
+                pass
 
     return devices
 

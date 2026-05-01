@@ -18,6 +18,14 @@
       "discovery_confirm": {
         "title": "xTool Laser entdeckt",
         "description": "Ein xTool Laser **{name}** wurde in deinem Netzwerk gefunden. Möchtest du ihn einrichten?"
+      },
+      "pick_model": {
+        "title": "xTool-Modell manuell auswählen",
+        "description": "Auto-Discovery konnte das Gerät nicht identifizieren. Wähle Modell und Firmware-Linie aus der Liste — V2-Eintrag wenn deine Firmware aktuell ist (40.x-Bereich mit neuem Communication-Framework), sonst V1.",
+        "data": {
+          "host": "IP-Adresse",
+          "model": "Modell"
+        }
       }
     },
     "error": {
