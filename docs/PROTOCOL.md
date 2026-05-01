@@ -25,14 +25,23 @@ filled in the few bits encrypted in the XCS APK by Pairip.
 
 ## Protocol families
 
-Four transport flavours, one per device:
+Four transport flavours. Studio's own naming uses `S1` / `V1` / `V2`
+(per `protocolName` field in the `connectWithRetry` factory) plus the
+D-series HTTP-write + WS-status-push hybrid that Studio bundles with
+V1 via different `connectConfigs` flags (`channelType: "serial"` on
+USB, `needConnectAlive: false`, no heartbeat).
 
-| Family | Models | Transport | Port(s) |
-|---|---|---|---|
-| `ws_mcode` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
-| `d_series` | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
-| `rest` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
-| `f1_v2` | F1 firmware 40.51+ | TLS WebSocket, listener-only push channel | 28900 (wss) |
+| Family | Studio name | Models | Transport | Port(s) |
+|---|---|---|---|---|
+| `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
+| `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
+| `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
+| `ws_v2` | `V2` | F1 ≥ 40.51, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer — V2-firmware path | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss) |
+
+V1- and V2-firmware lines for the same hardware coexist — discovery +
+the port-28900 probe pick the right family at config-flow time. See
+[WS-V2 protocol](#ws-v2-protocol-tls-websocket-rpc--push) below for the
+full V2 wire contract.
 
 All four are **local-only**. The cloud is only contacted for firmware
 update checks and firmware-image downloads.
@@ -1111,15 +1120,17 @@ Models column ordered as: D1, D1Pro, D1Pro 2.0.
 
 ---
 
-## F1 V2 protocol (F1 firmware 40.51+)
+## WS-V2 protocol (TLS WebSocket RPC + push)
 
-F1 V2 (and the newer F1 Ultra V2 / GS003, F2 family / GS004-CLASS-4,
-GS006, GS007-CLASS-4, GS009-CLASS-4) replaces the older HTTP REST
-transport with a **full request/response API tunneled over three
-parallel WebSocket connections**. The earlier "listener-only" notes
-in the community integrations only covered the *broadcast* event
-channel — the actual API surface is full bidirectional and rivals
-the legacy REST family in scope.
+V2 firmware (≥ 40.51 on F1 / F1 Ultra / F1 Lite / F2 family / M1
+Ultra / P2S / P3 / MetalFab / Apparel Printer / GS003) replaces the
+legacy HTTP REST transport with a **full request/response API tunneled
+over three parallel TLS WebSocket connections** on port 28900. xTool
+Studio calls this the `V2` protocol (`protocolName: "V2"` in the
+`createV2ProtocolInstance` factory of `atomm-sharedworker`). Older
+community docs described it as "listener-only" because they observed
+only the broadcast event channel — the actual API surface is full
+bidirectional and rivals the legacy REST family in scope.
 
 ### Connection
 
@@ -1145,7 +1156,7 @@ wss://<ip>:28900/websocket?id=<timestamp>&function=media_stream
   expects a heartbeat **response** (`needHeartBeatResponse: true`),
   which differs from the V1 fallback below.
 - `dataStream: true` flag on V2 indicates the connection multiplexes
-  multiple in-flight requests by `requestId`.
+  multiple in-flight requests by `transactionId`.
 
 A V1 fallback connection profile is also published in the device's
 extension bundle (USB + WIFI, `useHeartBeat: true`,
@@ -1301,7 +1312,9 @@ disjoint from the user-request rotation (which wraps at 65500).
 
 All paths below are sent as the `url` field of a JSON request frame
 on the `instruction` WS, with the matching HTTP method in the
-`method` field. Replies come back tagged with the same `requestId`.
+`method` field. Replies come back tagged with the same numeric
+`transactionId` (see [Connection lifecycle](#connection-lifecycle-v2)
+above for the full envelope).
 
 #### Device info / runtime
 
@@ -1372,7 +1385,7 @@ Standalone peripheral paths (mostly carried over from V1):
 | `/v1/project/api/mcode` | POST | Send a raw M-code via the project API. |
 | `/v1/project/device/accessory/control` | POST `{level:1\|2}` | Set accessory power level. |
 
-#### File transfer (F1 V2)
+#### File transfer (WS-V2)
 
 File uploads + downloads happen on the **`function=file_stream`** WS,
 not on the `instruction` channel:
@@ -1388,7 +1401,7 @@ not on the `instruction` channel:
 | `updateFirmware` | POST blob | `fileType:2, fileName:"package.img"` | Upload firmware image. |
 | `exportLog` | GET `/v1/log` then file download | `filetype:5` | Pull device log. |
 
-The F1 V2 firmware update is itself a 2-step API:
+The WS-V2 firmware update is itself a 3-step API:
 
 1. `PUT /v1/device/upgrade-mode?mode=ready` with body `{machine_type:"MXF"}` — handshake, expects `{result:"ok"}`.
 2. `POST` blob with `fileType:2, fileName:"package.img"` on the
@@ -1405,8 +1418,8 @@ The F1 V2 firmware update is itself a 2-step API:
 
 ### Push events
 
-Push frames arrive on the `instruction` WS without a matching
-`requestId`. Frame schema:
+Push frames arrive on the `instruction` WS without a `transactionId`
+and without `type:"response"`. Frame schema:
 
 ```json
 {
@@ -1455,7 +1468,8 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 `subMode` carries the working-mode classifier (e.g. `LASER_PLANE`,
 `KNIFE_CUT`, `INK_PRINT`, `DTF_PRINT`, `ROTATE_ATTACHMENT`,
 `CURVE_PROCESS`, …) — the full enum has ~40 entries reflecting every
-job type the F1 V2 / F2 family / Apparel Printer can run.
+job type the WS-V2 family (F1, F1 Ultra, F2 family, M1 Ultra, P2S,
+P3, MetalFab, Apparel Printer, …) can run.
 
 ### Behaviour matrix (per-firmware overrides)
 
@@ -1468,10 +1482,10 @@ Some V2 device behaviour is gated by a per-model + per-firmware map
 | `wifiStrength` | `false` | DT001 firmware `40.100.009.00` → `true`; HJ003 some firmware → `true` |
 | `heartbeat` | `false` | DT001 firmware `40.100.009.00` → `true`; HJ003 firmware `40.70.006.2020` → `true` |
 
-Older variants of the F1 V2 docs (pre xTool Studio audit) described
-the connection as listener-only because the bundled extension only
-shipped a fixed set of push handlers — but the
-`function=instruction` channel in fact accepts the full V2 request
+Older community docs (pre xTool Studio audit) described WS-V2 as
+listener-only because the bundled extension only shipped a fixed set
+of push handlers — but the `function=instruction` channel in fact
+accepts the full V2 request
 schema. Implementations that only consume the broadcast channel will
 see status / gap / lock / work-result events but miss the rich query
 + control surface above.
@@ -2930,7 +2944,7 @@ multi-package response (or an empty body if no update).
 | D1 | `xTool-d1-firmware` | single |
 | D1 Pro | `xTool-d1pro-firmware` | single |
 | D1 Pro 2.0 | `xTool-d1pro-firmware-2.0` | single (no firmware uploaded yet) |
-| F1 (and F1 V2) | `xTool-f1-firmware` | single |
+| F1 (V1 + WS-V2 firmware lines share the same image) | `xTool-f1-firmware` | single |
 | F1 Ultra | `xTool-f1-ultra-firmware-1.5` | single (machine_type `MXF`) |
 | F1 Ultra V2 (GS003) | `xTool-f1-ultra-class1-firmware-1.5` | single (machine_type `MXF`) |
 | F1 Lite (GS005) | `xTool-f1-lite-firmware` | single (machine_type `MXF`) |
@@ -3048,7 +3062,7 @@ hardware split:
 | M1 Ultra | Allwinner R528 (ARM) + Linux | GD450 motion + GD330 Z-axis | adds dedicated Z-axis MCU |
 | F1 | Allwinner H3 + Linux | GD450 motion + GD330 purifier | built-in air-purifier firmware |
 | F1 Ultra | Allwinner H3 + Linux | display MCU + GD470 motion + GD330 purifier | adds 1 MB display firmware (touchscreen) |
-| F1 V2 | (same hardware as F1, firmware 40.51+) | same | TLS WebSocket + push-only protocol on port 28900 |
+| WS-V2 firmware line | same hardware as the V1 sibling (F1 ≥ 40.51, F1 Ultra V2/GS003, GS005, F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer) | same | full request/response API on TLS WebSocket port 28900 (replaces port-8080 REST on V2 firmware) |
 | P2 | Allwinner H3 + Linux | GD450 motion + GD330 UI + GD330 WCB | UI + cover board MCUs |
 | P2S | same as P2 | same | newer revision |
 | Bluetooth dongle | dedicated MCU | — | exposes `M9091`–`M9098` for pairing, scan, connect |
