@@ -102,6 +102,130 @@ WSV2_PING_TRANSACTION_ID = 65510
 # wrap below the ping id to keep the two pools disjoint.
 WSV2_TRANSACTION_ID_WRAP = 65500
 
+# Frame-format constants (Studio's MessageEncoder.encodeFrame /
+# MessageParser.extractCompletePackets, both gated by
+# ``dataStream: true``). All V2 instruction-channel traffic is wrapped
+# in a 10-byte CRC-protected envelope; raw JSON over a TEXT frame is
+# silently dropped by the device.
+WSV2_FRAME_HEADER = bytes([0xBA, 0xBE])
+WSV2_PROTOCOL_JSON = 4
+WSV2_PROTOCOL_BUFFER = 5
+# CRC-16/ARC (poly 0x8005 reflected, init 0, no xorout) — table-driven
+# implementation matching Studio's ``crc16_default``.
+_CRC16_TABLE = [
+    0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
+    0xC601, 0x06C0, 0x0780, 0xC741, 0x0500, 0xC5C1, 0xC481, 0x0440,
+    0xCC01, 0x0CC0, 0x0D80, 0xCD41, 0x0F00, 0xCFC1, 0xCE81, 0x0E40,
+    0x0A00, 0xCAC1, 0xCB81, 0x0B40, 0xC901, 0x09C0, 0x0880, 0xC841,
+    0xD801, 0x18C0, 0x1980, 0xD941, 0x1B00, 0xDBC1, 0xDA81, 0x1A40,
+    0x1E00, 0xDEC1, 0xDF81, 0x1F40, 0xDD01, 0x1DC0, 0x1C80, 0xDC41,
+    0x1400, 0xD4C1, 0xD581, 0x1540, 0xD701, 0x17C0, 0x1680, 0xD641,
+    0xD201, 0x12C0, 0x1380, 0xD341, 0x1100, 0xD1C1, 0xD081, 0x1040,
+    0xF001, 0x30C0, 0x3180, 0xF141, 0x3300, 0xF3C1, 0xF281, 0x3240,
+    0x3600, 0xF6C1, 0xF781, 0x3740, 0xF501, 0x35C0, 0x3480, 0xF441,
+    0x3C00, 0xFCC1, 0xFD81, 0x3D40, 0xFF01, 0x3FC0, 0x3E80, 0xFE41,
+    0xFA01, 0x3AC0, 0x3B80, 0xFB41, 0x3900, 0xF9C1, 0xF881, 0x3840,
+    0x2800, 0xE8C1, 0xE981, 0x2940, 0xEB01, 0x2BC0, 0x2A80, 0xEA41,
+    0xEE01, 0x2EC0, 0x2F80, 0xEF41, 0x2D00, 0xEDC1, 0xEC81, 0x2C40,
+    0xE401, 0x24C0, 0x2580, 0xE541, 0x2700, 0xE7C1, 0xE681, 0x2640,
+    0x2200, 0xE2C1, 0xE381, 0x2340, 0xE101, 0x21C0, 0x2080, 0xE041,
+    0xA001, 0x60C0, 0x6180, 0xA141, 0x6300, 0xA3C1, 0xA281, 0x6240,
+    0x6600, 0xA6C1, 0xA781, 0x6740, 0xA501, 0x65C0, 0x6480, 0xA441,
+    0x6C00, 0xACC1, 0xAD81, 0x6D40, 0xAF01, 0x6FC0, 0x6E80, 0xAE41,
+    0xAA01, 0x6AC0, 0x6B80, 0xAB41, 0x6900, 0xA9C1, 0xA881, 0x6840,
+    0x7800, 0xB8C1, 0xB981, 0x7940, 0xBB01, 0x7BC0, 0x7A80, 0xBA41,
+    0xBE01, 0x7EC0, 0x7F80, 0xBF41, 0x7D00, 0xBDC1, 0xBC81, 0x7C40,
+    0xB401, 0x74C0, 0x7580, 0xB541, 0x7700, 0xB7C1, 0xB681, 0x7640,
+    0x7200, 0xB2C1, 0xB381, 0x7340, 0xB101, 0x71C0, 0x7080, 0xB041,
+    0x5000, 0x90C1, 0x9181, 0x5140, 0x9301, 0x53C0, 0x5280, 0x9241,
+    0x9601, 0x56C0, 0x5780, 0x9741, 0x5500, 0x95C1, 0x9481, 0x5440,
+    0x9C01, 0x5CC0, 0x5D80, 0x9D41, 0x5F00, 0x9FC1, 0x9E81, 0x5E40,
+    0x5A00, 0x9AC1, 0x9B81, 0x5B40, 0x9901, 0x59C0, 0x5880, 0x9841,
+    0x8801, 0x48C0, 0x4980, 0x8941, 0x4B00, 0x8BC1, 0x8A81, 0x4A40,
+    0x4E00, 0x8EC1, 0x8F81, 0x4F40, 0x8D01, 0x4DC0, 0x4C80, 0x8C41,
+    0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
+    0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040,
+]
+
+
+def _crc16(data: bytes) -> int:
+    crc = 0
+    for b in data:
+        crc = (_CRC16_TABLE[(crc ^ b) & 0xFF] ^ (crc >> 8)) & 0xFFFF
+    return crc
+
+
+def _encode_frame(payload: bytes, protocol_type: int = WSV2_PROTOCOL_JSON) -> bytes:
+    """Wrap a JSON payload in Studio's V2 framing envelope.
+
+    Layout (10-byte header + payload):
+
+    ::
+
+        bytes 0-1   : 0xBA 0xBE                   (FRAME_HEADER magic)
+        bytes 2-4   : payload length, big-endian  (3 bytes)
+        byte  5     : protocol_type (low 7 bits); bit 7 = 0 → CRC enabled
+        bytes 6-7   : CRC-16/ARC of payload, big-endian
+        bytes 8-9   : CRC-16/ARC of bytes 0-7,  big-endian (header CRC)
+        bytes 10-…  : payload bytes
+    """
+    header = bytearray(10)
+    header[0:2] = WSV2_FRAME_HEADER
+    length = len(payload)
+    header[2] = (length >> 16) & 0xFF
+    header[3] = (length >> 8) & 0xFF
+    header[4] = length & 0xFF
+    header[5] = protocol_type & 0x7F  # top bit 0 = CRC enabled
+    payload_crc = _crc16(payload)
+    header[6] = (payload_crc >> 8) & 0xFF
+    header[7] = payload_crc & 0xFF
+    header_crc = _crc16(bytes(header[0:8]))
+    header[8] = (header_crc >> 8) & 0xFF
+    header[9] = header_crc & 0xFF
+    return bytes(header) + payload
+
+
+def _decode_frames(buffer: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
+    """Extract complete frames from ``buffer``.
+
+    Returns ``(frames, remainder)`` where each frame is
+    ``(protocol_type, payload_bytes)`` and ``remainder`` is the unread
+    tail (used by callers that aggregate fragmented WS messages).
+    Frames with a bad header or payload CRC are silently skipped — the
+    parser advances one byte and re-syncs on the next ``0xBA 0xBE``.
+    """
+    frames: list[tuple[int, bytes]] = []
+    pos = 0
+    n = len(buffer)
+    while pos + 10 <= n:
+        if buffer[pos] != 0xBA or buffer[pos + 1] != 0xBE:
+            pos += 1
+            continue
+        length = (
+            (buffer[pos + 2] << 16)
+            | (buffer[pos + 3] << 8)
+            | buffer[pos + 4]
+        )
+        total = 10 + length
+        if pos + total > n:
+            break
+        header = buffer[pos:pos + 8]
+        header_crc = (buffer[pos + 8] << 8) | buffer[pos + 9]
+        if _crc16(header) != header_crc:
+            pos += 1
+            continue
+        crc_disabled = bool(buffer[pos + 5] & 0x80)
+        protocol_type = buffer[pos + 5] & 0x7F
+        payload = buffer[pos + 10:pos + total]
+        if not crc_disabled:
+            payload_crc = (buffer[pos + 6] << 8) | buffer[pos + 7]
+            if _crc16(payload) != payload_crc:
+                pos += 1
+                continue
+        frames.append((protocol_type, payload))
+        pos += total
+    return frames, buffer[pos:]
+
 # Mapping of V2 work-mode strings to the integration's normalised status enum.
 # Sources: xTool Studio bundle ``/work/mode`` push handler + the
 # ``/v1/device/runtime-infos`` `curMode.mode` response field.
@@ -221,6 +345,11 @@ class WSV2Protocol(XtoolProtocol):
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
+        # Aggregator for partial BINARY frames — V2 firmware sometimes
+        # splits a single CRC-wrapped envelope across multiple WS
+        # messages, so we always feed bytes through ``_decode_frames``
+        # which yields whole envelopes only.
+        self._rx_buffer = bytearray()
 
     def _next_transaction_id(self) -> int:
         """Mirror Studio's ``generateTransactionId`` — wrap below the
@@ -309,6 +438,7 @@ class WSV2Protocol(XtoolProtocol):
             )
         self._heartbeat_pending = None
         self._transaction_counter = 0
+        self._rx_buffer = bytearray()
         if self._session and not self._session.closed:
             try:
                 await self._session.close()
@@ -353,8 +483,9 @@ class WSV2Protocol(XtoolProtocol):
         deadline = time.monotonic() + timeout
         pending = _PendingRequest(deadline)
         self._pending[transaction_id] = pending
+        frame = _encode_frame(json.dumps(payload).encode("utf-8"))
         try:
-            await self._ws_instr.send_str(json.dumps(payload))
+            await self._ws_instr.send_bytes(frame)
         except Exception as err:
             self._pending.pop(transaction_id, None)
             raise ConnectionError(f"V2 send failed: {err}") from err
@@ -397,10 +528,12 @@ class WSV2Protocol(XtoolProtocol):
             return
         try:
             async for msg in ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    self._handle_frame(msg.data)
-                elif msg.type == aiohttp.WSMsgType.BINARY:
+                if msg.type == aiohttp.WSMsgType.BINARY:
                     self._handle_binary(msg.data)
+                elif msg.type == aiohttp.WSMsgType.TEXT:
+                    # V2 firmware doesn't normally send TEXT frames, but
+                    # tolerate them in case a debug/firmware build does.
+                    self._handle_text(msg.data)
                 elif msg.type in (
                     aiohttp.WSMsgType.CLOSED,
                     aiohttp.WSMsgType.ERROR,
@@ -440,8 +573,9 @@ class WSV2Protocol(XtoolProtocol):
                     "transactionId": WSV2_PING_TRANSACTION_ID,
                 }
                 self._heartbeat_pending = asyncio.Future()
+                frame = _encode_frame(json.dumps(payload).encode("utf-8"))
                 try:
-                    await self._ws_instr.send_str(json.dumps(payload))
+                    await self._ws_instr.send_bytes(frame)
                 except Exception as err:
                     _LOGGER.debug("V2 heartbeat send failed: %s", err)
                     self._heartbeat_pending = None
@@ -466,13 +600,7 @@ class WSV2Protocol(XtoolProtocol):
         except asyncio.CancelledError:
             raise
 
-    def _handle_frame(self, raw: str) -> None:
-        try:
-            event = json.loads(raw)
-        except Exception:
-            return
-        if not isinstance(event, dict):
-            return
+    def _dispatch_event(self, event: dict[str, Any]) -> None:
         # Responses carry ``type:"response"`` and a numeric
         # ``transactionId`` either at top-level or nested under
         # ``data.transactionId`` (Studio's dispatcher checks both).
@@ -499,18 +627,33 @@ class WSV2Protocol(XtoolProtocol):
         # Otherwise treat as a push event.
         self._dispatch_push(event)
 
-    def _handle_binary(self, raw: bytes) -> None:
-        idx = raw.find(b"{")
-        if idx < 0:
-            return
-        payload = raw[idx:]
-        if payload.startswith(b"{{"):
-            payload = payload[1:]
+    def _handle_text(self, raw: str) -> None:
+        """TEXT-frame fallback (rare on V2 firmware)."""
         try:
-            text = payload.decode("utf-8", errors="replace")
+            event = json.loads(raw)
         except Exception:
             return
-        self._handle_frame(text)
+        if isinstance(event, dict):
+            self._dispatch_event(event)
+
+    def _handle_binary(self, raw: bytes) -> None:
+        """Decode CRC-wrapped V2 frames; aggregate across WS messages."""
+        self._rx_buffer.extend(raw)
+        frames, remainder = _decode_frames(bytes(self._rx_buffer))
+        self._rx_buffer = bytearray(remainder)
+        for protocol_type, payload in frames:
+            if protocol_type != WSV2_PROTOCOL_JSON:
+                _LOGGER.debug(
+                    "V2 ignored frame protocol_type=%d len=%d",
+                    protocol_type, len(payload),
+                )
+                continue
+            try:
+                event = json.loads(payload.decode("utf-8"))
+            except Exception:
+                continue
+            if isinstance(event, dict):
+                self._dispatch_event(event)
 
     # ── push event dispatcher ─────────────────────────────────────────
 

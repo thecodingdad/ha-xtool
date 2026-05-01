@@ -1241,13 +1241,51 @@ time.
 
 ### Frame parsing
 
-- TEXT frames: raw JSON.
-- BINARY frames: device prefixes a small framing header before the
-  JSON. Strategy: locate the first `{`, parse from there. A firmware
-  bug occasionally double-encodes the leading byte (`{{`) — drop one
-  leading byte and retry.
+V2 firmware sends and expects every JSON payload wrapped in a
+**CRC-16-protected binary envelope** on the WebSocket. Studio's
+`MessageEncoder.encodeFrame` / `MessageParser.extractCompletePackets`
+are gated by `dataStream: true` — the V2 connection profile sets that
+flag, so raw TEXT JSON is silently dropped by the firmware. We learnt
+this the hard way: the `/v1/user/parity` handshake never reached the
+device until we wrapped it in this envelope.
 
-Two distinct frame shapes coexist on the wire:
+**Envelope layout** (10-byte header + payload):
+
+```
+byte 0-1   : 0xBA 0xBE                          frame magic
+byte 2-4   : payload length, big-endian (3 B)
+byte 5     : protocol_type (low 7 bits) | (CRC enabled ? 0 : 0x80)
+byte 6-7   : payload CRC-16/ARC, big-endian
+byte 8-9   : header CRC-16/ARC of bytes 0-7, big-endian
+byte 10-…  : payload bytes
+```
+
+`protocol_type` values from Studio's `ProtocolCode` enum:
+
+| Code | Meaning |
+|---|---|
+| 1 | F0F7 — legacy M-code framing |
+| 2 | F3F4 |
+| 3 | F8F9 |
+| 4 | JSON — V2 instruction channel uses this |
+| 5 | BUFFER |
+| 32 | NETWORK_CONFIG |
+| 33 | FILE_TRANSFER |
+| 34 | MEDIA_STREAM |
+
+CRC-16/ARC: poly 0xA001 (reflected 0x8005), init 0, no xorout — same
+algorithm as the `crc` npm package's `crc16` export and Studio's
+`crc16_default`. Implementation reference: `_crc16` /
+`_encode_frame` / `_decode_frames` in
+`custom_components/xtool/protocols/ws_v2/protocol.py`.
+
+Reader-side: aggregate inbound BINARY messages into a buffer, scan
+for the `0xBA 0xBE` magic, validate the header CRC + payload CRC,
+extract the JSON payload. A bad CRC means resync at the next byte —
+do not drop the buffer, the device may have split a frame across
+multiple WS messages.
+
+Two distinct JSON-payload shapes coexist on the wire:
 
 **1. Push event (broadcast / unsolicited):**
 
