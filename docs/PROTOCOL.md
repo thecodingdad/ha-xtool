@@ -131,8 +131,26 @@ Unicast (manual IP) — send to both:
 <targetIP>:25454       (note: 25454, NOT 25354)
 ```
 
-The RX socket joins the four multicast groups (`IP_ADD_MEMBERSHIP`)
-and also accepts unicast replies on the TX source port.
+#### Socket layout
+
+xTool Studio's `MulticastServer.initReceivers` binds **four RX sockets**
+— one per multicast port — each joined to its corresponding group via
+`IP_ADD_MEMBERSHIP` and using `SO_REUSEADDR`. A separate **TX socket**
+on a random ephemeral port handles outbound sends + receives unicast
+replies.
+
+```
+RX 0.0.0.0:5353   join 224.0.0.251
+RX 0.0.0.0:5354   join 224.0.0.252
+RX 0.0.0.0:25353  join 239.0.1.251
+RX 0.0.0.0:25354  join 239.0.1.252
+TX 0.0.0.0:<rand>           (sends + accepts unicast replies)
+```
+
+Without the four RX sockets bound to the well-known ports, the kernel
+silently drops multicast replies destined for `5353` etc. — group
+membership alone is not enough. The TX socket alone catches only the
+unicast leg of a reply.
 
 #### Encryption
 
@@ -191,6 +209,30 @@ the config entry's `unique_id` straight from discovery.
 A second key, `primaryKey = "makeblockmakeblockmakeblock-2025"`, lives
 in the same source file. It belongs to the cloud-binding flow, not
 discovery — ignore it for LAN device search.
+
+#### Deployment caveats
+
+Common LAN-side reasons V2 discovery fails (HA + similar integrations):
+
+- **Docker without `network_mode: host`** — multicast does not cross
+  the bridge to a container. Either run HAOS / supervised, or expose
+  the container on the host network.
+- **Multi-NIC host** — `INADDR_ANY` joins the multicast group on the
+  default route's interface. On a host with both Docker bridge and
+  LAN, the join can land on the wrong NIC. Workaround: explicit
+  `IP_MULTICAST_IF` per RX socket.
+- **Firewalls / managed switches** that block IGMP or drop traffic on
+  the V2 multicast ports.
+- **Sleep / power state** — V2 firmware may pause the encrypted
+  responder while the device is in the deepest sleep tier. Wake the
+  device first.
+
+When discovery cannot identify a device, fall back to a manual model
+picker: the user supplies the IP and selects the (model,
+protocol_version) pair from a registry-driven dropdown, and the
+client jumps straight to the per-protocol handshake (port-28900 TLS
+WS for V2, REST/8080 for V1, M-code WS/8081 for S1, …). UDP discovery
+is a hint, not a hard requirement.
 
 
 ---
