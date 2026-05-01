@@ -157,13 +157,23 @@ unicast leg of a reply.
 - AES-256-CBC, PKCS#7 padding.
 - 16-byte random IV prepended to ciphertext (sent over the wire as
   `IV ‖ ciphertext`).
-- Static key:
+- **Two distinct 32-byte AES-256 keys**:
 
   ```
-  commonKey = "makeblocsdbfjssjkkejqbcsdjfbqlla"   // 32 bytes
+  primaryKey = "makeblockmakeblockmakeblock-2025"   // outbound encrypt
+  commonKey  = "makeblocsdbfjssjkkejqbcsdjfbqlla"   // inbound decrypt
   ```
 
-#### Request payload (plaintext, encrypted before send)
+  Studio's `MulticastServer.encryptData(json, primaryKey)` /
+  `decryptData(msg, commonKey)` use them asymmetrically. Encrypting
+  the outbound handshake with `commonKey` (or decrypting the response
+  with `primaryKey`) yields a packet the device silently drops.
+
+  The body's `data.key` field stays at `commonKey` — that is the key
+  the device will use to encrypt its reply. Only the outer AES
+  wrapping on the outbound leg uses `primaryKey`.
+
+#### Request payload (plaintext, encrypted with `primaryKey` before send)
 
 ```json
 {
@@ -178,7 +188,7 @@ unicast leg of a reply.
 }
 ```
 
-#### Response payload (decrypted, same key)
+#### Response payload (decrypted with `commonKey`)
 
 ```json
 {
@@ -205,10 +215,6 @@ The device's per-response `key` field is informational — Studio
 decrypts everything with the static `commonKey`. The richer field set
 (`deviceSn`, `deviceCode`, `firmwareVersion`) lets a client populate
 the config entry's `unique_id` straight from discovery.
-
-A second key, `primaryKey = "makeblockmakeblockmakeblock-2025"`, lives
-in the same source file. It belongs to the cloud-binding flow, not
-discovery — ignore it for LAN device search.
 
 #### Deployment caveats
 

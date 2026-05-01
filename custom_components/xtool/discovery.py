@@ -47,7 +47,18 @@ V2_MULTICAST_TARGETS: tuple[tuple[str, int, int], ...] = (
     ("239.0.1.252", 25354, 4),   # private
 )
 V2_UNICAST_PORTS: tuple[int, ...] = (25353, 25454)
-V2_COMMON_KEY = b"makeblocsdbfjssjkkejqbcsdjfbqlla"  # 32 bytes — AES-256
+# Studio uses **two** AES-256 keys for V2 discovery:
+#   - ``primaryKey`` to encrypt outbound handshakes
+#     (``encryptData(jsonData, primaryKey)`` in sendHandshakePackets /
+#     sendToIP / sendMulticastForUnicastTarget),
+#   - ``commonKey`` to decrypt the device's reply
+#     (``decryptData(msg, commonKey)`` in handleMessage).
+# Sending with ``commonKey`` fails — the device cannot decrypt it.
+# The body's ``data.key`` field stays at ``commonKey`` (it is what we
+# tell the device to use when crafting its reply); only the outer
+# AES wrapping uses ``primaryKey`` on the outbound leg.
+V2_PRIMARY_KEY = b"makeblockmakeblockmakeblock-2025"  # 32 bytes — AES-256
+V2_COMMON_KEY = b"makeblocsdbfjssjkkejqbcsdjfbqlla"   # 32 bytes — AES-256
 V2_CLIENT_TYPE = "atomnClient"
 V2_PROTOCOL_VERSION_FIELD = "1.0"
 
@@ -71,24 +82,24 @@ class DiscoveredDevice:
 # --- V2 crypto helpers --------------------------------------------------
 
 
-def _v2_encrypt(plaintext: bytes) -> bytes:
+def _v2_encrypt(plaintext: bytes, key: bytes) -> bytes:
     """AES-256-CBC + PKCS7. Random 16-byte IV prepended to ciphertext."""
     iv = os.urandom(16)
     padder = padding.PKCS7(128).padder()
     padded = padder.update(plaintext) + padder.finalize()
-    cipher = Cipher(algorithms.AES(V2_COMMON_KEY), modes.CBC(iv))
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
     enc = cipher.encryptor()
     ciphertext = enc.update(padded) + enc.finalize()
     return iv + ciphertext
 
 
-def _v2_decrypt(blob: bytes) -> dict | None:
+def _v2_decrypt(blob: bytes, key: bytes) -> dict | None:
     """Inverse of `_v2_encrypt`. Returns parsed JSON or None on any error."""
     if len(blob) < 32:
         return None
     iv, ciphertext = blob[:16], blob[16:]
     try:
-        cipher = Cipher(algorithms.AES(V2_COMMON_KEY), modes.CBC(iv))
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
         dec = cipher.decryptor()
         padded = dec.update(ciphertext) + dec.finalize()
         unpadder = padding.PKCS7(128).unpadder()
@@ -99,7 +110,11 @@ def _v2_decrypt(blob: bytes) -> dict | None:
 
 
 def _v2_build_request(request_id: int) -> bytes:
-    """Build + encrypt the `deviceFind` handshake payload."""
+    """Build + encrypt the `deviceFind` handshake payload.
+
+    Outbound encryption uses ``V2_PRIMARY_KEY`` to match Studio's
+    ``encryptData(jsonData, primaryKey)`` calls.
+    """
     payload = {
         "type": "deviceFind",
         "method": "request",
@@ -110,7 +125,7 @@ def _v2_build_request(request_id: int) -> bytes:
             "key": V2_COMMON_KEY.decode("ascii"),
         },
     }
-    return _v2_encrypt(json.dumps(payload).encode("utf-8"))
+    return _v2_encrypt(json.dumps(payload).encode("utf-8"), V2_PRIMARY_KEY)
 
 
 def _v2_parse_response(
@@ -269,7 +284,7 @@ async def _probe_v2(
     loop = asyncio.get_event_loop()
 
     def _on_message(data: bytes, addr: tuple[str, int]) -> None:
-        decoded = _v2_decrypt(data)
+        decoded = _v2_decrypt(data, V2_COMMON_KEY)
         if decoded is None:
             _LOGGER.debug("V2 RX from %s undecodable (%d bytes)", addr, len(data))
             return
