@@ -36,7 +36,7 @@ USB, `needConnectAlive: false`, no heartbeat).
 | `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
 | `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
 | `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
-| `ws_v2` | `V2` | F1 ≥ 40.51, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer — V2-firmware path | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss) |
+| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss) |
 
 V1- and V2-firmware lines for the same hardware coexist — discovery +
 the port-28900 probe pick the right family at config-flow time. See
@@ -45,6 +45,35 @@ full V2 wire contract.
 
 All four are **local-only**. The cloud is only contacted for firmware
 update checks and firmware-image downloads.
+
+### WS-V2 firmware activation thresholds
+
+The V2 communication framework rolled out per-model on different
+firmware versions. Devices on or above the listed version answer the
+encrypted multicast discovery + WS-V2 request/response API on port
+28900; devices below stay on the legacy REST family on port 8080.
+Versions sourced from the cloud's "Communication Framework Upgrade"
+release notes published on `api.xtool.com/efficacy/v1/package/version/latest`.
+
+| Model | Min V2 firmware | Notes |
+|---|---|---|
+| F1 | `40.51.020.04` | Communication framework upgrade. Breaks LightBurn + XCS Mobile. |
+| F1 Ultra | `40.52.016.05` | Communication framework upgrade. Breaks LightBurn + XCS Mobile. |
+| F1 Ultra V2 (GS003) | `40.53.007.05` | Communication framework upgrade. Breaks LightBurn + XCS Mobile. |
+| F1 Lite (GS005) | `40.55.020.04` | Communication framework upgrade. Breaks LightBurn + XCS Mobile. |
+| F2 (GS006) | `40.56.021.08` | Numbering aligned with the V2 family; release notes mention only flame-detection + bug-fixes. |
+| F2 Ultra (GS004-CLASS-4) | `40.54.020.05` | Core system framework + protocol upgrade. Studio v1.4+ required. |
+| F2 Ultra Single (GS007-CLASS-4) | `40.57.020.05` | Core system framework + protocol upgrade. Studio v1.4+ required. |
+| F2 Ultra UV (GS009-CLASS-4) | `40.130.021.02` | Numbering aligned with the V2 family. |
+| M1 Ultra | `40.41.017` | Communication framework upgrade. Breaks XCS Mobile. |
+| P2S | `40.22.011.06` | Communication framework upgrade. Breaks LightBurn + XCS Mobile. |
+| P3 | `40.23.006.03` | Ships V2-only. ⚠️ Update can take 10–15 min. |
+| MetalFab (HJ003) | `40.70.013.4` | Studio v1.6+ required. |
+| Apparel Printer (DT001) | `40.100.025.03` | Includes manual ink-stack calibration + alignment-reset features. |
+
+V1-firmware lines that have **not** moved to V2 yet: D1 / D1 Pro /
+D1 Pro 2.0 (D-series stays on legacy REST + push-WS), M1, P1, P2, S1
+(S1 has its own `ws_mcode` family unrelated to V1/V2).
 
 
 ## Discovery
@@ -79,10 +108,10 @@ the local broadcast since that already covers the LAN scope.
 
 ### Discovery V2 (encrypted multicast)
 
-V2-firmware devices (F1 ≥ 40.51, F2 family, M1 Ultra, P2S, P3,
-MetalFab, Apparel Printer, GS003, GS005 on V2 firmware) **do not**
-answer the plain V1 probe. They expect an AES-256-CBC encrypted
-`deviceFind` envelope on the multicast network.
+V2-firmware devices (per-model thresholds in
+[WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds)
+above) **do not** answer the plain V1 probe. They expect an
+AES-256-CBC encrypted `deviceFind` envelope on the multicast network.
 
 #### Targets
 
@@ -1122,15 +1151,19 @@ Models column ordered as: D1, D1Pro, D1Pro 2.0.
 
 ## WS-V2 protocol (TLS WebSocket RPC + push)
 
-V2 firmware (≥ 40.51 on F1 / F1 Ultra / F1 Lite / F2 family / M1
-Ultra / P2S / P3 / MetalFab / Apparel Printer / GS003) replaces the
-legacy HTTP REST transport with a **full request/response API tunneled
-over three parallel TLS WebSocket connections** on port 28900. xTool
-Studio calls this the `V2` protocol (`protocolName: "V2"` in the
-`createV2ProtocolInstance` factory of `atomm-sharedworker`). Older
-community docs described it as "listener-only" because they observed
-only the broadcast event channel — the actual API surface is full
-bidirectional and rivals the legacy REST family in scope.
+V2 firmware (per-model thresholds in
+[WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds)
+above — F1 ≥ 40.51, F1 Ultra ≥ 40.52, GS003 ≥ 40.53, F2 Ultra ≥ 40.54,
+GS005 ≥ 40.55, F2 ≥ 40.56, F2 Ultra Single ≥ 40.57, M1 Ultra ≥ 40.41,
+P2S ≥ 40.22.011, P3 ≥ 40.23, F2 Ultra UV ≥ 40.130, MetalFab ≥ 40.70,
+Apparel Printer ≥ 40.100) replaces the legacy HTTP REST transport
+with a **full request/response API tunneled over three parallel TLS
+WebSocket connections** on port 28900. xTool Studio calls this the
+`V2` protocol (`protocolName: "V2"` in the `createV2ProtocolInstance`
+factory of `atomm-sharedworker`). Older community docs described it
+as "listener-only" because they observed only the broadcast event
+channel — the actual API surface is full bidirectional and rivals
+the legacy REST family in scope.
 
 ### Connection
 
@@ -3062,7 +3095,7 @@ hardware split:
 | M1 Ultra | Allwinner R528 (ARM) + Linux | GD450 motion + GD330 Z-axis | adds dedicated Z-axis MCU |
 | F1 | Allwinner H3 + Linux | GD450 motion + GD330 purifier | built-in air-purifier firmware |
 | F1 Ultra | Allwinner H3 + Linux | display MCU + GD470 motion + GD330 purifier | adds 1 MB display firmware (touchscreen) |
-| WS-V2 firmware line | same hardware as the V1 sibling (F1 ≥ 40.51, F1 Ultra V2/GS003, GS005, F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer) | same | full request/response API on TLS WebSocket port 28900 (replaces port-8080 REST on V2 firmware) |
+| WS-V2 firmware line | same hardware as the V1 sibling — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) for per-model min versions | same | full request/response API on TLS WebSocket port 28900 (replaces port-8080 REST on V2 firmware) |
 | P2 | Allwinner H3 + Linux | GD450 motion + GD330 UI + GD330 WCB | UI + cover board MCUs |
 | P2S | same as P2 | same | newer revision |
 | Bluetooth dongle | dedicated MCU | — | exposes `M9091`–`M9098` for pairing, scan, connect |
