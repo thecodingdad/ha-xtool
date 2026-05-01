@@ -41,7 +41,7 @@ from .const import (
     FIRMWARE_CHECK_INTERVAL,
 )
 from .discovery import DiscoveredDevice, discover_devices
-from .protocols import validate_connection
+from .protocols import ConnectionInfo, validate_connection
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,8 +84,10 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Discovery: %s (%s)", name or "unknown", host)
 
         conn_info = await validate_connection(host)
-        if conn_info is None:
-            return self.async_abort(reason="cannot_connect")
+        if not isinstance(conn_info, ConnectionInfo):
+            # Discovery flow has no form to surface ``errors`` on, so the
+            # granular reason rides through the abort dialog instead.
+            return self.async_abort(reason=conn_info or "cannot_connect")
 
         if conn_info.serial_number:
             await self.async_set_unique_id(conn_info.serial_number)
@@ -169,15 +171,16 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_manual()
 
         conn_info = await validate_connection(host)
-        if conn_info is None:
+        if not isinstance(conn_info, ConnectionInfo):
+            reason = conn_info or "cannot_connect"
             if errors is not None:
-                errors["base"] = "cannot_connect"
+                errors["base"] = reason
                 return self.async_show_form(
                     step_id="manual",
                     data_schema=vol.Schema({vol.Required(CONF_HOST): str}),
                     errors=errors,
                 )
-            return self.async_abort(reason="cannot_connect")
+            return self.async_abort(reason=reason)
 
         if conn_info.serial_number:
             await self.async_set_unique_id(conn_info.serial_number)

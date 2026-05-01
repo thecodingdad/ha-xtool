@@ -108,7 +108,15 @@ def detect_model(device_name: str) -> XtoolDeviceModel:
     return candidates[0]
 
 
-async def validate_connection(host: str) -> ConnectionInfo | None:
+# Granular failure reasons surfaced by ``validate_connection``. Each is
+# also a translation key in ``strings.json`` (``error`` + ``abort``
+# blocks) so the config flow can render a precise hint.
+VALIDATION_ERROR_UDP_NO_REPLY = "udp_no_reply"
+VALIDATION_ERROR_UNKNOWN_MODEL = "unknown_model"
+VALIDATION_ERROR_PROTOCOL_FAILED = "protocol_failed"
+
+
+async def validate_connection(host: str) -> ConnectionInfo | str:
     """Identify a device by UDP probe, then validate via its protocol.
 
     Selection algorithm:
@@ -117,11 +125,15 @@ async def validate_connection(host: str) -> ConnectionInfo | None:
     2. ``candidates = detect_models(name)``  (1..N entries)
     3. Pick V2 candidate if probe_v2() succeeds; else V1; else V2-only.
     4. Connect with that candidate's protocol_class and confirm.
+
+    Returns a populated :class:`ConnectionInfo` on success or one of the
+    ``VALIDATION_ERROR_*`` translation keys when the flow should be
+    aborted with a precise hint to the user.
     """
     discovered = await identify_host(host)
     if discovered is None or not discovered.name:
         _LOGGER.debug("No UDP reply from %s — cannot identify device", host)
-        return None
+        return VALIDATION_ERROR_UDP_NO_REPLY
 
     candidates = detect_models(discovered.name)
     if not candidates:
@@ -129,7 +141,7 @@ async def validate_connection(host: str) -> ConnectionInfo | None:
             "Unrecognised xTool device %r at %s — no matching model",
             discovered.name, host,
         )
-        return None
+        return VALIDATION_ERROR_UNKNOWN_MODEL
 
     v1_candidate = next(
         (m for m in candidates if m.protocol_version == "V1"), None
@@ -157,7 +169,7 @@ async def validate_connection(host: str) -> ConnectionInfo | None:
             "No usable protocol for xTool device %r at %s",
             discovered.name, host,
         )
-        return None
+        return VALIDATION_ERROR_UNKNOWN_MODEL
 
     protocol = chosen.protocol_class(host)
     try:
@@ -178,7 +190,7 @@ async def validate_connection(host: str) -> ConnectionInfo | None:
     except Exception as err:
         _LOGGER.debug("Validation against %s as %s failed: %s",
                       host, chosen.model_id, err)
-        return None
+        return VALIDATION_ERROR_PROTOCOL_FAILED
     finally:
         await protocol.disconnect()
 
@@ -195,6 +207,9 @@ __all__ = [
     "XtoolDeviceModel",
     "XtoolDeviceState",
     "XtoolProtocol",
+    "VALIDATION_ERROR_PROTOCOL_FAILED",
+    "VALIDATION_ERROR_UDP_NO_REPLY",
+    "VALIDATION_ERROR_UNKNOWN_MODEL",
     "detect_model",
     "detect_models",
     "validate_connection",

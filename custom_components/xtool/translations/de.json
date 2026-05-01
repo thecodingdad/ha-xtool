@@ -22,9 +22,16 @@
     },
     "error": {
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen. Bitte prüfe die IP-Adresse und stelle sicher, dass das Gerät eingeschaltet und mit dem WLAN verbunden ist.",
+      "udp_no_reply": "Keine UDP-Discovery-Antwort des Geräts auf Port 20000. IP prüfen, sicherstellen dass das Gerät eingeschaltet ist und sich im selben Subnetz befindet, und dass keine Firewall UDP-Broadcasts blockiert.",
+      "unknown_model": "Das Gerät hat auf die Discovery geantwortet, aber sein Modellname wird von dieser Integration nicht erkannt. Bitte ein Issue mit dem gemeldeten Namen erstellen.",
+      "protocol_failed": "Das Gerät wurde erkannt, aber der Protokoll-Handshake ist fehlgeschlagen. Möglicherweise ist das Gerät belegt (XCS / xTool Studio offen) oder die Firmware-Version wird nicht unterstützt.",
       "already_configured": "Dieses Gerät ist bereits konfiguriert."
     },
     "abort": {
+      "cannot_connect": "Verbindung zum Gerät fehlgeschlagen.",
+      "udp_no_reply": "Keine UDP-Discovery-Antwort auf Port 20000 — prüfe ob das Gerät online ist und im selben Subnetz hängt.",
+      "unknown_model": "Das gefundene Gerätemodell wird von dieser Integration nicht erkannt.",
+      "protocol_failed": "Protokoll-Handshake mit dem Gerät fehlgeschlagen — XCS / xTool Studio schließen und erneut versuchen.",
       "already_configured": "Dieses Gerät ist bereits konfiguriert."
     }
   },

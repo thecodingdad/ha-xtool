@@ -22,9 +22,16 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to the device. Please check the IP address and ensure the device is powered on and connected to WiFi.",
+      "udp_no_reply": "No UDP discovery reply from the device on port 20000. Verify the IP, that the device is powered on and on the same subnet, and that no firewall blocks UDP broadcasts.",
+      "unknown_model": "The device replied to discovery but its model name is not recognised by this integration. Please open an issue with the reported name.",
+      "protocol_failed": "The device was identified but the protocol handshake failed. The device may be busy (XCS / xTool Studio open) or the firmware version is unsupported.",
       "already_configured": "This device is already configured."
     },
     "abort": {
+      "cannot_connect": "Failed to connect to the device.",
+      "udp_no_reply": "No UDP discovery reply on port 20000 — check that the device is online and on the same subnet.",
+      "unknown_model": "The discovered device model is not recognised by this integration.",
+      "protocol_failed": "Protocol handshake with the device failed — close XCS / xTool Studio and try again.",
       "already_configured": "This device is already configured."
     }
   },
