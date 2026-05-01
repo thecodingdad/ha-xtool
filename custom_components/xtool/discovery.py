@@ -61,6 +61,14 @@ V2_PRIMARY_KEY = b"makeblockmakeblockmakeblock-2025"  # 32 bytes — AES-256
 V2_COMMON_KEY = b"makeblocsdbfjssjkkejqbcsdjfbqlla"   # 32 bytes — AES-256
 V2_CLIENT_TYPE = "atomnClient"
 V2_PROTOCOL_VERSION_FIELD = "1.0"
+# Studio's executeSmartRetry: 3 attempts with exponential backoff +
+# jitter (delay = 1.5^attempt * BASE_DELAY + random*MAX_JITTER).
+# Replays the same encrypted blob — devices that missed the first
+# packet (NIC/IGMP timing, brief CPU stall on the laser) catch a
+# later one.
+V2_RETRY_COUNT = 3
+V2_RETRY_BASE_DELAY = 0.1
+V2_RETRY_MAX_JITTER = 0.2
 
 
 @dataclass
@@ -314,26 +322,39 @@ async def _probe_v2(
             "V2 probe target=%s broadcast=%s rx_sockets=%d request_id=%s",
             target, broadcast, len(rx_socks), request_id,
         )
-        if broadcast:
-            for group, port, ttl in V2_MULTICAST_TARGETS:
-                try:
-                    tx_sock.setsockopt(
-                        socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl,
-                    )
-                    tx_transport.sendto(blob, (group, port))
-                except OSError as err:
-                    _LOGGER.debug(
-                        "V2 send to %s:%d failed: %s", group, port, err,
-                    )
-        else:
-            for port in V2_UNICAST_PORTS:
-                try:
-                    tx_transport.sendto(blob, (target, port))
-                except OSError as err:
-                    _LOGGER.debug(
-                        "V2 send to %s:%d failed: %s", target, port, err,
-                    )
-        await asyncio.sleep(timeout)
+        def _send_once() -> None:
+            if broadcast:
+                for group, port, ttl in V2_MULTICAST_TARGETS:
+                    try:
+                        tx_sock.setsockopt(
+                            socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl,
+                        )
+                        tx_transport.sendto(blob, (group, port))
+                    except OSError as err:
+                        _LOGGER.debug(
+                            "V2 send to %s:%d failed: %s", group, port, err,
+                        )
+            else:
+                for port in V2_UNICAST_PORTS:
+                    try:
+                        tx_transport.sendto(blob, (target, port))
+                    except OSError as err:
+                        _LOGGER.debug(
+                            "V2 send to %s:%d failed: %s", target, port, err,
+                        )
+
+        deadline = loop.time() + timeout
+        for attempt in range(V2_RETRY_COUNT):
+            _send_once()
+            if attempt < V2_RETRY_COUNT - 1:
+                jitter = random.random() * V2_RETRY_MAX_JITTER
+                delay = (1.5 ** attempt) * V2_RETRY_BASE_DELAY + jitter
+                remaining = deadline - loop.time()
+                await asyncio.sleep(min(delay, max(remaining, 0)))
+        # Drain remaining time for late replies.
+        remaining = deadline - loop.time()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
     except OSError as err:
         _LOGGER.debug("V2 probe to %s failed: %s", target, err)
     finally:

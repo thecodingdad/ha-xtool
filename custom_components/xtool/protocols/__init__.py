@@ -184,6 +184,20 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
         info = await protocol.get_device_info()
         version = await protocol.get_version()
         firmware = info.main_firmware or version or ""
+        # Same proof-of-life guard as ``validate_with_model``. Discovery
+        # already filtered the address by name, but a V1-firmware
+        # response with all-empty fields still indicates a bad pick.
+        if not (
+            info.serial_number
+            or info.mac_address
+            or info.device_name
+            or firmware
+        ):
+            _LOGGER.debug(
+                "Validation against %s as %s rejected: empty device info",
+                host, chosen.model_id,
+            )
+            return VALIDATION_ERROR_PROTOCOL_FAILED
         return ConnectionInfo(
             host=host,
             name=info.device_name or chosen.name,
@@ -226,6 +240,23 @@ async def validate_with_model(
         info = await protocol.get_device_info()
         version = await protocol.get_version()
         firmware = info.main_firmware or version or ""
+        # Stateless protocols (RestProtocol) don't raise when the device
+        # silently rejects every endpoint — the user could otherwise
+        # pick the wrong (model, firmware) pair, get a config entry,
+        # and watch every entity show as Unavailable. Require proof of
+        # life: at least one identity field must come back populated.
+        if not (
+            info.serial_number
+            or info.mac_address
+            or info.device_name
+            or firmware
+        ):
+            _LOGGER.debug(
+                "Manual validation against %s as %s/%s rejected: "
+                "device info is empty (likely wrong protocol_version)",
+                host, chosen.model_id, chosen.protocol_version,
+            )
+            return VALIDATION_ERROR_PROTOCOL_FAILED
         return ConnectionInfo(
             host=host,
             name=info.device_name or chosen.name,
