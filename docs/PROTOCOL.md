@@ -38,9 +38,19 @@ All four are **local-only**. The cloud is only contacted for firmware
 update checks and firmware-image downloads.
 
 
-## Discovery — UDP broadcast, port 20000
+## Discovery
 
-Devices listen on UDP/20000 for a JSON probe and reply with their identity.
+xTool Studio runs **two** discovery flows in parallel — V1 (legacy
+plain UDP) and V2 (encrypted multicast). Source of truth:
+`xTool Studio/resources/app.asar` →
+`.vite/build/discover-worker.d0392b78.cjs`. Two classes coexist:
+`LegacyMulticastServer` (V1) and `MulticastServer` (V2). Either may
+fire first, so a robust client mirrors both and dedupes by IP.
+
+### Discovery V1 (legacy plain UDP, port 20000)
+
+V1-firmware devices (S1, D-series, plus any F1/M1/P2/F2 still on V1
+firmware) listen on UDP/20000 for a JSON probe.
 
 Request (broadcast to `255.255.255.255:20000`):
 
@@ -54,8 +64,95 @@ Reply (unicast back from device):
 {"requestId": <echo>, "ip": "192.168.x.x", "name": "xTool S1", "version": "V40.32.013.2224.01"}
 ```
 
-Clients typically run this scan once when adding a device to enumerate
-available xTool laser cutters on the local network.
+Studio also multicasts the probe to `224.0.1.77:20000` for V1 — both
+target choices reach the same firmware. The HA integration sticks to
+the local broadcast since that already covers the LAN scope.
+
+### Discovery V2 (encrypted multicast)
+
+V2-firmware devices (F1 ≥ 40.51, F2 family, M1 Ultra, P2S, P3,
+MetalFab, Apparel Printer, GS003, GS005 on V2 firmware) **do not**
+answer the plain V1 probe. They expect an AES-256-CBC encrypted
+`deviceFind` envelope on the multicast network.
+
+#### Targets
+
+Broadcast — send to all four:
+
+```
+224.0.0.251:5353     link-local, TTL 1
+224.0.0.252:5354     link-local, TTL 1
+239.0.1.251:25353    private,    TTL 4
+239.0.1.252:25354    private,    TTL 4
+```
+
+Unicast (manual IP) — send to both:
+
+```
+<targetIP>:25353
+<targetIP>:25454       (note: 25454, NOT 25354)
+```
+
+The RX socket joins the four multicast groups (`IP_ADD_MEMBERSHIP`)
+and also accepts unicast replies on the TX source port.
+
+#### Encryption
+
+- AES-256-CBC, PKCS#7 padding.
+- 16-byte random IV prepended to ciphertext (sent over the wire as
+  `IV ‖ ciphertext`).
+- Static key:
+
+  ```
+  commonKey = "makeblocsdbfjssjkkejqbcsdjfbqlla"   // 32 bytes
+  ```
+
+#### Request payload (plaintext, encrypted before send)
+
+```json
+{
+  "type": "deviceFind",
+  "method": "request",
+  "data": {
+    "version":    "1.0",
+    "clientType": "atomnClient",
+    "requestId":  <uint32 random>,
+    "key":        "makeblocsdbfjssjkkejqbcsdjfbqlla"
+  }
+}
+```
+
+#### Response payload (decrypted, same key)
+
+```json
+{
+  "type":   "deviceFind",
+  "method": "response",
+  "data": {
+    "requestId":       <echo>,
+    "ip":              "192.168.x.x",
+    "deviceIp":        "<usually same as ip>",
+    "deviceName":      "xTool F1",
+    "version":         "1.0",
+    "deviceCode":      "F1",
+    "deviceId":        "<uuid>",
+    "deviceSn":        "<serial>",
+    "key":             "<per-device key, informational>",
+    "netType":         "WIFI",
+    "firmwareVersion": "40.51.xxx",
+    "platformVersion": "..."
+  }
+}
+```
+
+The device's per-response `key` field is informational — Studio
+decrypts everything with the static `commonKey`. The richer field set
+(`deviceSn`, `deviceCode`, `firmwareVersion`) lets a client populate
+the config entry's `unique_id` straight from discovery.
+
+A second key, `primaryKey = "makeblockmakeblockmakeblock-2025"`, lives
+in the same source file. It belongs to the cloud-binding flow, not
+discovery — ignore it for LAN device search.
 
 
 ---
