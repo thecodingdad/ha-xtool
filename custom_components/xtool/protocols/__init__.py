@@ -151,7 +151,14 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
     )
 
     chosen: XtoolDeviceModel | None = None
-    if v2_candidate is not None and await probe_v2(host):
+    # The UDP discovery already tells us "V1" vs "V2"; trust it and skip
+    # the port-28900 TLS probe in that case. Fall back to the probe only
+    # when the V1 leg of UDP answered (some V2 firmware revisions also
+    # answer the legacy plain probe — keeping the fallback catches them).
+    udp_says_v2 = (
+        getattr(discovered, "protocol_version", "V1") == "V2"
+    )
+    if v2_candidate is not None and (udp_says_v2 or await probe_v2(host)):
         chosen = v2_candidate
         _LOGGER.info(
             "xTool %s at %s answered V2 probe — using V2 protocol",
