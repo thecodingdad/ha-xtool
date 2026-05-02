@@ -85,7 +85,11 @@ WSV2_PATH = "/websocket"
 # timeout matches ``heartbeatTimeout ?? 11e3``.
 WSV2_HEARTBEAT_SECONDS = 3.0
 WSV2_HEARTBEAT_TIMEOUT = 11.0
-WSV2_REQUEST_TIMEOUT = 8.0
+# Studio's CommandExecutor uses ``commandTimeout ?? 1e4`` = 10 s as
+# the default for every execCmd call (including parity). Matching this
+# avoids cutting off slow first-responses while the device's TLS
+# stack + parity validator warm up.
+WSV2_REQUEST_TIMEOUT = 10.0
 WSV2_PROBE_TIMEOUT = 4.0
 WSV2_FILE_UPLOAD_TIMEOUT = 600.0
 # First-message handshake. Studio's worker stamps every connection with
@@ -95,7 +99,7 @@ WSV2_FILE_UPLOAD_TIMEOUT = 600.0
 # ``mk-guest`` for guest sessions.
 WSV2_FIRST_MESSAGE_USER_KEY = "bWFrZWJsb2NrLXh0b29s"
 WSV2_USER_UUID = "mk-guest"
-WSV2_FIRST_MESSAGE_TIMEOUT = 5.0
+WSV2_FIRST_MESSAGE_TIMEOUT = 10.0
 # Heartbeat ping uses a fixed transactionId (0xFFE6 in Studio's
 # HEART_MESSAGE_ID constant) so the user-request rotation can skip it.
 WSV2_PING_TRANSACTION_ID = 65510
