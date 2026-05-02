@@ -61,6 +61,7 @@ import json
 import logging
 import ssl
 import time
+import uuid
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -146,6 +147,21 @@ _CRC16_TABLE = [
     0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
     0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040,
 ]
+
+
+def _json_compact(obj: Any) -> str:
+    """Serialize JSON the same way ``JSON.stringify`` does — no spaces.
+
+    Studio's ``execCmd`` calls ``JSON.stringify(payload)`` which yields
+    a compact form (`{"a":1,"b":2}`). Python's default ``json.dumps``
+    inserts spaces around separators. The bytes on the wire matter
+    because:
+
+    - The frame's payload-CRC is computed over our exact bytes;
+    - V2 firmware's JSON parser is unknown — match Studio byte-for-byte
+      to remove one variable from the protocol-handshake hunt.
+    """
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
 
 
 def _crc16(data: bytes) -> int:
@@ -250,8 +266,17 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _ssl_context() -> ssl.SSLContext:
-    """SSL context that accepts self-signed device certs."""
-    ctx = ssl.create_default_context()
+    """SSL context that accepts self-signed device certs.
+
+    Uses ``PROTOCOL_TLS_CLIENT`` rather than
+    ``ssl.create_default_context()`` to widen cipher overlap with V2
+    firmware's TLS stack. Studio inherits Chromium's permissive
+    defaults; Python's ``create_default_context`` is stricter
+    (security-level ≥ 2, narrower cipher list) which can fail to
+    negotiate against older OpenSSL/BoringSSL revisions running on the
+    Allwinner-H3 controller.
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
@@ -272,7 +297,7 @@ async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
     """
     url = (
         f"wss://{host}:{WSV2_PORT}{WSV2_PATH}"
-        f"?id={int(time.time() * 1000)}&function=instruction"
+        f"?id={uuid.uuid4()}&function=instruction"
     )
     try:
         async with aiohttp.ClientSession() as session:
@@ -374,7 +399,7 @@ class WSV2Protocol(XtoolProtocol):
     async def _open_instruction_ws(self) -> None:
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={int(time.time() * 1000)}&function=instruction"
+            f"?id={uuid.uuid4()}&function=instruction"
         )
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
@@ -384,8 +409,22 @@ class WSV2Protocol(XtoolProtocol):
                 url,
                 ssl=_ssl_context(),
                 timeout=aiohttp.ClientTimeout(total=15),
-                heartbeat=None,
+                # RFC 6455 PING/PONG every 20 s — mirrors Chromium's
+                # implicit WebSocket keepalive. Surfaces dead sockets
+                # faster than waiting for our app-level pong-timeout.
+                heartbeat=20.0,
                 max_msg_size=0,
+                # Origin Studio's renderer sends. Custom scheme
+                # ``atomm:`` is registered as privileged + secure +
+                # corsEnabled (see Electron main.js
+                # ``protocol.registerSchemesAsPrivileged``); the
+                # renderer page lives at ``atomm://renderer/...`` so the
+                # shared worker's WebSocket handshake reports this Origin.
+                headers={"Origin": "atomm://renderer"},
+                # ``compress`` left at aiohttp default (15) so we offer
+                # ``permessage-deflate; client_max_window_bits=15`` —
+                # closest match to Chromium's valueless offer per
+                # RFC 7692 §4.
             )
         except Exception as err:
             _LOGGER.debug("V2 connect failed for %s: %s", self.host, err)
@@ -489,7 +528,7 @@ class WSV2Protocol(XtoolProtocol):
         deadline = time.monotonic() + timeout
         pending = _PendingRequest(deadline)
         self._pending[transaction_id] = pending
-        frame = _encode_frame(json.dumps(payload).encode("utf-8"))
+        frame = _encode_frame(_json_compact(payload).encode("utf-8"))
         _LOGGER.debug(
             "V2 TX %s %s txn=%d frame_len=%d",
             method, url, transaction_id, len(frame),
@@ -583,17 +622,20 @@ class WSV2Protocol(XtoolProtocol):
                 await asyncio.sleep(WSV2_HEARTBEAT_SECONDS)
                 if self._ws_instr is None or self._ws_instr.closed:
                     return
+                # Field order matches Studio's HEART_MESSAGE template
+                # spread by ``{...HEART_MESSAGE, timestamp: Date.now()}``:
+                # type, method, url, transactionId, data, params, timestamp.
                 payload = {
                     "type": "request",
                     "method": "GET",
                     "url": "/v1/user/ping",
-                    "params": {},
-                    "data": {},
-                    "timestamp": int(time.time() * 1000),
                     "transactionId": WSV2_PING_TRANSACTION_ID,
+                    "data": {},
+                    "params": {},
+                    "timestamp": int(time.time() * 1000),
                 }
                 self._heartbeat_pending = asyncio.Future()
-                frame = _encode_frame(json.dumps(payload).encode("utf-8"))
+                frame = _encode_frame(_json_compact(payload).encode("utf-8"))
                 try:
                     await self._ws_instr.send_bytes(frame)
                 except Exception as err:
@@ -625,14 +667,27 @@ class WSV2Protocol(XtoolProtocol):
         # ``transactionId`` either at top-level or nested under
         # ``data.transactionId`` (Studio's dispatcher checks both).
         if event.get("type") == "response":
-            txn = event.get("transactionId")
-            if not isinstance(txn, int):
+            # Studio's matcher accepts any JS number for ``transactionId``
+            # — Python's ``json`` returns int for whole numbers, but we
+            # tolerate float / numeric-string variants defensively in
+            # case some firmware revision encodes them differently.
+            def _coerce_txn(value: Any) -> int | None:
+                if isinstance(value, bool):
+                    return None
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, float) and value.is_integer():
+                    return int(value)
+                if isinstance(value, str) and value.isdigit():
+                    return int(value)
+                return None
+
+            txn = _coerce_txn(event.get("transactionId"))
+            if txn is None:
                 inner = event.get("data")
                 if isinstance(inner, dict):
-                    inner_txn = inner.get("transactionId")
-                    if isinstance(inner_txn, int):
-                        txn = inner_txn
-            if isinstance(txn, int):
+                    txn = _coerce_txn(inner.get("transactionId"))
+            if txn is not None:
                 if txn == WSV2_PING_TRANSACTION_ID:
                     if (
                         self._heartbeat_pending is not None
@@ -944,7 +999,7 @@ class WSV2Protocol(XtoolProtocol):
             self._session = aiohttp.ClientSession()
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={int(time.time() * 1000)}&function=file_stream"
+            f"?id={uuid.uuid4()}&function=file_stream"
         )
         async with self._session.ws_connect(
             url,
