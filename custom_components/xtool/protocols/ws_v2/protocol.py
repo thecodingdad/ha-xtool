@@ -864,7 +864,10 @@ class WSV2Protocol(XtoolProtocol):
                     watts = int(laser_power[0])
                 except (TypeError, ValueError):
                     watts = 0
-                info.laser_power_watts = watts
+                # ``laser_power_watts`` is a read-only property on
+                # ``DeviceInfo`` (returns ``self.laser.power_watts``).
+                # Set the underlying ``laser`` field — the property
+                # picks the value up automatically.
                 info.laser = LaserInfo(power_watts=watts)
         # Cache for later poll cycles
         self._latest["device_name"] = info.device_name
