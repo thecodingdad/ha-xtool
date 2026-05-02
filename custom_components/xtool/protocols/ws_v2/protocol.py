@@ -67,6 +67,7 @@ from datetime import datetime
 from typing import Any
 
 import aiohttp
+from homeassistant.util.ssl import get_default_no_verify_context
 
 from ...const import XtoolStatus
 from ..base import (
@@ -272,18 +273,15 @@ _LOGGER = logging.getLogger(__name__)
 def _ssl_context() -> ssl.SSLContext:
     """SSL context that accepts self-signed device certs.
 
-    Uses ``PROTOCOL_TLS_CLIENT`` rather than
-    ``ssl.create_default_context()`` to widen cipher overlap with V2
-    firmware's TLS stack. Studio inherits Chromium's permissive
-    defaults; Python's ``create_default_context`` is stricter
-    (security-level ≥ 2, narrower cipher list) which can fail to
-    negotiate against older OpenSSL/BoringSSL revisions running on the
-    Allwinner-H3 controller.
+    Uses HA's ``get_default_no_verify_context()`` helper which is
+    cached at module import time and returns an SSLContext with
+    ``check_hostname=False`` + ``verify_mode=CERT_NONE`` already set.
+    Avoids the three blocking calls
+    (``ssl.create_default_context``, ``set_default_verify_paths``,
+    ``load_default_certs``) that ``ssl.create_default_context()``
+    would otherwise trigger on the event loop.
     """
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    return get_default_no_verify_context()
 
 
 async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
