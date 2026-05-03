@@ -141,7 +141,11 @@
       "machine_lock": { "name": "Machine lock" },
       "alarm": { "name": "Alarm" },
       "purifier_running": { "name": "Air cleaner running" },
-      "purifier_connected": { "name": "Air cleaner connected" }
+      "purifier_connected": { "name": "Air cleaner connected" },
+      "flame_alarm_enabled": { "name": "Flame alarm enabled" },
+      "beep_enabled": { "name": "Beep enabled" },
+      "gap_check_enabled": { "name": "Cover check enabled" },
+      "machine_lock_check_enabled": { "name": "Lock check enabled" }
     },
     "camera": {
       "camera_overview": { "name": "Overview camera" },
@@ -174,7 +178,8 @@
       "moving_threshold": { "name": "Movement threshold" },
       "camera_exposure_overview": { "name": "Camera exposure (overview)" },
       "camera_exposure_closeup": { "name": "Camera exposure (close-up)" },
-      "purifier_timeout": { "name": "Purifier auto-off" }
+      "purifier_timeout": { "name": "Purifier auto-off" },
+      "fire_level": { "name": "Fire detection level" }
     },
     "select": {
       "flame_alarm_sensitivity": {

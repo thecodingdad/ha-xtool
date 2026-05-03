@@ -171,7 +171,11 @@
       "cpu_fan_running": { "name": "CPU-Lüfter" },
       "uv_fire_alarm": { "name": "UV-Brandsensor" },
       "water_pump_running": { "name": "Wasserpumpe" },
-      "water_line_ok": { "name": "Wasserkreislauf" }
+      "water_line_ok": { "name": "Wasserkreislauf" },
+      "flame_alarm_enabled": { "name": "Feueralarm aktiv" },
+      "beep_enabled": { "name": "Signalton aktiv" },
+      "gap_check_enabled": { "name": "Deckelüberwachung aktiv" },
+      "machine_lock_check_enabled": { "name": "Verriegelungsüberwachung aktiv" }
     },
     "camera": {
       "camera_overview": { "name": "Übersichtskamera" },
@@ -220,7 +224,8 @@
       "work_area_left": { "name": "Arbeitsbereich Links" },
       "work_area_right": { "name": "Arbeitsbereich Rechts" },
       "work_area_up": { "name": "Arbeitsbereich Oben" },
-      "work_area_down": { "name": "Arbeitsbereich Unten" }
+      "work_area_down": { "name": "Arbeitsbereich Unten" },
+      "fire_level": { "name": "Feuererkennungs-Schwelle" }
     },
     "select": {
       "flame_alarm_sensitivity": {

@@ -372,6 +372,12 @@ class WSV2Protocol(XtoolProtocol):
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
+        # Coordinator stamps the resolved XtoolDeviceModel via set_model();
+        # poll_state reads it to gate per-model peripheral queries.
+        self._model: Any = None
+        # Slow-cadence counter for /v1/device/statistics + /v1/device/configs
+        # — re-querying every poll wastes bandwidth + device CPU.
+        self._poll_counter = 0
         # Aggregator for partial BINARY frames — V2 firmware sometimes
         # splits a single CRC-wrapped envelope across multiple WS
         # messages, so we always feed bytes through ``_decode_frames``
@@ -570,6 +576,84 @@ class WSV2Protocol(XtoolProtocol):
             timeout=WSV2_FIRST_MESSAGE_TIMEOUT,
             _skip_connect=True,
         )
+
+    # ── action helpers (entity write-paths) ──────────────────────────
+
+    async def set_config(self, key: str, value: Any) -> dict[str, Any]:
+        """PUT a single key into ``/v1/device/configs``.
+
+        Studio's bundle uses ``{data: {alias:"config", type:"user",
+        kv:{<key>:<value>}}}`` for runtime configuration; the same
+        envelope is consumed by the V2 firmware's ``configs`` handler.
+        """
+        return await self.request(
+            "/v1/device/configs",
+            "PUT",
+            data={
+                "alias": "config",
+                "type": "user",
+                "kv": {key: value},
+            },
+        )
+
+    async def set_peripheral(
+        self,
+        peripheral_type: str,
+        action: str | None = None,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """PUT a peripheral-control command.
+
+        ``/v1/peripheral/control`` body shape:
+        ``{type: "<peripheral>", action: "<verb>", ...extra}``. The
+        action verb is peripheral-specific (``"on"`` / ``"off"`` for
+        binary peripherals, ``"set_brightness"`` / ``"home"`` /
+        ``"measure"`` etc. for richer ones).
+        """
+        data: dict[str, Any] = {"type": peripheral_type}
+        if action is not None:
+            data["action"] = action
+        if extra:
+            data.update(extra)
+        return await self.request("/v1/peripheral/control", "PUT", data=data)
+
+    async def set_mode(self, mode: str) -> dict[str, Any]:
+        """PUT to ``/v1/device/mode`` to transition the device mode."""
+        return await self.request(
+            "/v1/device/mode",
+            "PUT",
+            data={"mode": mode},
+        )
+
+    async def camera_snap(self, camera_type: str = "overview") -> bytes | None:
+        """GET a JPEG snapshot from one of the device's cameras.
+
+        Returns the raw JPEG bytes or ``None`` if the device replied
+        with an empty body. Camera types: ``overview``, ``closeup``,
+        ``fireRecord``.
+        """
+        try:
+            data = await self.request(
+                "/v1/camera/snap",
+                "GET",
+                params={"type": camera_type},
+                timeout=15.0,
+            )
+        except Exception as err:
+            _LOGGER.debug("V2 camera_snap %s failed: %s", camera_type, err)
+            return None
+        if not isinstance(data, dict):
+            return None
+        # Most responses base64-encode the JPEG in ``data.image``; some
+        # firmware revisions inline the bytes under ``data.bytes``.
+        b64 = data.get("image") or data.get("data") or ""
+        if isinstance(b64, str) and b64:
+            try:
+                import base64
+                return base64.b64decode(b64)
+            except Exception:
+                return None
+        return None
 
     # ── reader / heartbeat loops ──────────────────────────────────────
 
@@ -818,8 +902,116 @@ class WSV2Protocol(XtoolProtocol):
                 f"{typ}:{info}" if info else str(typ)
             )
 
+        elif url == "/device/config" and module == "DEVICE_CONFIG" and typ == "INFO":
+            # Mirrors the BassXT push handler: when the device
+            # broadcasts its config blob, latch every relevant field
+            # into ``_latest`` so the next poll cycle pushes it into
+            # ``XtoolDeviceState``.
+            if isinstance(info, dict):
+                _config_keys = (
+                    ("flameAlarm",          "flame_alarm_v2_enabled"),
+                    ("beepEnable",          "beep_enabled_v2"),
+                    ("gapCheck",            "gap_check_enabled"),
+                    ("machineLockCheck",    "machine_lock_check_enabled"),
+                    ("purifierTimeout",     "purifier_timeout"),
+                    ("workingMode",         "working_mode"),
+                    ("airAssistDelay",      "air_assist_close_delay"),
+                    ("smokingFanDelay",     "smoking_fan_duration"),
+                    ("airassistCut",        "air_assist_gear_cut"),
+                    ("airassistGrave",      "air_assist_gear_grave"),
+                    ("sleepTimeout",        "sleep_timeout"),
+                    ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
+                    ("fillLightAutoOff",    "fill_light_auto_off"),
+                    ("irLightAutoOff",      "ir_light_auto_off"),
+                    ("printToolType",       "print_tool_type"),
+                    ("flameLevelHLSelect",  "flame_level_hl"),
+                    ("fireLevel",           "fire_level"),
+                )
+                for src, dst in _config_keys:
+                    if src in info:
+                        self._latest[dst] = info[src]
+
+        elif url.startswith("/peripheral/"):
+            ptype = url.removeprefix("/peripheral/")
+            self._apply_peripheral_push(ptype, data, info, typ)
+
         else:
             _LOGGER.debug("V2 unhandled push event: %s", event)
+
+    def _apply_peripheral_push(
+        self,
+        ptype: str,
+        data: dict[str, Any],
+        info: Any,
+        typ: Any,
+    ) -> None:
+        """Translate a `/peripheral/<type>` push into a `_latest` cache key.
+
+        Pattern across V2 firmware: peripheral push events carry their
+        boolean / numeric / text state in `info` (often as a string
+        like ``"on"``/``"off"``). Each peripheral-type maps to one
+        ``XtoolDeviceState`` field in the table below.
+        """
+        is_on = None
+        if isinstance(info, str):
+            is_on = info.lower() == "on"
+        elif isinstance(info, bool):
+            is_on = info
+        elif isinstance(info, dict):
+            v = info.get("state") or info.get("value")
+            if isinstance(v, str):
+                is_on = v.lower() == "on"
+            elif isinstance(v, bool):
+                is_on = v
+
+        # Boolean peripherals — straight passthrough
+        bool_map = {
+            "cooling_fan":     "cooling_fan_running",
+            "smoking_fan":     "smoking_fan_running",
+            "uv_fire_sensor":  "uv_fire_alarm",
+            "water_pump":      "water_pump_running",
+            "water_line":      "water_line_ok",
+            "drawer":          "drawer_open",
+            "cpu_fan":         "cpu_fan_running",
+        }
+        if ptype in bool_map and is_on is not None:
+            self._latest[bool_map[ptype]] = is_on
+            return
+
+        # Numeric peripherals — value in info.value / info.temp / info.flow
+        if isinstance(info, dict):
+            if ptype == "water_tmp":
+                v = info.get("temp") or info.get("value")
+                if isinstance(v, (int, float)):
+                    self._latest["water_temperature"] = float(v)
+            elif ptype == "water_flow":
+                v = info.get("flow") or info.get("value")
+                if isinstance(v, (int, float)):
+                    self._latest["water_flow"] = float(v)
+            elif ptype == "digital_screen":
+                v = info.get("brightness") or info.get("value")
+                if isinstance(v, (int, float)):
+                    self._latest["display_brightness"] = int(v)
+            elif ptype == "gyro":
+                for axis in ("x", "y", "z"):
+                    v = info.get(axis)
+                    if isinstance(v, (int, float)):
+                        self._latest[f"gyro_{axis}"] = float(v)
+            elif ptype == "laser_head":
+                for src, dst in (("x", "position_x"), ("y", "position_y"),
+                                 ("z", "position_z")):
+                    v = info.get(src)
+                    if isinstance(v, (int, float)):
+                        self._latest[dst] = float(v)
+            elif ptype == "ir_measure_distance":
+                v = info.get("distance") or info.get("value")
+                if isinstance(v, (int, float)):
+                    self._latest["last_distance_mm"] = float(v)
+            elif ptype == "fill_light":
+                v = info.get("brightness") or info.get("value")
+                if isinstance(v, (int, float)):
+                    self._latest["fill_light_a"] = int(v)
+                    self._latest["fill_light_b"] = int(v)
 
     # ── XtoolProtocol contract ────────────────────────────────────────
 
@@ -900,12 +1092,35 @@ class WSV2Protocol(XtoolProtocol):
                     state.task_id = str(cur_mode["taskId"])
 
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
-        for ptype, target_attr in (
-            ("ext_purifier", "purifier_state_raw"),
-            ("gap", "cover_open"),
-            ("machine_lock", "machine_lock"),
-            ("airassistV2", "air_assist_connected"),
-        ):
+        # Build the type list dynamically from the model's capability
+        # flags so we don't hammer the device with queries it has no
+        # peripheral for.
+        model = getattr(self, "_model", None)
+        ptypes: list[str] = ["gap", "machine_lock", "airassistV2",
+                              "cooling_fan", "smoking_fan"]
+        if model is not None:
+            if getattr(model, "has_drawer", False):
+                ptypes.append("drawer")
+            if getattr(model, "has_uv_fire", False):
+                ptypes.append("uv_fire_sensor")
+            if getattr(model, "has_water_cooling", False):
+                ptypes.extend(["water_pump", "water_line",
+                                "water_tmp", "water_flow"])
+            if getattr(model, "has_gyro", False):
+                ptypes.append("gyro")
+            if getattr(model, "has_laser_head_position", False):
+                ptypes.append("laser_head")
+            if getattr(model, "has_distance_measure", False):
+                ptypes.append("ir_measure_distance")
+            if getattr(model, "has_display_screen", False):
+                ptypes.append("digital_screen")
+            if getattr(model, "has_fill_light_rest", False):
+                ptypes.append("fill_light")
+            if getattr(model, "has_purifier_timeout", False) or \
+               getattr(model, "has_air_assist_state", False):
+                ptypes.append("ext_purifier")
+
+        for ptype in ptypes:
             try:
                 p = await self.request(
                     "/v1/peripheral/param", "GET",
@@ -915,22 +1130,200 @@ class WSV2Protocol(XtoolProtocol):
                 continue
             if not isinstance(p, dict):
                 continue
-            if ptype == "gap":
-                state.cover_open = p.get("state") == "off"
-            elif ptype == "machine_lock":
-                # state "on" = locked, "off" = unlocked. The HA LOCK
-                # device class wants `True` = unlocked.
-                state.machine_lock = p.get("state") == "off"
-            elif ptype == "airassistV2":
-                state.air_assist_connected = p.get("state") == "on"
+            self._apply_peripheral_param(ptype, p, state)
 
-        # 3. Push-cached values (overrule poll if newer)
+        # 3. /v1/device/configs — full config blob, slow cadence
+        # (every 6 polls ≈ every 30 s at 5 s base interval). Push
+        # events keep the values fresh between polls.
+        if self._poll_counter % 6 == 0:
+            try:
+                cfg = await self.request("/v1/device/configs", "GET")
+            except Exception:
+                cfg = None
+            if isinstance(cfg, dict):
+                self._apply_configs(cfg)
+
+        # 4. /v1/device/statistics — lifetime counters, slow cadence
+        if self._poll_counter % 12 == 0:
+            try:
+                stats = await self.request("/v1/device/statistics", "GET")
+            except Exception:
+                stats = None
+            if isinstance(stats, dict):
+                for src, dst in (
+                    ("workingTime",     "working_seconds"),
+                    ("sessionCount",    "session_count"),
+                    ("standbyTime",     "standby_seconds"),
+                    ("toolRuntime",     "tool_runtime_seconds"),
+                    # Alternate naming seen on some firmware revisions
+                    ("totalWorkTime",   "working_seconds"),
+                    ("totalStandbyTime", "standby_seconds"),
+                    ("toolUseTime",     "tool_runtime_seconds"),
+                    ("workCount",       "session_count"),
+                ):
+                    v = stats.get(src)
+                    if isinstance(v, (int, float)):
+                        self._latest[dst] = int(v)
+
+        # 5. /v1/processing/progress — only when a job is running
+        if state.status in (XtoolStatus.PROCESSING,
+                             XtoolStatus.PROCESSING_READY,
+                             XtoolStatus.FRAMING):
+            try:
+                prog = await self.request("/v1/processing/progress", "GET")
+            except Exception:
+                prog = None
+            if isinstance(prog, dict):
+                wt = prog.get("workingTime") or prog.get("totalTime")
+                if isinstance(wt, (int, float)):
+                    state.task_time = int(wt)
+
+        # 6. /v1/device/alarms — alarm presence, slow cadence
+        if self._poll_counter % 6 == 0:
+            try:
+                alarms = await self.request("/v1/device/alarms", "GET")
+            except Exception:
+                alarms = None
+            if isinstance(alarms, dict):
+                lst = alarms.get("alarms") or alarms.get("data") or []
+                self._latest["alarm_present"] = bool(lst)
+            elif isinstance(alarms, list):
+                self._latest["alarm_present"] = bool(alarms)
+
+        self._poll_counter += 1
+
+        # 7. Push-cached values (overrule poll if newer)
         for k in (
             "status", "task_id", "task_time", "cover_open", "machine_lock",
             "last_button_event", "last_job_time_seconds",
+            "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
+            "water_pump_running", "water_line_ok", "water_temperature",
+            "water_flow", "drawer_open", "cpu_fan_running",
+            "gyro_x", "gyro_y", "gyro_z",
+            "position_x", "position_y", "position_z",
+            "last_distance_mm", "display_brightness",
+            "fill_light_a", "fill_light_b",
+            "flame_alarm_v2_enabled", "beep_enabled_v2",
+            "gap_check_enabled", "machine_lock_check_enabled",
+            "purifier_timeout", "working_mode",
+            "air_assist_close_delay", "smoking_fan_duration",
+            "air_assist_gear_cut", "air_assist_gear_grave",
+            "sleep_timeout", "sleep_timeout_open_gap",
+            "fill_light_auto_off", "ir_light_auto_off",
+            "print_tool_type", "flame_level_hl", "fire_level",
+            "working_seconds", "session_count", "standby_seconds",
+            "tool_runtime_seconds", "alarm_present",
         ):
             if k in self._latest:
                 setattr(state, k, self._latest[k])
+
+    def _apply_peripheral_param(
+        self,
+        ptype: str,
+        p: dict[str, Any],
+        state: XtoolDeviceState,
+    ) -> None:
+        """Translate a `/v1/peripheral/param?type=<X>` GET response into
+        ``state`` field assignments. ``state`` field is the canonical
+        target — ``_latest`` is bypassed because we're already inside
+        the active poll cycle."""
+        st = p.get("state")
+        is_on = st == "on" if isinstance(st, str) else None
+        is_off = st == "off" if isinstance(st, str) else None
+
+        if ptype == "gap":
+            state.cover_open = is_off
+        elif ptype == "machine_lock":
+            state.machine_lock = is_off  # off = unlocked → True (LOCK device class)
+        elif ptype == "airassistV2":
+            state.air_assist_connected = is_on
+        elif ptype == "drawer":
+            state.drawer_open = is_off
+        elif ptype == "cooling_fan":
+            state.cooling_fan_running = is_on
+        elif ptype == "smoking_fan":
+            state.smoking_fan_running = is_on
+        elif ptype == "uv_fire_sensor":
+            state.uv_fire_alarm = is_on
+        elif ptype == "water_pump":
+            state.water_pump_running = is_on
+        elif ptype == "water_line":
+            state.water_line_ok = is_on
+        elif ptype == "water_tmp":
+            v = p.get("temp") or p.get("value")
+            if isinstance(v, (int, float)):
+                state.water_temperature = float(v)
+        elif ptype == "water_flow":
+            v = p.get("flow") or p.get("value")
+            if isinstance(v, (int, float)):
+                state.water_flow = float(v)
+        elif ptype == "gyro":
+            for axis in ("x", "y", "z"):
+                v = p.get(axis)
+                if isinstance(v, (int, float)):
+                    setattr(state, f"gyro_{axis}", float(v))
+        elif ptype == "laser_head":
+            for src, dst in (("x", "position_x"), ("y", "position_y"),
+                             ("z", "position_z")):
+                v = p.get(src)
+                if isinstance(v, (int, float)):
+                    setattr(state, dst, float(v))
+        elif ptype == "ir_measure_distance":
+            v = p.get("distance") or p.get("value")
+            if isinstance(v, (int, float)):
+                state.last_distance_mm = float(v)
+        elif ptype == "digital_screen":
+            v = p.get("brightness") or p.get("value")
+            if isinstance(v, (int, float)):
+                state.display_brightness = int(v)
+        elif ptype == "fill_light":
+            v = p.get("brightness") or p.get("value")
+            if isinstance(v, (int, float)):
+                state.fill_light_a = int(v)
+                state.fill_light_b = int(v)
+        elif ptype == "ext_purifier":
+            v = p.get("speed") or p.get("value")
+            if isinstance(v, (int, float)):
+                state.purifier_speed = int(v)
+                state.purifier_on = state.purifier_speed > 0
+
+    def _apply_configs(self, cfg: dict[str, Any]) -> None:
+        """Latch `/v1/device/configs` GET response keys into `_latest`.
+
+        The response usually nests the key/value blob under
+        ``cfg["data"]["kv"]`` or directly under ``cfg["kv"]``; tolerate
+        both shapes plus a top-level dict for older firmware.
+        """
+        kv = cfg
+        if isinstance(cfg.get("kv"), dict):
+            kv = cfg["kv"]
+        elif isinstance(cfg.get("data"), dict):
+            inner = cfg["data"]
+            kv = inner.get("kv") if isinstance(inner.get("kv"), dict) else inner
+        if not isinstance(kv, dict):
+            return
+        _config_keys = (
+            ("flameAlarm",          "flame_alarm_v2_enabled"),
+            ("beepEnable",          "beep_enabled_v2"),
+            ("gapCheck",            "gap_check_enabled"),
+            ("machineLockCheck",    "machine_lock_check_enabled"),
+            ("purifierTimeout",     "purifier_timeout"),
+            ("workingMode",         "working_mode"),
+            ("airAssistDelay",      "air_assist_close_delay"),
+            ("smokingFanDelay",     "smoking_fan_duration"),
+            ("airassistCut",        "air_assist_gear_cut"),
+            ("airassistGrave",      "air_assist_gear_grave"),
+            ("sleepTimeout",        "sleep_timeout"),
+            ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
+            ("fillLightAutoOff",    "fill_light_auto_off"),
+            ("irLightAutoOff",      "ir_light_auto_off"),
+            ("printToolType",       "print_tool_type"),
+            ("flameLevelHLSelect",  "flame_level_hl"),
+            ("fireLevel",           "fire_level"),
+        )
+        for src, dst in _config_keys:
+            if src in kv:
+                self._latest[dst] = kv[src]
 
     # ── firmware flash (V2 three-step) ─────────────────────────────────
 
@@ -1047,5 +1440,9 @@ class WSV2Protocol(XtoolProtocol):
     def set_strategy(self, strategy: str) -> None:  # pragma: no cover
         self._pending_strategy = strategy
 
-    def set_model(self, model) -> None:  # pragma: no cover
+    def set_model(self, model) -> None:
+        """Stash the resolved ``XtoolDeviceModel`` so ``poll_state``
+        can gate per-model peripheral queries (water, gyro, drawer …).
+        """
         self._pending_model = model
+        self._model = model

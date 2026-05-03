@@ -171,7 +171,11 @@
       "cpu_fan_running": { "name": "CPU fan" },
       "uv_fire_alarm": { "name": "UV fire sensor" },
       "water_pump_running": { "name": "Water pump" },
-      "water_line_ok": { "name": "Water line" }
+      "water_line_ok": { "name": "Water line" },
+      "flame_alarm_enabled": { "name": "Flame alarm enabled" },
+      "beep_enabled": { "name": "Beep enabled" },
+      "gap_check_enabled": { "name": "Cover check enabled" },
+      "machine_lock_check_enabled": { "name": "Lock check enabled" }
     },
     "camera": {
       "camera_overview": { "name": "Overview camera" },
@@ -220,7 +224,8 @@
       "work_area_left": { "name": "Work area limit (left)" },
       "work_area_right": { "name": "Work area limit (right)" },
       "work_area_up": { "name": "Work area limit (up)" },
-      "work_area_down": { "name": "Work area limit (down)" }
+      "work_area_down": { "name": "Work area limit (down)" },
+      "fire_level": { "name": "Fire detection level" }
     },
     "select": {
       "flame_alarm_sensitivity": {

@@ -40,6 +40,11 @@ class WSV2Coordinator(XtoolCoordinator):
         # handshake sends the right value.
         if hasattr(self.protocol, "set_machine_type"):
             self.protocol.set_machine_type(self.model.firmware_machine_type)
+        # Hand the full XtoolDeviceModel to the protocol so its
+        # ``poll_state`` can gate per-model peripheral queries (water,
+        # gyro, drawer, IR LED, …).
+        if hasattr(self.protocol, "set_model"):
+            self.protocol.set_model(self.model)
 
     async def _async_update_data(self) -> XtoolDeviceState:
         if self.data and self.data.available:
@@ -98,22 +103,26 @@ class WSV2Coordinator(XtoolCoordinator):
         from .entities import build_wsv2_updates
         return build_wsv2_updates(self)
 
-    # Stubs for platforms WS-V2 hasn't covered yet — keep the platform
-    # dispatchers happy by returning empty lists.
     def build_switches(self) -> list["SwitchEntity"]:
-        return []
+        from .entities import build_wsv2_switches
+        return build_wsv2_switches(self)
 
     def build_numbers(self) -> list["NumberEntity"]:
-        return []
-
-    def build_buttons(self) -> list["ButtonEntity"]:
-        return []
-
-    def build_lights(self) -> list["LightEntity"]:
-        return []
-
-    def build_cameras(self) -> list["Camera"]:
-        return []
+        from .entities import build_wsv2_numbers
+        return build_wsv2_numbers(self)
 
     def build_selects(self) -> list["SelectEntity"]:
-        return []
+        from .entities import build_wsv2_selects
+        return build_wsv2_selects(self)
+
+    def build_lights(self) -> list["LightEntity"]:
+        from .entities import build_wsv2_lights
+        return build_wsv2_lights(self)
+
+    def build_buttons(self) -> list["ButtonEntity"]:
+        from .entities import build_wsv2_buttons
+        return build_wsv2_buttons(self)
+
+    def build_cameras(self) -> list["Camera"]:
+        from .entities import build_wsv2_cameras
+        return build_wsv2_cameras(self)
