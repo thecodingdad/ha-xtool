@@ -103,8 +103,8 @@ Reply (unicast back from device):
 ```
 
 Studio also multicasts the probe to `224.0.1.77:20000` for V1 — both
-target choices reach the same firmware. The HA integration sticks to
-the local broadcast since that already covers the LAN scope.
+target choices reach the same firmware; a local broadcast already
+covers the LAN scope.
 
 ### Discovery V2 (encrypted multicast)
 
@@ -218,7 +218,7 @@ the config entry's `unique_id` straight from discovery.
 
 #### Deployment caveats
 
-Common LAN-side reasons V2 discovery fails (HA + similar integrations):
+Common LAN-side reasons V2 discovery fails:
 
 - **Docker without `network_mode: host`** — multicast does not cross
   the bridge to a container. Either run HAOS / supervised, or expose
@@ -1251,9 +1251,9 @@ V2 firmware sends and expects every JSON payload wrapped in a
 **CRC-16-protected binary envelope** on the WebSocket. Studio's
 `MessageEncoder.encodeFrame` / `MessageParser.extractCompletePackets`
 are gated by `dataStream: true` — the V2 connection profile sets that
-flag, so raw TEXT JSON is silently dropped by the firmware. We learnt
-this the hard way: the `/v1/user/parity` handshake never reached the
-device until we wrapped it in this envelope.
+flag, so raw TEXT JSON is silently dropped by the firmware. The
+`/v1/user/parity` handshake will never reach the device unless every
+frame uses this envelope.
 
 **Envelope layout** (10-byte header + payload):
 
@@ -1281,9 +1281,7 @@ byte 10-…  : payload bytes
 
 CRC-16/ARC: poly 0xA001 (reflected 0x8005), init 0, no xorout — same
 algorithm as the `crc` npm package's `crc16` export and Studio's
-`crc16_default`. Implementation reference: `_crc16` /
-`_encode_frame` / `_decode_frames` in
-`custom_components/xtool/protocols/ws_v2/protocol.py`.
+`crc16_default`.
 
 Reader-side: aggregate inbound BINARY messages into a buffer, scan
 for the `0xBA 0xBE` magic, validate the header CRC + payload CRC,
@@ -1317,8 +1315,8 @@ below for the full envelope).
 
 Reverse-engineered from the xTool Studio shared worker
 (`atomm-sharedworker.esm.*.js`). Counters and frame templates listed
-here are the live wire contract — diverging from them caused our
-earlier Python implementation to silently drop every response.
+here are the live wire contract — diverging from them causes the
+firmware to silently drop every response.
 
 **Defaults applied by Studio's worker:**
 
@@ -1608,6 +1606,72 @@ accepts the full V2 request
 schema. Implementations that only consume the broadcast channel will
 see status / gap / lock / work-result events but miss the rich query
 + control surface above.
+
+### V2 control / state surface
+
+The `instruction` channel covers the full live surface of the device.
+A typical client polls this set, with the cadences shown reflecting
+the rate at which the underlying values change on the device:
+
+| Endpoint | Method | Typical cadence | Purpose |
+|---|---|---|---|
+| `/v1/device/runtime-infos` | GET | every tick | `curMode.{mode,subMode,taskId}` → live status |
+| `/v1/device/configs` | GET | minute-scale | full persistent config blob |
+| `/v1/device/statistics` | GET | minute-to-hour scale | lifetime counters (`working_seconds`, `session_count`, `standby_seconds`, `tool_runtime`) |
+| `/v1/processing/progress` | GET | only while status ∈ {`P_WORKING`, framing} | active-job `progress`, `workingTime` |
+| `/v1/device/alarms` | GET | every tick | active alarm list |
+| `/v1/peripheral/param?type=<X>` | GET | every tick (per type) | live state for one peripheral |
+
+Per-peripheral `type` values (each typically applicable only when the
+device model exposes the peripheral):
+
+| `type` | Reads |
+|---|---|
+| `gap` | cover open/close |
+| `machine_lock` | safety-lock state |
+| `drawer` | drawer open/close |
+| `airassistV2` | Air-Assist BLE connect state |
+| `cooling_fan` | cooling-fan run state |
+| `smoking_fan` | exhaust-fan run state |
+| `cpu_fan` | CPU-fan run state |
+| `uv_fire_sensor` | UV flame-detector trip |
+| `water_pump` / `water_line` | water-loop pump + flow OK |
+| `water_tmp` / `water_flow` | water-loop temperature + flow |
+| `gyro` | accelerometer X/Y/Z |
+| `laser_head` | laser-head position X/Y/Z |
+| `ir_measure_distance` | last distance reading |
+| `digital_screen` | display brightness |
+| `fill_light` | fill-light brightness (A/B channels) |
+| `led` (IR) | IR-LED close-up / overview state |
+| `ext_purifier` | external-purifier speed + on/off |
+
+Action paths:
+
+| Path | Method | Body | Purpose |
+|---|---|---|---|
+| `/v1/device/configs` | PUT | `{kv:{<key>:<value>}}` | Set a single config key (toggles, timeouts, levels, gear). |
+| `/v1/peripheral/control` | PUT | `{type, action, …}` | Actuate a peripheral (turn on/off, set brightness, set speed, home, measure). |
+| `/v1/device/mode` | PUT | `{mode:"<P_*>"}` | Switch processing mode (`P_PAUSE` / `P_RESUME` / `P_IDLE` / …). |
+| `/v1/camera/snap?type=<overview\|closeup\|fireRecord>` | GET | — | Single JPEG snapshot (binary frame on the WS). |
+
+#### Push events (full table)
+
+In addition to the base events listed above, the `instruction` channel
+emits these push frames (all without `transactionId`):
+
+| `url` | `module` | Notes |
+|---|---|---|
+| `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). |
+| `/peripheral/<type>` | varies | Per-peripheral push. Observed types: `drawer`, `water_pump`, `water_line`, `cooling_fan`, `smoking_fan`, `cpu_fan`, `uv_fire_sensor`, `ir_led`, `fill_light`, `digital_screen`, `ext_purifier`, `gyro`, `laser_head`, `ir_measure_distance`. |
+| `/button/status` | `BUTTON` | Physical-button event from the device's front panel. |
+
+#### Field-presence guarantees
+
+Many peripheral responses carry only the fields that have a meaningful
+value at the moment the response is produced. A consumer should treat
+absent fields as "unchanged" rather than clearing the previous value
+— several V2 firmware revisions omit numeric fields when their hardware
+sensor is currently warming up or unselected.
 
 
 ---
