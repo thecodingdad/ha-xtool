@@ -12,22 +12,15 @@ This integration communicates directly with your xTool device over the local net
 - Full local control — no cloud, no xTool account required
 - Monitor device status (idle, processing, paused, finished, error, ...)
 - Control light brightness, buzzer, exhaust + cooling fans, safety toggles
-- Configure air-assist post-run, exhaust post-run, sleep timeouts, fill-/IR-light auto-off, work-area limits
-- Flame alarm sensitivity (high / low / off) and mode selection
-- Job control buttons (pause, resume, cancel, home axes, reboot, time-sync)
-- Laser position tracking (X/Y/Z), gyro/accelerometer (P2/P2S, F1 Ultra family, M1 Ultra, MetalFab), workhead identity + Z height (M1 Ultra)
+- Job control buttons (pause, resume, cancel, ...)
+- Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
-- Laser module detection (type + power) and hardware type
 - Attached accessories detection (air pump, fire extinguisher, riser base, Bluetooth dongle)
-- AP2 air-cleaner sensors (filter remaining, particle dust sensors, speed)
-- Water-cooling telemetry — temperature / flow / pump / line OK (F1 Ultra family fiber laser)
-- Z-axis temperature + CPU fan (M1 Ultra), UV fire sensor (F1 Ultra family / F2 Ultra UV / M1 Ultra / P2S)
 - Camera support for P2 / P2S / F1 Ultra family / F2 Ultra family / P3 / MetalFab (overview + close-up + flame record)
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
-- Push state updates via WebSocket (S1, V2 firmware family, D-series) — minimal polling delay
 - Automatic reconnect on network interruption
-- Multi-model support with auto-detected protocol (V1 vs V2 firmware probed at setup)
+- Multi-model support with auto-detected protocol
 
 ## Prerequisites
 
@@ -43,11 +36,11 @@ The integration supports four protocol families that cover all current xTool mod
 | WebSocket M-code | S1 | bidirectional WS (port 8081) + HTTP fallback (port 8080) |
 | HTTP REST + status push WS | D1, D1 Pro, D1 Pro 2.0 | HTTP `/cmd` writes (port 8080) + read-only WS status push (port 8081) |
 | REST API (V1 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (ports 8080 main / 8087 firmware / 8329 camera) |
-| WS-V2 (V2 firmware ≥ 40.51) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
+| WS-V2 (V2 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, M1 Ultra, P2S, P3, MetalFab, Apparel Printer | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
 
-V1/V2 selection is automatic. At setup the integration probes port 28900; devices that answer use the WS-V2 family, devices that don't fall back to the legacy REST API on port 8080. Same physical device behind one config entry — re-add the device after a major firmware upgrade to switch families.
+V1/V2 selection is automatic. UDP discovery tags each device as V1 or V2 (legacy plain probe vs. encrypted multicast).
 
-> **Note:** The integration was developed and tested with an xTool S1. Other models are supported based on reverse-engineering the xTool XCS Android app and the newer xTool Studio Windows app, but have not been tested with real hardware. Community feedback is welcome!
+> **Note:** The integration was developed and tested with an xTool S1. Other models are supported based on reverse-engineering the xTool Studio Windows app, but have not been tested with real hardware. Community feedback is welcome!
 
 ## Installation
 
@@ -97,144 +90,154 @@ The available options are gated by the device's protocol family — only relevan
 
 ## Entities
 
-> **Note:** Not all entities are available on every model. The integration automatically detects your device model and connected accessories, and only creates entities for supported features.
+> **Note:** Not every entity is available on every model. The integration auto-detects the device model and connected accessories and only creates entities for supported features. The tables below are a reference for what each entity does — if an entity is missing, your model simply does not expose that feature.
 
-### Sensors
-
-| Entity | Description |
-|--------|-------------|
-| Status | Device status: Off, Idle, Processing, Paused, Finished, Error, etc. Always available — shows "Off" when device is unreachable |
-| Laser position X/Y/Z | Current laser head position in mm |
-| Fire level | Current flame detection level |
-| Air assist level | Current air assist gear (0-4) |
-| Task ID | Currently loaded job identifier |
-| Task time | Current job elapsed time |
-| Working time | Lifetime working hours (total_increasing) |
-| Session count | Total number of job starts (total_increasing) |
-| Standby time | Lifetime standby hours (total_increasing) |
-| Laser module runtime | Current laser module runtime hours (total_increasing) |
-| Last button event | Last physical button event (single / long / double press). **REST + WS-V2 families.** |
-| Working mode | Current device working mode (cut / engrave / ...). **REST + WS-V2 families.** |
-| Workhead | Detected workhead identity (laser / knife / inkjet / ...). **M1 Ultra.** |
-| Workhead Z height | Workhead Z height offset in mm. **M1 Ultra.** |
-| Z-axis temperature | Z-axis NTC temperature. **M1 Ultra.** |
-| Water temperature / Water flow rate | Water-cooling loop sensors. **F1 Ultra fiber laser.** |
-| Gyro X / Y / Z | 3-axis accelerometer. **F1 Ultra family / M1 Ultra / P2 / P2S / MetalFab.** |
-| Purifier speed / filter remaining (pre / medium / carbon / dense carbon / HEPA) / sensor D / sensor S | AP2 air-cleaner telemetry. **S1 with AP2 only.** |
-
-### Diagnostic Sensors
+### Sensor
 
 | Entity | Description |
-|--------|-------------|
+|---|---|
+| Status | Off / Idle / Processing / Paused / Finished / Error / … Always available — shows "Off" when device is unreachable |
+| Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
+| Task time | Current job elapsed time (seconds) |
+| Last job time | Last completed job duration |
+| Working mode | Current working mode (cut / engrave / knife / inkjet / …) |
+| Last button event | Last physical button event (single / long / double press) |
+| Working time | Lifetime working hours |
+| Session count | Lifetime job-start count |
+| Standby time | Lifetime standby hours |
+| Tool runtime | Lifetime laser-module runtime |
+| Laser position X / Y / Z | Laser-head position in mm |
+| Fire level | Current flame-detection level reported by device |
+| Air-Assist level | Current Air-Assist gear (0-4) |
+| Workhead | Detected workhead identity (laser / knife / inkjet / …) |
+| Workhead Z height | Workhead Z-height offset in mm |
+| Z-axis temperature | Z-axis NTC temperature |
+| Water temperature / Water flow rate | Water-cooling loop sensors |
+| Gyro X / Y / Z | 3-axis accelerometer |
+| Print tool type | Print-tool kind reported by device |
+| Hardware type | Hardware revision string |
+| AP2 filter (pre / medium / carbon / dense carbon / HEPA) | Remaining filter capacity (requires AP2 air cleaner) |
+| AP2 sensor D / AP2 sensor S | Particle sensors (requires AP2 air cleaner) |
+| Purifier speed (sensor) | Current AP2 speed reading (requires AP2 air cleaner) |
+
+#### Diagnostic Sensors
+
+| Entity | Description |
+|---|---|
 | IP address | Device IP address |
-| Laser power | Laser module power in watts |
-| Laser module | Laser module type (e.g. "Diode", "IR") |
-| SD card | SD card inserted / not inserted |
-| Workspace size | Device build dimensions (e.g. "498 × 330 × 58 mm"). **S1 only.** |
-| Active connections | Number of WebSocket clients currently connected to the laser (HA + XCS app + …). Useful to spot when the XCS app has kicked the integration. **S1 only.** |
-| Origin offset X / Y | Last set work-area origin offset. **D-series only.** |
-| Last distance | Last IR distance measurement result. **P2 / P2S only.** |
-| Last job time | Last completed job duration from push frames. **WS-V2 family.** |
-| Print tool type | Print tool kind reported by device. **REST family.** |
-| Hardware type | Hardware revision string. **REST family.** |
+| Laser power | Laser-module power in watts |
+| Laser module | Laser-module type (e.g. "Diode", "IR") |
+| SD card | SD-card inserted / not inserted |
+| Workspace size | Build dimensions (e.g. "498 × 330 × 58 mm") |
+| Active connections | Number of WebSocket clients currently connected to the laser (HA + XCS app + …). Useful to spot when the XCS app has kicked the integration |
+| Origin offset X / Y | Last set work-area origin offset |
+| Last distance | Last IR-distance measurement result |
+
+### Binary Sensor
+
+| Entity | Description |
+|---|---|
+| Cover | Cover / lid open detection |
+| Drawer | Front-drawer position |
+| Machine lock | Machine-lock state (LOCK device class — `on` = unlocked) |
+| Air-Assist connected | Air-Assist V2 BLE accessory paired |
+| Cooling fan | Cooling fan currently running |
+| Exhaust fan | Smoke-extraction fan currently running |
+| CPU fan | CPU cooling fan currently running |
+| UV fire sensor | UV-based flame-detector trip |
+| Water pump | Water-cooling pump running |
+| Water line | Water-cooling line OK |
+| Flame alarm enabled | Flame-alarm config flag |
+| Beep enabled | Beep config flag |
+| Gap check enabled | Cover-safety enforcement enabled |
+| Lock check enabled | Machine-lock safety enforcement enabled |
+| Alarm | Generic problem flag — on when device reports any active alarm |
+| Accessories | On when accessories are attached. Attributes list connected accessories (Air Pump, Fire Extinguisher, Riser Base, Bluetooth dongle) with firmware versions |
+| Air cleaner running / Air cleaner connected | AP2 module state (requires AP2 air cleaner) |
+| XCS compatibility mode | On when the XCS desktop app holds the WebSocket and writes are routed via HTTP `/cmd` |
+
+### Switch
+
+| Entity | Description |
+|---|---|
+| Power | Linked smart plug (only when configured in integration options) |
+| Beep / Buzzer | Audio feedback enable |
+| Move stop | Emergency-movement-stop toggle |
+| Exhaust fan | Manual smoke-extraction fan toggle |
+| Cooling fan | Manual cooling-fan toggle |
+| Filter check / Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
+| Purifier auto-continue | Keep purifier running after job ends |
+| IR LED close-up / IR LED global | Cover and global IR illumination |
+| Cover lock | Digital cover lock |
+| Tilt stop / Limit stop | Per-sensor safety toggles |
+| Flame alarm (config) | Flame-alarm config toggle |
+| Beep (config) | Beep config toggle |
+| Gap check | Cover-safety enforcement |
+| Lock check | Machine-lock safety enforcement |
+
+### Number
+
+| Entity | Description |
+|---|---|
+| Air-assist post-run | Time air-assist stays on after a job ends (0-600 s) |
+| Exhaust post-run | Time exhaust fan stays on after a job ends (1-600 s) |
+| Sleep timeout | Idle sleep timeout (0-3600 s) |
+| Sleep timeout (cover open) | Idle sleep timeout while cover is open (0-3600 s) |
+| Fill-light auto-off | Built-in fill light auto-off (0-3600 s) |
+| IR-light auto-off | IR illumination auto-off (0-3600 s) |
+| Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
+| Camera exposure (overview / close-up) | Camera exposure values (0-255) |
+| Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
+| Display brightness | Built-in touchscreen brightness (0-100 %) |
+| Fire detection level | Flame-detector threshold (0-255) |
+| Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
+| Work area limit (left / right / up / down) | M311 work-area limits (mm) |
+
+### Select
+
+| Entity | Description |
+|---|---|
+| Flame alarm sensitivity | High / Low / Off — flame-detector level. "Off" disables the alarm |
+| Flame level | High / Low — flame-level threshold |
+| Purifier speed | Off / Low / Medium / High — AP2 / external purifier speed |
+| Flame alarm mode | Mode 1-4 — flame-detection mode preset |
+| Red-cross mode | Cross-laser pointer / Low-light mode |
 
 ### Light
 
 | Entity | Description |
-|--------|-------------|
-| Fill light | Dimmable work light (0-100%) |
+|---|---|
+| Fill light | Dimmable work light (0-100 %) |
 
-### Switches
-
-| Entity | Description |
-|--------|-------------|
-| Buzzer / Beep | Enable/disable audio feedback. (S1 + REST family) |
-| Move stop | Enable/disable emergency movement stop |
-| Exhaust fan | Enable/disable smoke extraction fan |
-| Power | Controls the linked smart plug (only when configured in options) |
-| Tilt stop / Limit stop / Move stop (D-series) | Per-sensor safety toggles. **D-series only.** |
-| IR LED close-up / IR LED global | Cover and global IR illumination. **P2 / P2S only.** |
-| Cover lock | Cover digital lock control. **P2 / P2S only.** |
-| Drawer check / Filter check / Purifier check | Safety enforcement toggles (require accessory present before job). **REST family.** |
-| Purifier auto-continue | Keep purifier running after job ends. **REST family.** |
-| Cooling fan | CPU + laser cooling fan toggle. **REST family.** |
-
-### Numbers
-
-| Entity | Range | Unit | Description |
-|--------|-------|------|-------------|
-| Air-assist post-run | 0-600 | seconds | Time the air assist stays on after a job ends |
-| Exhaust post-run | 1-600 | seconds | Time the exhaust fan stays on after a job ends |
-| Tilt threshold / Movement threshold | 0-255 | — | D-series sensor sensitivities |
-| Camera exposure (overview / close-up) | 0-255 | — | Camera exposure values. **All REST family models with cameras (F1 family / F2 family / P2 / P2S / P3).** |
-| Air-Assist gear (cut / engrave) | 0-4 | — | Default Air-Assist gear written to user config — applied to next job. **M1 Ultra only; only available when an Air-Assist accessory is attached.** |
-| Purifier auto-off | 0-3600 | seconds | Air-purifier auto-off delay. **REST family.** |
-| Sleep timeout | 0-3600 | seconds | Idle sleep timeout. **REST family.** |
-| Sleep timeout (cover open) | 0-3600 | seconds | Idle sleep timeout while cover is open. **REST family.** |
-| Fill-light auto-off | 0-3600 | seconds | Built-in fill light auto-off. **REST family.** |
-| IR-light auto-off | 0-3600 | seconds | IR illumination auto-off. **REST family.** |
-| Display brightness | 0-100 | % | Built-in display brightness. **F1 Ultra / F1 Ultra V2 only.** |
-| Work area limit (left / right / up / down) | device-specific | mm | M311 work-area limits. **D-series only.** |
-
-### Select
-
-| Entity | Options | Description |
-|--------|---------|-------------|
-| Flame alarm sensitivity | High, Low, Off | Flame detection sensitivity level. "Off" disables the alarm. |
-| Flame alarm mode | Mode 1-4 | D-series detection mode preset. **D-series only.** |
-| Purifier speed | Off, Low, Medium, High | AP2 / external purifier speed. **REST family.** |
-| Flame level | High, Low | Flame-level threshold. **REST family.** |
-| Red-cross mode | Cross-laser pointer, Low-light mode | M97 red-cross laser mode. **D-series only.** |
-
-### Buttons
+### Camera
 
 | Entity | Description |
-|--------|-------------|
+|---|---|
+| Overview camera | Wide-angle workspace camera (snapshot on V2 firmware) |
+| Close-up camera | Detail camera (snapshot on V2 firmware) |
+| Flame record | Snapshot of the most recent flame-detection event |
+
+### Button
+
+| Entity | Description |
+|---|---|
 | Pause job | Pause the current processing job |
 | Resume job | Resume a paused job |
 | Cancel job | Cancel and stop the current job |
 | Home all axes | Move laser head to home position (all axes) |
-| Home XY | Move laser head to XY home position |
-| Home Z | Move laser head to Z home position |
-| Home laser head | Move REST laser head back to (0, 0). **F1 / F1 Ultra family / F2 family / P2 / P2S / P3.** |
-| Measure distance | Trigger an IR distance measurement. **P2 / P2S / P3.** |
-| Quit LightBurn | Leave LightBurn standby mode. **D-series only.** |
-| Reboot | Soft-reboot the device. **REST family.** |
-| Sync time | Push HA's local time to the device. **REST family.** |
-
-### Binary Sensors
-
-| Entity | Description |
-|--------|-------------|
-| Accessories | On when accessories are attached. Attributes list connected accessories (Air Pump, Fire Extinguisher, Riser Base, Bluetooth dongle) with firmware versions. **S1 only.** |
-| Alarm | Generic problem flag — on when the device reports any active alarm. **S1 only.** |
-| XCS compatibility mode | Diagnostic flag — on when the integration detects the XCS desktop app holding the WebSocket and switches all writes to HTTP `/cmd`. **S1 only.** |
-| Air cleaner running | AP2 air cleaner currently running. **S1 with AP2 only.** |
-| Air cleaner connected | AP2 module slot in the accessories array is populated. **S1 with AP2 only.** |
-| Air-Assist connected | Air-Assist V2 accessory connected. **M1 Ultra + WS-V2 family.** |
-| Cover | Cover / lid open detection. **WS-V2 family (push), P2 / P2S / P3 / MetalFab.** |
-| Machine lock | Machine lock state (LOCK device class — `on` = unlocked). **F1 family / F2 family / WS-V2.** |
-| Drawer | Front-drawer position. **M1 Ultra / P2 / P2S / P3 / MetalFab.** |
-| Cooling fan | Cooling fan running. **REST family.** |
-| Exhaust fan | Smoke extraction running. **REST family.** |
-| CPU fan | CPU fan running. **M1 / M1 Ultra.** |
-| UV fire sensor | UV-based fire detection alarm. **F1 Ultra / F1 Ultra V2 / F2 Ultra UV / M1 Ultra / P2S.** |
-| Water pump | Water-cooling pump running. **F1 Ultra family / P3.** |
-| Water line | Water-cooling line OK. **F1 Ultra family / P3.** |
+| Home XY | Move laser head to XY home |
+| Home Z | Move laser head to Z home |
+| Home laser head | Move laser head back to (0, 0) |
+| Measure distance | Trigger an IR distance measurement |
+| Reboot | Soft reboot |
+| Sync time | Push HA local time to device |
+| Quit LightBurn | Leave LightBurn standby mode |
 
 ### Update
 
 | Entity | Description |
-|--------|-------------|
-| Firmware | Reports the installed and latest firmware version by querying the xTool cloud (re-checked on reconnect and every 6 hours). The release notes (English title + description) from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it. |
-
-### Cameras
-
-| Entity | Description |
-|--------|-------------|
-| Overview camera | Wide-angle workspace camera. **F1 Ultra / F1 Ultra V2 / F2 Ultra / F2 Ultra Single / F2 Ultra UV / P2 / P2S / P3 / MetalFab.** |
-| Close-up camera | Detailed close-up camera. **F1 Ultra / F1 Ultra V2 / F2 Ultra / F2 Ultra Single / F2 Ultra UV / P2 / P2S / P3 / MetalFab.** |
-| Flame record | Snapshot of the most recent flame detection event. **F1 Ultra / F1 Ultra V2.** |
+|---|---|
+| Firmware | Installed + latest firmware version via the xTool cloud (re-checked on reconnect and every 6 h). Release notes from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it |
 
 ## Device Information
 
@@ -245,14 +248,9 @@ The device page in Home Assistant shows:
 - **Serial Number:** Device serial number
 - **Firmware:** firmware version
 
-## Using XCS alongside Home Assistant
+## Using xTool studio alongside Home Assistant
 
-The xTool Creative Space (XCS) desktop app and this integration can be used in parallel. When the XCS app is detected (it causes WebSocket disconnects), the integration automatically switches to **XCS Compatibility Mode**:
-
-- Commands fall back to HTTP
-- Entity states are preserved from the last successful poll
-- Failed commands are prioritized in the next poll cycle (rotating command order)
-- Periodic recovery attempts restore the WebSocket connection when XCS is closed
+When running xTool Studio app, formerly xTool Creative Space (XCS), and this integration in parallel, it can cause WebSocket disconnects, which in turn can cause delayed entity updates.
 
 ## Technical Details
 
@@ -265,8 +263,6 @@ The integration speaks four protocol families, all reverse-engineered from the x
 - **HTTP port 8087** (REST family) — firmware handshake + flash
 - **HTTP port 8329** (REST family) — camera snap + exposure
 - **TLS WebSocket port 28900** (WS-V2 family, V2 firmware ≥ 40.51) — three concurrent channels (`function=instruction` JSON request/response + push events, `function=file_stream` binary uploads, `function=media_stream` camera frames). Replaces the legacy REST API on devices running V2 firmware
-
-Commands use a G-code dialect (M-codes): `M222` (status), `M13` (light), `M340` (flame alarm), `M2003` (full device info), `M9098` (BLE accessories), etc.
 
 The firmware-update entity hits the public xTool cloud API (`api.xtool.com`) on the `atomm` namespace using `xTool-*-firmware` content IDs.
 
