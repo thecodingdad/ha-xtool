@@ -701,6 +701,11 @@ class S1Protocol(XtoolProtocol):
             )
         if raw_status is not None and raw_status in _M222_STATUS_MAP:
             state.status = _M222_STATUS_MAP[raw_status]
+        elif raw_status is not None and raw_status >= 0:
+            _LOGGER.debug(
+                "S1 M222 returned unknown status code S%s — please report",
+                raw_status,
+            )
 
         if r[CMD_FILL_LIGHT]:
             state.fill_light_a = parse_param_int(r[CMD_FILL_LIGHT], "A")

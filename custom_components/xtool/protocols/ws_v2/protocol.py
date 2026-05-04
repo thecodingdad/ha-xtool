@@ -1012,6 +1012,12 @@ class WSV2Protocol(XtoolProtocol):
                 if isinstance(v, (int, float)):
                     self._latest["fill_light_a"] = int(v)
                     self._latest["fill_light_b"] = int(v)
+            else:
+                _LOGGER.debug(
+                    "V2 unhandled peripheral push type=%r info=%r — please "
+                    "report so the field can be wired through",
+                    ptype, info,
+                )
 
     # ── XtoolProtocol contract ────────────────────────────────────────
 
@@ -1037,6 +1043,7 @@ class WSV2Protocol(XtoolProtocol):
             data = await self.request("/v1/device/machineInfo", "GET")
         except Exception:
             data = {}
+        _LOGGER.debug("V2 /v1/device/machineInfo raw response: %s", data)
         if isinstance(data, dict):
             info.device_name = (
                 data.get("deviceName") or data.get("machine_name") or ""
@@ -1286,6 +1293,12 @@ class WSV2Protocol(XtoolProtocol):
             if isinstance(v, (int, float)):
                 state.purifier_speed = int(v)
                 state.purifier_on = state.purifier_speed > 0
+        else:
+            _LOGGER.debug(
+                "V2 peripheral/param type=%r returned shape we don't parse: "
+                "%r — please report",
+                ptype, p,
+            )
 
     def _apply_configs(self, cfg: dict[str, Any]) -> None:
         """Latch `/v1/device/configs` GET response keys into `_latest`.
@@ -1324,6 +1337,16 @@ class WSV2Protocol(XtoolProtocol):
         for src, dst in _config_keys:
             if src in kv:
                 self._latest[dst] = kv[src]
+
+        # Surface unknown keys at debug level so we can extend the map
+        # when new firmware revisions add new persistent settings.
+        known = {src for src, _ in _config_keys}
+        unknown = sorted(k for k in kv.keys() if k not in known)
+        if unknown:
+            _LOGGER.debug(
+                "V2 /v1/device/configs unknown keys (not yet wired): %s",
+                ", ".join(unknown),
+            )
 
     # ── firmware flash (V2 three-step) ─────────────────────────────────
 

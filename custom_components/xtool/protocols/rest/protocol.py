@@ -163,6 +163,7 @@ class RestProtocol(XtoolProtocol):
     async def get_device_info(self) -> DeviceInfo:
         """Get full device info via /device/machineInfo."""
         data = await self._get_json("/device/machineInfo")
+        _LOGGER.debug("REST /device/machineInfo raw response: %s", data)
         if not data:
             return DeviceInfo()
 
@@ -192,23 +193,57 @@ class RestProtocol(XtoolProtocol):
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
         """Poll all device state values and populate the state object."""
-        # Get status from /cnc/status or /device/runningStatus
+        # Get status from /cnc/status or /device/runningStatus.
+        # /cnc/status exists on M1, P1; the rest of the REST family
+        # exposes /device/runningStatus instead (P2/P2S/P3, F1*, F2*,
+        # M1Ultra, MetalFab, Apparel Printer …).
         status_data = await self._get_json("/cnc/status")
+        _LOGGER.debug("REST /cnc/status raw: %s", status_data)
         mapped: XtoolStatus | None = None
         if status_data:
             mapped = _map_rest_status(status_data)
-        else:
+            if mapped is None:
+                _LOGGER.debug(
+                    "REST /cnc/status mode unmapped (mode=%r subMode=%r) — "
+                    "please report",
+                    status_data.get("mode"),
+                    status_data.get("subMode"),
+                )
+        if mapped is None:
             running = await self._get_json("/device/runningStatus")
+            _LOGGER.debug("REST /device/runningStatus raw: %s", running)
             if running and isinstance(running, dict):
-                cur_mode = running.get("data", {}).get("curMode", {})
-                mapped = _map_rest_mode(cur_mode.get("mode", ""))
+                # _get_json already unwrapped the outer "data" envelope.
+                cur_mode = running.get("curMode", {})
+                if isinstance(cur_mode, dict):
+                    raw_mode = cur_mode.get("mode", "")
+                    mapped = _map_rest_mode(raw_mode)
+                    if mapped is None and raw_mode:
+                        _LOGGER.debug(
+                            "REST /device/runningStatus mode unmapped "
+                            "(curMode=%s) — please report",
+                            cur_mode,
+                        )
+                    if cur_mode.get("subMode"):
+                        state.working_mode = str(cur_mode["subMode"])
+                    if cur_mode.get("taskId"):
+                        state.task_id = str(cur_mode["taskId"])
         if mapped is not None:
             state.status = mapped
 
-        # Job progress
+        # Job progress — different models use different field names
+        # (`workingTime` on P-family / F-family, `totalTime` on the
+        # legacy REST endpoint).
         progress = await self._get_json("/processing/progress")
+        _LOGGER.debug("REST /processing/progress raw: %s", progress)
         if progress and isinstance(progress, dict):
-            state.task_time = progress.get("totalTime", 0)
+            t = progress.get("workingTime")
+            if t is None:
+                t = progress.get("totalTime", 0)
+            try:
+                state.task_time = int(t)
+            except (TypeError, ValueError):
+                pass
 
         # Fill light (REST uses 0–255 native; convert to HA 0–100 via existing scale)
         light_data = await self._get_json(REST_PATH_FILL_LIGHT)
@@ -397,6 +432,15 @@ class RestProtocol(XtoolProtocol):
                                 except (TypeError, ValueError):
                                     pass
                                 break
+
+        # Summary log — single line per poll for quick verification
+        # without grepping through every endpoint trace above.
+        _LOGGER.debug(
+            "REST poll resolved: status=%s task_id=%r task_time=%s "
+            "working_mode=%r cover_open=%s air_assist=%s",
+            state.status, state.task_id, state.task_time,
+            state.working_mode, state.cover_open, state.air_assist_connected,
+        )
 
     async def _poll_simple_get(self, state: XtoolDeviceState, path: str, attr: str, conv) -> None:
         """Poll a ``/get*`` endpoint with a tolerant JSON-shape extractor."""
@@ -838,6 +882,7 @@ _REST_STATUS_MAP: dict[str, XtoolStatus] = {
 }
 
 _REST_MODE_MAP: dict[str, XtoolStatus] = {
+    # Generic mode strings observed on M1 / P1.
     "IDLE": XtoolStatus.IDLE,
     "HOMING": XtoolStatus.INITIALIZING,
     "PROCESSING": XtoolStatus.PROCESSING,
@@ -845,6 +890,25 @@ _REST_MODE_MAP: dict[str, XtoolStatus] = {
     "FINISHED": XtoolStatus.FINISHED,
     "ALARM": XtoolStatus.ERROR_LIMIT,
     "UPGRADING": XtoolStatus.FIRMWARE_UPDATE,
+    # P_* codes — used by /device/runningStatus on the modern REST line
+    # (P2 / P2S / P3 / F1* / F2* / M1Ultra / MetalFab / Apparel Printer)
+    # and the V2 firmware line. Same enum either way.
+    "P_BOOT":               XtoolStatus.INITIALIZING,
+    "P_SLEEP":              XtoolStatus.SLEEPING,
+    "P_IDLE":               XtoolStatus.IDLE,
+    "P_READY":              XtoolStatus.PROCESSING_READY,
+    "P_WORK":               XtoolStatus.IDLE,
+    "P_ONLINE_READY_WORK":  XtoolStatus.PROCESSING_READY,
+    "P_OFFLINE_READY_WORK": XtoolStatus.PROCESSING_READY,
+    "P_WORKING":            XtoolStatus.PROCESSING,
+    "P_WORK_DONE":          XtoolStatus.FINISHED,
+    "P_FINISH":             XtoolStatus.FINISHED,
+    "P_PAUSE":              XtoolStatus.PAUSED,
+    "P_MEASURE":            XtoolStatus.MEASURING,
+    "P_FRAMING":            XtoolStatus.FRAMING,
+    "P_FRAME_READY":        XtoolStatus.FRAME_READY,
+    "P_UPGRADE":            XtoolStatus.FIRMWARE_UPDATE,
+    "P_ERROR":              XtoolStatus.ERROR_LIMIT,
 }
 
 

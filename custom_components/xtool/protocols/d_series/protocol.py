@@ -162,12 +162,14 @@ class DSeriesProtocol(XtoolProtocol):
 
         # /system?action=version → {"sn", "version"}
         version_data = await self._system_action(DSERIES_ACT_VERSION)
+        _LOGGER.debug("D-series /system?action=version raw: %s", version_data)
         if version_data:
             info.serial_number = str(version_data.get("sn", ""))
             info.main_firmware = str(version_data.get("version", ""))
 
         # /getmachinetype → {"type"}
         mt = await self._get_json(DSERIES_PATH_MACHINE_TYPE)
+        _LOGGER.debug("D-series /getmachinetype raw: %s", mt)
         if mt:
             info.device_name = str(mt.get("type", ""))
 
@@ -195,9 +197,16 @@ class DSeriesProtocol(XtoolProtocol):
         """Poll D-series HTTP endpoints and merge any push event."""
         # Working state — 0/1/2 ASCII string
         ws_data = await self._system_action(DSERIES_ACT_GET_WORKING_STA)
+        _LOGGER.debug("D-series /system?action=getworkingsta raw: %s", ws_data)
         if ws_data:
             raw = str(ws_data.get("working", "0"))
-            mapped = DSERIES_STATUS_MAP.get(raw, XtoolStatus.UNKNOWN)
+            mapped = DSERIES_STATUS_MAP.get(raw)
+            if mapped is None:
+                _LOGGER.debug(
+                    "D-series unknown working-state code %r — please report",
+                    raw,
+                )
+                mapped = XtoolStatus.UNKNOWN
             # WS push events take priority — they carry transient errors
             if self._ws_event_status is not None:
                 mapped = self._ws_event_status
@@ -206,6 +215,7 @@ class DSeriesProtocol(XtoolProtocol):
 
         # Job progress
         prog = await self._get_json(DSERIES_PATH_PROGRESS)
+        _LOGGER.debug("D-series /getprogress raw: %s", prog)
         if prog:
             try:
                 state.task_time = int(prog.get("working", 0)) // 1000
@@ -214,6 +224,7 @@ class DSeriesProtocol(XtoolProtocol):
 
         # Peripheral status — sd card, safety flags, thresholds, flame sens.
         peri = await self._get_json(DSERIES_PATH_PERIPHERY_STATUS)
+        _LOGGER.debug("D-series /peripherystatus raw: %s", peri)
         if peri:
             state.sd_card_present = peri.get("sdCard") == 1
             state.tilt_stop_enabled = peri.get("tiltStopFlag") == 1
@@ -236,12 +247,22 @@ class DSeriesProtocol(XtoolProtocol):
 
         # Origin offset
         offset = await self._system_action(DSERIES_ACT_GET_OFFSET)
+        _LOGGER.debug("D-series /system?action=getoffset raw: %s", offset)
         if offset:
             try:
                 state.origin_offset_x = float(offset.get("x", 0) or 0)
                 state.origin_offset_y = float(offset.get("y", 0) or 0)
             except (TypeError, ValueError):
                 pass
+
+        # Summary — single line per poll for quick verification.
+        _LOGGER.debug(
+            "D-series poll resolved: status=%s task_time=%s "
+            "tilt_thr=%s moving_thr=%s flame_mode=%s sd=%s",
+            state.status, state.task_time, state.tilt_threshold,
+            state.moving_threshold, state.flame_alarm_mode,
+            state.sd_card_present,
+        )
 
 
     async def _system_action(self, action: str) -> dict[str, Any] | None:
@@ -421,5 +442,11 @@ class DSeriesProtocol(XtoolProtocol):
         if status is not None:
             self._ws_event_status = status
             _LOGGER.debug("D-series WS event %r → %s", frame, status)
+        else:
+            _LOGGER.debug(
+                "D-series WS event %r unmapped — please report so it can be "
+                "wired to a status",
+                frame,
+            )
 
 
