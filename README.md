@@ -7,6 +7,8 @@ This integration communicates directly with your xTool device over the local net
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/thecodingdad/ha-xtool)](https://github.com/thecodingdad/ha-xtool/releases)
 
+> ⚠️ **This is an independent community project and is not affiliated with or endorsed by xTool. The integration is provided as-is, without any warranty.** Operating a laser cutter, engraver or fiber-laser welder through Home Assistant carries real-world safety risks (fire, blindness, burns, electrical hazards) — automated control over a high-power laser is *your* responsibility. Use at your own risk; see the full [Disclaimer](#disclaimer) for details.
+
 ## Features
 
 - Full local control — no cloud, no xTool account required
@@ -271,6 +273,12 @@ A complete reference of all M-codes, HTTP endpoints, JSON formats, status mappin
 ## Multilanguage Support
 
 This integration supports English and German.
+
+## Disclaimer
+
+This is an **independent community project**. It is not affiliated with, endorsed by, sponsored by, or otherwise associated with xTool, Makeblock, or any of their employees, contractors, or partners. All product names, trademarks, and registered trademarks (including "xTool", "xTool Studio", "XCS", and the model names referenced in this README) are the property of their respective owners and are used here for descriptive purposes only.
+
+The integration is provided **as-is, without warranty of any kind**. It relies on reverse-engineered protocols that may change without notice in future firmware revisions. Operating a high-power laser, fiber-laser welder, or any of the supported devices through Home Assistant carries real-world safety risks (fire, blindness, burns, electrical hazards). You are responsible for following xTool's official safety guidelines, supervising every job, and ensuring proper ventilation and fire-suppression measures are in place. The author accepts **no liability** for damages, injuries, data loss, voided warranties, or any other consequences arising from the use of this integration. **Use at your own risk.**
 
 ## License
 
