@@ -1,0 +1,157 @@
+name: Bug report
+description: Report a problem with the xTool Laser integration
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in every
+        required section — especially the **debug logs**. Without them
+        most protocol-level bugs need several round-trips of guessing
+        before any real fix can ship.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-submission checklist
+      description: Please confirm all of the following before submitting.
+      options:
+        - label: I have searched the existing issues and did not find a duplicate.
+          required: true
+        - label: I am running the latest release of the integration.
+          required: true
+        - label: I have enabled debug logging and captured the relevant lines (instructions below in the Debug logs section).
+          required: true
+        - label: My device works correctly in xTool Studio / XCS (rules out a hardware-side problem).
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear and concise description of what the bug is.
+      placeholder: e.g. The Status sensor stays "Off" while a job is running on my P2.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Device model
+      description: Pick the model that matches the device you are reporting against.
+      options:
+        - xTool S1
+        - xTool D1
+        - xTool D1 Pro
+        - xTool D1 Pro 2.0
+        - xTool F1
+        - xTool F1 Ultra
+        - xTool F1 Ultra V2
+        - xTool F1 Lite
+        - xTool F2
+        - xTool F2 Ultra
+        - xTool F2 Ultra (Single)
+        - xTool F2 Ultra UV
+        - xTool M1
+        - xTool M1 Ultra
+        - xTool P1 (Laserbox)
+        - xTool P2
+        - xTool P2S
+        - xTool P3
+        - xTool MetalFab
+        - xTool Apparel Printer
+        - Other / not listed
+    validations:
+      required: true
+
+  - type: input
+    id: firmware_version
+    attributes:
+      label: Firmware version
+      description: As shown on the device or in xTool Studio / XCS.
+      placeholder: e.g. 40.70.013.00.ht4
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      description: Found under Settings → Devices & Services → xTool Laser → details, or in `manifest.json`.
+      placeholder: e.g. 2.3.2
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: Found under Settings → About.
+      placeholder: e.g. 2026.5.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ha_install
+    attributes:
+      label: Home Assistant installation type
+      options:
+        - Home Assistant OS (HAOS)
+        - Home Assistant Supervised
+        - Home Assistant Container
+        - Home Assistant Core
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list of the steps that trigger the bug.
+      placeholder: |
+        1. Power on the device
+        2. Add the integration
+        3. Start a job from the device's button
+        4. Observe the Status sensor in Home Assistant
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      placeholder: e.g. Status sensor should show "Processing" while the job is running.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      placeholder: e.g. Status sensor stays "Off" the whole time.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Debug logs
+      description: |
+        **How to capture:**
+        1. Settings → Devices & Services → xTool Laser → click the three-dot menu → **Enable debug logging**.
+        2. Reproduce the bug.
+        3. Click the three-dot menu again → **Disable debug logging** — this downloads the relevant log file.
+        4. Paste the lines tagged `custom_components.xtool` below (or attach the file as a comment after submitting).
+
+        Logs are essential for protocol-level bugs — without them most reports cannot be diagnosed remotely.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots / additional context
+      description: Optional — screenshots of the affected entity, sensor history, network captures, anything else that might help.

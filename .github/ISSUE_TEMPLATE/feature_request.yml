@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest a new feature or enhancement for the xTool Laser integration
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an idea! Please describe the feature and
+        the use case behind it so the value is clear.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature description
+      description: A clear and concise description of the feature you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Use case / motivation
+      description: What problem does it solve, or what does it enable that is not possible today?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Affected device model(s)
+      description: Optional — leave at "All / not specific" for general improvements.
+      multiple: true
+      options:
+        - All / not specific
+        - xTool S1
+        - xTool D1
+        - xTool D1 Pro
+        - xTool D1 Pro 2.0
+        - xTool F1
+        - xTool F1 Ultra
+        - xTool F1 Ultra V2
+        - xTool F1 Lite
+        - xTool F2
+        - xTool F2 Ultra
+        - xTool F2 Ultra (Single)
+        - xTool F2 Ultra UV
+        - xTool M1
+        - xTool M1 Ultra
+        - xTool P1 (Laserbox)
+        - xTool P2
+        - xTool P2S
+        - xTool P3
+        - xTool MetalFab
+        - xTool Apparel Printer
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context / screenshots
+      description: Mockups, links to xTool Studio / XCS features, related issues, anything that helps frame the request.
