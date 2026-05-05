@@ -69,7 +69,7 @@ body:
     id: firmware_version
     attributes:
       label: Firmware version
-      description: As shown on the device or in xTool Studio / XCS.
+      description: As shown on the HA device or in xTool Studio / XCS.
       placeholder: e.g. 40.70.013.00.ht4
     validations:
       required: true
@@ -92,19 +92,6 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: ha_install
-    attributes:
-      label: Home Assistant installation type
-      options:
-        - Home Assistant OS (HAOS)
-        - Home Assistant Supervised
-        - Home Assistant Container
-        - Home Assistant Core
-        - Not sure
-    validations:
-      required: true
-
   - type: textarea
     id: reproduction
     attributes:
@@ -113,7 +100,7 @@ body:
       placeholder: |
         1. Power on the device
         2. Add the integration
-        3. Start a job from the device's button
+        3. Start a job on the device using xTool Studio
         4. Observe the Status sensor in Home Assistant
     validations:
       required: true
@@ -145,7 +132,15 @@ body:
         3. Click the three-dot menu again → **Disable debug logging** — this downloads the relevant log file.
         4. Paste the lines tagged `custom_components.xtool` below (or attach the file as a comment after submitting).
 
-        Logs are essential for protocol-level bugs — without them most reports cannot be diagnosed remotely.
+        If you are not able to add a device, you have to use an action call (`/config/developer-tools/action`) to enable debug logs:
+        ```yaml
+        action: logger.set_level
+        data:
+          custom_components.xtool: debug    # use 'warning' to disable debug logs afterwards
+        ```
+        **Note:** You won't get "auto-download", so you have to copy the logs (`/config/logs` → three-dot menu → show raw logs). You can filter the logs for "xtool"
+
+        ℹ️ ***Logs are essential for protocol-level bugs — without them most reports cannot be diagnosed remotely.***
       render: text
     validations:
       required: true
