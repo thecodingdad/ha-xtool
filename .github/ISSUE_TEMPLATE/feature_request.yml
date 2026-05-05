@@ -6,8 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting an idea! Please describe the feature and
-        the use case behind it so the value is clear.
+        Thanks for suggesting an idea! Please describe the feature and the use case behind it so the value is clear.
 
   - type: textarea
     id: description
@@ -29,10 +28,9 @@ body:
     id: model
     attributes:
       label: Affected device model(s)
-      description: Optional — leave at "All / not specific" for general improvements.
+      description: Optional — leave at "None" for general improvements.
       multiple: true
       options:
-        - All / not specific
         - xTool S1
         - xTool D1
         - xTool D1 Pro
