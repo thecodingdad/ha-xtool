@@ -910,11 +910,6 @@ def build_wsv2_binary_sensors(
             BinarySensorDeviceClass.PROBLEM,
         )(coordinator),
         _bool_sensor_factory(
-            "flame_alarm_v2_enabled", "flame_alarm_enabled",
-            None,
-            EntityCategory.DIAGNOSTIC,
-        )(coordinator),
-        _bool_sensor_factory(
             "beep_enabled_v2", "beep_enabled",
             None,
             EntityCategory.DIAGNOSTIC,
@@ -966,15 +961,16 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     entities: list[SwitchEntity] = []
     model = coordinator.model
 
-    # Config-backed toggles (always available on V2 firmware)
+    # Config-backed toggles (always available on V2 firmware).
+    # NOTE: flameAlarm is an integer enum (0/1/2 = high/low/off) on
+    # firmware — the dedicated `WSV2FlameAlarmSelect` writes it
+    # correctly, so we deliberately do not surface it as a boolean
+    # switch (would send `true`/`false`, rejected by firmware with
+    # `code 1: failed`).
     entities.extend([
         _WSV2ConfigSwitch(
             coordinator, "beep_enable", "beepEnable", "beep_enabled_v2",
             "mdi:volume-high",
-        ),
-        _WSV2ConfigSwitch(
-            coordinator, "flame_alarm_v2", "flameAlarm",
-            "flame_alarm_v2_enabled", "mdi:fire-alert",
         ),
         _WSV2ConfigSwitch(
             coordinator, "gap_check", "gapCheck", "gap_check_enabled",
@@ -1137,14 +1133,17 @@ def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
 
 
 def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
+    # NOTE: WSV2Reboot and WSV2SyncTime are deliberately omitted —
+    # `reboot` and `setTime` are not real keys on /v1/device/configs
+    # for any V2 model in the Studio bundle, and the firmware rejects
+    # them with `code 1: failed`. The classes are kept in this module
+    # for future use if a real wire path is identified.
     entities: list[ButtonEntity] = [
         WSV2PauseJob(coordinator),
         WSV2ResumeJob(coordinator),
         WSV2CancelJob(coordinator),
         WSV2HomeXY(coordinator),
         WSV2HomeLaser(coordinator),
-        WSV2Reboot(coordinator),
-        WSV2SyncTime(coordinator),
     ]
     if coordinator.model.has_z_axis:
         entities.append(WSV2HomeAll(coordinator))

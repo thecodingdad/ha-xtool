@@ -582,10 +582,18 @@ class WSV2Protocol(XtoolProtocol):
     async def set_config(self, key: str, value: Any) -> dict[str, Any]:
         """PUT a single key into ``/v1/device/configs``.
 
-        Studio's bundle uses ``{data: {alias:"config", type:"user",
-        kv:{<key>:<value>}}}`` for runtime configuration; the same
+        Studio's bundle uses ``{alias:"config", type:"user",
+        kv:{<key>:<value>}}`` for runtime configuration; the same
         envelope is consumed by the V2 firmware's ``configs`` handler.
+
+        Booleans are coerced to ``1``/``0`` because some firmware
+        revisions (HJ003 / GS003 / …) reject JSON ``true``/``false``
+        with ``code 1: failed`` — the V1 REST `/config/set` historical
+        contract treated every flag as int and the V2 handler kept the
+        same backing store.
         """
+        if isinstance(value, bool):
+            value = 1 if value else 0
         return await self.request(
             "/v1/device/configs",
             "PUT",
