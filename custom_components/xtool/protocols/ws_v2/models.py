@@ -215,7 +215,10 @@ XTOOL_METALFAB_WSV2 = XtoolDeviceModel(
     has_lid_sensor=True,
     has_mode_switch=True,
     has_air_assist_state=True,
-    has_gyro=True,
+    # MetalFab firmware uses gyro internally for tilt-error detection
+    # but does not expose a periodic peripheral query for it (verified
+    # against the HJ003 Studio bundle). Leave the cap flag off so the
+    # gyro sensors don't surface as permanently-unavailable.
     firmware_content_id="xTool-hj003-firmware",
     firmware_machine_type="MHJ",
     protocol_version="V2",

@@ -538,8 +538,8 @@ class WSV2Protocol(XtoolProtocol):
         self._pending[transaction_id] = pending
         frame = _encode_frame(_json_compact(payload).encode("utf-8"))
         _LOGGER.debug(
-            "V2 TX %s %s txn=%d frame_len=%d",
-            method, url, transaction_id, len(frame),
+            "V2 TX %s %s txn=%d params=%s data=%s",
+            method, url, transaction_id, params, data,
         )
         try:
             await self._ws_instr.send_bytes(frame)
@@ -843,6 +843,11 @@ class WSV2Protocol(XtoolProtocol):
         typ = data.get("type")
         info = data.get("info")
 
+        _LOGGER.debug(
+            "V2 push url=%s module=%s type=%s info=%r",
+            url, module, typ, info,
+        )
+
         if url == "/work/mode" and module == "STATUS_CONTROLLER" and typ == "MODE_CHANGE":
             mode = ""
             if isinstance(info, dict):
@@ -1115,7 +1120,10 @@ class WSV2Protocol(XtoolProtocol):
                                 "water_tmp", "water_flow"])
             if getattr(model, "has_gyro", False):
                 ptypes.append("gyro")
-            if getattr(model, "has_laser_head_position", False):
+            if (
+                getattr(model, "has_laser_head_position", False)
+                or getattr(model, "has_z_axis", False)
+            ):
                 ptypes.append("laser_head")
             if getattr(model, "has_distance_measure", False):
                 ptypes.append("ir_measure_distance")
@@ -1133,8 +1141,13 @@ class WSV2Protocol(XtoolProtocol):
                     "/v1/peripheral/param", "GET",
                     params={"type": ptype},
                 )
-            except Exception:
+            except Exception as err:
+                _LOGGER.debug(
+                    "V2 /v1/peripheral/param type=%s failed: %s",
+                    ptype, err,
+                )
                 continue
+            _LOGGER.debug("V2 /v1/peripheral/param type=%s raw: %s", ptype, p)
             if not isinstance(p, dict):
                 continue
             self._apply_peripheral_param(ptype, p, state)
@@ -1156,13 +1169,48 @@ class WSV2Protocol(XtoolProtocol):
                 stats = await self.request("/v1/device/statistics", "GET")
             except Exception:
                 stats = None
+            _LOGGER.debug("V2 /v1/device/statistics raw: %s", stats)
             if isinstance(stats, dict):
+                # Modern firmware (HJ003 / GS003 / F1U …) returns these
+                # exact field names per the Studio bundle's
+                # ``deviceInfo``/``getWorkingTime`` transformResult.
+                # `timeSystemWork` carries the device's total powered-on
+                # time; subtracting `timeModeWorking` gives standby.
+                v = stats.get("timeModeWorking")
+                if isinstance(v, (int, float)):
+                    try:
+                        self._latest["working_seconds"] = int(v)
+                    except (TypeError, ValueError):
+                        pass
+                tsw = stats.get("timeSystemWork")
+                tmw = stats.get("timeModeWorking")
+                if (
+                    isinstance(tsw, (int, float))
+                    and isinstance(tmw, (int, float))
+                ):
+                    try:
+                        self._latest["standby_seconds"] = max(0, int(tsw) - int(tmw))
+                    except (TypeError, ValueError):
+                        pass
+                online = stats.get("numOnlineWorking")
+                offline = stats.get("numOfflineWorking")
+                if (
+                    isinstance(online, (int, float))
+                    or isinstance(offline, (int, float))
+                ):
+                    try:
+                        self._latest["session_count"] = (
+                            int(online or 0) + int(offline or 0)
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                # Legacy field names — kept as fallback for older
+                # firmware revisions whose bundles pre-date the rename.
                 for src, dst in (
                     ("workingTime",     "working_seconds"),
                     ("sessionCount",    "session_count"),
                     ("standbyTime",     "standby_seconds"),
                     ("toolRuntime",     "tool_runtime_seconds"),
-                    # Alternate naming seen on some firmware revisions
                     ("totalWorkTime",   "working_seconds"),
                     ("totalStandbyTime", "standby_seconds"),
                     ("toolUseTime",     "tool_runtime_seconds"),
@@ -1224,6 +1272,21 @@ class WSV2Protocol(XtoolProtocol):
             if k in self._latest:
                 setattr(state, k, self._latest[k])
 
+        _LOGGER.debug(
+            "V2 poll resolved: status=%s task_id=%r task_time=%s "
+            "working_mode=%r cover_open=%s drawer_open=%s "
+            "machine_lock=%s air_assist=%s "
+            "position=(%s,%s,%s) gyro=(%s,%s,%s) water=(%s°C,%s) "
+            "alarm=%s",
+            state.status, state.task_id, state.task_time,
+            state.working_mode, state.cover_open, state.drawer_open,
+            state.machine_lock, state.air_assist_connected,
+            state.position_x, state.position_y, state.position_z,
+            state.gyro_x, state.gyro_y, state.gyro_z,
+            state.water_temperature, state.water_flow,
+            state.alarm_present,
+        )
+
     def _apply_peripheral_param(
         self,
         ptype: str,
@@ -1239,13 +1302,20 @@ class WSV2Protocol(XtoolProtocol):
         is_off = st == "off" if isinstance(st, str) else None
 
         if ptype == "gap":
-            state.cover_open = is_off
+            # V2 firmware reports `state:"on"` when the cover is OPEN
+            # (mirrors the `gap_is_open` field surfaced in `machineInfo`
+            # on MetalFab + F1 Ultra). This is the inverse of the V1
+            # REST convention used by the legacy P-family firmware.
+            state.cover_open = is_on
         elif ptype == "machine_lock":
             state.machine_lock = is_off  # off = unlocked → True (LOCK device class)
         elif ptype == "airassistV2":
             state.air_assist_connected = is_on
         elif ptype == "drawer":
-            state.drawer_open = is_off
+            # V2 firmware reports `state:"on"` when the drawer is OPEN
+            # (matches `drawer_is_off` semantics — "is_off" the slot,
+            # i.e. drawer not in slot). Same inversion as `gap` above.
+            state.drawer_open = is_on
         elif ptype == "cooling_fan":
             state.cooling_fan_running = is_on
         elif ptype == "smoking_fan":
