@@ -6,10 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug! Please fill in every
-        required section — especially the **debug logs**. Without them
-        most protocol-level bugs need several round-trips of guessing
-        before any real fix can ship.
+        Thanks for taking the time to report a bug! Please fill in every required section — especially the **debug logs**. Without them most protocol-level bugs need several round-trips of guessing before any real fix can ship.
 
   - type: checkboxes
     id: preflight
