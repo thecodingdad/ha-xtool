@@ -142,6 +142,7 @@ body:
 
         ℹ️ ***Logs are essential for protocol-level bugs — without them most reports cannot be diagnosed remotely.***
       render: text
+      placeholder: Paste your debug logs here or append a log file.
     validations:
       required: true
 
