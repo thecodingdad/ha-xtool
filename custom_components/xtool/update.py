@@ -110,7 +110,7 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         """
         await super().async_added_to_hass()
 
-        async def _kick(*_: Any) -> None:
+        async def _check_for_update() -> None:
             if self._checked_once:
                 return
             if self.coordinator.data is None or not self.coordinator.data.available:
@@ -118,10 +118,17 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
             await self.async_update()
             self.async_write_ha_state()
 
-        self.async_on_remove(self.coordinator.async_add_listener(_kick))
+        # ``async_add_listener`` calls the listener synchronously; wrap
+        # the async kick in a sync shim that schedules it as a task,
+        # otherwise the coroutine is created but never awaited (HA logs
+        # a RuntimeWarning).
+        def _check_for_update_listener() -> None:
+            self.hass.async_create_task(_check_for_update())
+
+        self.async_on_remove(self.coordinator.async_add_listener(_check_for_update_listener))
         # Also try immediately in case data is already available.
         if self.coordinator.data and self.coordinator.data.available:
-            await _kick()
+            await _check_for_update()
 
     async def async_update(self) -> None:
         """Periodic cloud-side update check (every 6 h, plus first availability)."""
