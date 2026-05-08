@@ -103,7 +103,6 @@ The available options are gated by the device's protocol family — only relevan
 | Task time | Current job elapsed time (seconds) |
 | Last job time | Last completed job duration |
 | Working mode | Current working mode (cut / engrave / knife / inkjet / …) |
-| Last button event | Last physical button event (single / long / double press) |
 | Working time | Lifetime working hours |
 | Session count | Lifetime job-start count |
 | Standby time | Lifetime standby hours |
@@ -240,6 +239,17 @@ The available options are gated by the device's protocol family — only relevan
 | Entity | Description |
 |---|---|
 | Firmware | Installed + latest firmware version via the xTool cloud (re-checked on reconnect and every 6 h). Release notes from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it |
+
+### Event
+
+Transient-event entities — fire once on edge transitions (rather than holding state) so they can be used as automation triggers without polling the Status sensor or template-history.
+
+| Entity | Event types | Description |
+|---|---|---|
+| Button | `short_press`, `long_press`, `double_press` | Physical front-panel button press. Source: WS-V2 push (`/button/status`) or REST poll diff. Includes a `raw_type` attribute so unrecognised firmware labels are still inspectable |
+| Job | `started`, `paused`, `resumed`, `cancelled`, `finished`, `framing_started`, `framing_finished` | Job-lifecycle transitions derived from Status sensor edges. `task_id` and (where available) job `duration` are exposed as event attributes |
+| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop` | Error-state transitions. `tilt` / `moving` are D-series only; `emergency_stop` is V2 only (driven by `/emergency/status` push) |
+| Fire warning | `triggered`, `cleared` | Flame-detector edge — separate entity so safety automations can target it directly. Source: `M340` push (S1), `ERROR_FIRE_WARNING` status edge (REST + D-series), or `state.alarm_present` / `/v1/device/alarms` (WS-V2) |
 
 ## Device Information
 
