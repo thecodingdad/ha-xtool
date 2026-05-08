@@ -288,7 +288,7 @@ class _WSV2BoolSensor(XtoolEntity, BinarySensorEntity):
         entity_category: EntityCategory | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         if device_class is not None:
             self._attr_device_class = device_class
@@ -343,7 +343,7 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         icon: str | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._config_key = config_key
         self._state_attr = state_attr
@@ -388,7 +388,7 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
         extra: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._peripheral_type = peripheral_type
         self._state_attr = state_attr
@@ -445,7 +445,7 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         icon: str | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._config_key = config_key
         self._state_attr = state_attr
@@ -490,7 +490,7 @@ class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_display_brightness"
+        self._set_unique_id("display_brightness")
 
     @property
     def native_value(self) -> float | None:
@@ -523,7 +523,7 @@ class WSV2FlameAlarmSelect(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_flame_alarm_sensitivity"
+        self._set_unique_id("flame_alarm_sensitivity")
 
     @property
     def current_option(self) -> str | None:
@@ -556,7 +556,7 @@ class WSV2FlameLevelSelect(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_flame_level"
+        self._set_unique_id("flame_level")
 
     @property
     def current_option(self) -> str | None:
@@ -586,7 +586,7 @@ class WSV2PurifierSpeedSelect(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_purifier_speed"
+        self._set_unique_id("purifier_speed")
 
     @property
     def current_option(self) -> str | None:
@@ -621,7 +621,7 @@ class WSV2FillLight(XtoolEntity, LightEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_fill_light"
+        self._set_unique_id("fill_light")
 
     @property
     def is_on(self) -> bool | None:
@@ -677,7 +677,7 @@ class _WSV2Button(XtoolEntity, ButtonEntity):
         icon: str | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         if icon is not None:
             self._attr_icon = icon
@@ -803,7 +803,7 @@ class _WSV2Camera(XtoolEntity, Camera):
     ) -> None:
         XtoolEntity.__init__(self, coordinator)
         Camera.__init__(self)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._camera_type = camera_type
         if icon is not None:

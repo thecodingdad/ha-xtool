@@ -37,7 +37,7 @@ class XtoolPowerSwitch(XtoolEntity, SwitchEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_power_switch"
+        self._set_unique_id("power_switch")
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

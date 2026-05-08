@@ -66,7 +66,7 @@ class XtoolIRLED(XtoolEntity, SwitchEntity):
         super().__init__(coordinator)
         self._kind = kind
         self._index = IR_LED_INDEX_CLOSEUP if kind == "close" else IR_LED_INDEX_GLOBAL
-        self._attr_unique_id = f"{coordinator.serial_number}_ir_led_{kind}"
+        self._set_unique_id(f"ir_led_{kind}")
         self._attr_translation_key = f"ir_led_{kind}"
         self._attr_icon = "mdi:led-on"
 
@@ -103,7 +103,7 @@ class XtoolDigitalLock(XtoolEntity, SwitchEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_digital_lock"
+        self._set_unique_id("digital_lock")
 
     @property
     def is_on(self) -> bool | None:
@@ -141,7 +141,7 @@ class XtoolCameraExposure(XtoolEntity, NumberEntity):
         super().__init__(coordinator)
         self._stream_name = stream
         self._stream_index = self._STREAM_MAP[stream]
-        self._attr_unique_id = f"{coordinator.serial_number}_camera_exposure_{stream}"
+        self._set_unique_id(f"camera_exposure_{stream}")
         self._attr_translation_key = f"camera_exposure_{stream}"
 
     @property
@@ -176,7 +176,7 @@ class XtoolAirAssistGear(XtoolEntity, NumberEntity):
     def __init__(self, coordinator: XtoolCoordinator, target: str) -> None:
         super().__init__(coordinator)
         self._target = target  # "cut" or "grave"
-        self._attr_unique_id = f"{coordinator.serial_number}_air_assist_gear_{target}"
+        self._set_unique_id(f"air_assist_gear_{target}")
         self._attr_translation_key = f"air_assist_gear_{target}"
 
     @property
@@ -215,7 +215,7 @@ class XtoolHomeLaserHead(XtoolEntity, ButtonEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_home_laser_head"
+        self._set_unique_id("home_laser_head")
 
     async def async_press(self) -> None:
         await self.coordinator.protocol.move_laser_head(0.0, 0.0)
@@ -229,7 +229,7 @@ class XtoolMeasureDistance(XtoolEntity, ButtonEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_measure_distance"
+        self._set_unique_id("measure_distance")
 
     async def async_press(self) -> None:
         distance = await self.coordinator.protocol.measure_distance()
@@ -251,7 +251,7 @@ class XtoolRestFillLight(XtoolEntity, LightEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_fill_light"
+        self._set_unique_id("fill_light")
 
     @property
     def brightness(self) -> int | None:
@@ -306,7 +306,7 @@ class XtoolCamera(XtoolEntity, Camera):
         Camera.__init__(self)
         self._stream_index = stream_index
         self._attr_translation_key = translation_key
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._last_image: bytes | None = None
         self._last_fetch = dt_util.utcnow() - MIN_SNAPSHOT_INTERVAL
 
@@ -343,7 +343,7 @@ class XtoolFireRecordCamera(XtoolEntity, Camera):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         XtoolEntity.__init__(self, coordinator)
         Camera.__init__(self)
-        self._attr_unique_id = f"{coordinator.serial_number}_camera_fire_record"
+        self._set_unique_id("camera_fire_record")
         self._last_image: bytes | None = None
         self._last_fetch = dt_util.utcnow() - MIN_SNAPSHOT_INTERVAL
 
@@ -374,7 +374,7 @@ class XtoolLastDistance(XtoolEntity, SensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_last_distance"
+        self._set_unique_id("last_distance")
 
     @property
     def native_value(self) -> float | None:
@@ -577,7 +577,7 @@ class XtoolAirAssistConnected(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_air_assist_connected"
+        self._set_unique_id("air_assist_connected")
 
     @property
     def is_on(self) -> bool | None:
@@ -627,7 +627,7 @@ class _RestToggle(XtoolEntity, SwitchEntity):
 
     def __init__(self, coordinator: XtoolCoordinator, key: str, icon: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._attr_icon = icon
 
@@ -742,7 +742,7 @@ class _RestTimeoutNumber(XtoolEntity, NumberEntity):
         super().__init__(coordinator)
         self._state_attr = attr
         self._setter = setter
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._attr_native_min_value = 0
         self._attr_native_max_value = max_seconds
@@ -801,7 +801,7 @@ class XtoolReboot(XtoolEntity, ButtonEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_reboot"
+        self._set_unique_id("reboot")
 
     async def async_press(self) -> None:
         await self.coordinator.protocol.reboot()
@@ -827,7 +827,7 @@ class _RestStateSensor(XtoolEntity, SensorEntity):
         self._attr = attr
         self._attr_translation_key = key
         self._attr_icon = icon
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
 
     @property
     def native_value(self) -> str | int | float | None:
@@ -888,7 +888,7 @@ class _RestPushBinary(XtoolEntity, BinarySensorEntity):
         self._state_attr = attr
         self._attr_translation_key = key
         self._attr_icon = icon
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         if device_class is not None:
             self._attr_device_class = device_class
 
@@ -918,7 +918,7 @@ class XtoolDisplayBrightness(XtoolEntity, NumberEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_display_brightness"
+        self._set_unique_id("display_brightness")
 
     @property
     def available(self) -> bool:
@@ -949,7 +949,7 @@ class XtoolTimeSync(XtoolEntity, ButtonEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_time_sync"
+        self._set_unique_id("time_sync")
 
     async def async_press(self) -> None:
         await self.coordinator.protocol.time_sync()
@@ -969,7 +969,7 @@ class XtoolPurifierSpeed(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_purifier_speed_select"
+        self._set_unique_id("purifier_speed_select")
 
     @property
     def available(self) -> bool:
@@ -1008,7 +1008,7 @@ class XtoolFlameLevelHL(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_flame_level_hl"
+        self._set_unique_id("flame_level_hl")
 
     @property
     def available(self) -> bool:

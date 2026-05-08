@@ -54,7 +54,7 @@ class XtoolEvent(XtoolEntity, EventEntity):
         event_types: tuple[str, ...],
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._attr_event_types = list(event_types)
         self._unsub_dispatcher: Callable[[], None] | None = None

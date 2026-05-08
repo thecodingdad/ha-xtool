@@ -39,7 +39,7 @@ class XtoolSensor(XtoolEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
+        self._set_unique_id(f"{description.key}")
 
     @property
     def native_value(self) -> str | int | float | None:
@@ -58,7 +58,7 @@ class XtoolStatusSensor(XtoolEntity, SensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_status"
+        self._set_unique_id("status")
         self._last_known_status: str = XtoolStatus.OFF
 
     @property

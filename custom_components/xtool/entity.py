@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import re
+
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import XtoolCoordinator
+
+_MODEL_SLUG_RE = re.compile(r"[^a-z0-9]")
 
 
 class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
@@ -17,6 +21,25 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
+
+    def _set_unique_id(self, key: str) -> None:
+        """Stamp ``unique_id`` and a serial-prefixed ``suggested_object_id``.
+
+        ``unique_id`` keeps the long-standing ``{serial}_{key}`` shape
+        so existing registry entries continue to match. The
+        ``suggested_object_id`` is consumed by HA only on first
+        registration — fresh entities land at
+        ``<platform>.xtool_<model>_<serial>_<key>`` so multi-device
+        setups stay collision-free; existing installs are unaffected.
+        """
+        sid = self.coordinator.serial_number
+        model_slug = _MODEL_SLUG_RE.sub(
+            "", self.coordinator.model.model_id.lower()
+        )
+        self._attr_unique_id = f"{sid}_{key}"
+        self._attr_suggested_object_id = (
+            f"xtool_{model_slug}_{sid}_{key}"
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

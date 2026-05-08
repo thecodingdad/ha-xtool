@@ -31,7 +31,7 @@ class _DSeriesSafetySwitch(XtoolEntity, SwitchEntity):
 
     def __init__(self, coordinator: XtoolCoordinator, key: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
 
     def _get_state(self) -> bool | None:
@@ -116,7 +116,7 @@ class XtoolWorkAreaLimit(XtoolEntity, NumberEntity):
     def __init__(self, coordinator: XtoolCoordinator, edge: str) -> None:
         super().__init__(coordinator)
         self._edge = edge  # left/right/up/down
-        self._attr_unique_id = f"{coordinator.serial_number}_work_area_{edge}"
+        self._set_unique_id(f"work_area_{edge}")
         self._attr_translation_key = f"work_area_{edge}"
 
     @property
@@ -149,7 +149,7 @@ class XtoolDSeriesThreshold(XtoolEntity, NumberEntity):
     def __init__(self, coordinator: XtoolCoordinator, kind: str) -> None:
         super().__init__(coordinator)
         self._kind = kind
-        self._attr_unique_id = f"{coordinator.serial_number}_{kind}_threshold"
+        self._set_unique_id(f"{kind}_threshold")
         self._attr_translation_key = f"{kind}_threshold"
         self._attr_icon = (
             "mdi:angle-acute" if kind == "tilt" else "mdi:axis-arrow"
@@ -200,7 +200,7 @@ class DSeriesFlameAlarmSensitivity(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_flame_alarm_sensitivity"
+        self._set_unique_id("flame_alarm_sensitivity")
 
     @property
     def current_option(self) -> str | None:
@@ -226,7 +226,7 @@ class XtoolFlameAlarmMode(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_flame_alarm_mode"
+        self._set_unique_id("flame_alarm_mode")
 
     @property
     def current_option(self) -> str | None:
@@ -256,7 +256,7 @@ class XtoolQuitLightBurn(XtoolEntity, ButtonEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_quit_lightburn"
+        self._set_unique_id("quit_lightburn")
 
     async def async_press(self) -> None:
         await self.coordinator.protocol.quit_lightburn_mode()
@@ -272,7 +272,7 @@ class XtoolRedCrossMode(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_redcross_mode"
+        self._set_unique_id("redcross_mode")
 
     @property
     def current_option(self) -> str | None:
@@ -302,7 +302,7 @@ class _DSeriesOriginOffset(XtoolEntity, SensorEntity):
     def __init__(self, coordinator: XtoolCoordinator, axis: str) -> None:
         super().__init__(coordinator)
         self._axis = axis
-        self._attr_unique_id = f"{coordinator.serial_number}_origin_offset_{axis}"
+        self._set_unique_id(f"origin_offset_{axis}")
         self._attr_translation_key = f"origin_offset_{axis}"
         self._attr_icon = f"mdi:axis-{axis}-arrow"
 

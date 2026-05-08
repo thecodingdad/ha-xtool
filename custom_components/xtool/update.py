@@ -52,7 +52,7 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_firmware_update"
+        self._set_unique_id("firmware_update")
         self._update_info: FirmwareUpdateInfo | None = None
         # Release notes for the latest published version, fetched even when
         # no update is available so the user can see what's in the version

@@ -359,7 +359,7 @@ class XtoolSwitch(XtoolEntity, SwitchEntity):
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
+        self._set_unique_id(f"{description.key}")
 
     @property
     def is_on(self) -> bool | None:
@@ -394,7 +394,7 @@ class XtoolNumber(XtoolEntity, NumberEntity):
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
+        self._set_unique_id(f"{description.key}")
 
     @property
     def native_value(self) -> float | None:
@@ -420,7 +420,7 @@ class XtoolButton(XtoolEntity, ButtonEntity):
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.serial_number}_{description.key}"
+        self._set_unique_id(f"{description.key}")
 
     async def async_press(self) -> None:
         await self.coordinator.send_command(self.entity_description.command)
@@ -439,7 +439,7 @@ class XtoolFillLight(XtoolEntity, LightEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_fill_light"
+        self._set_unique_id("fill_light")
 
     @property
     def brightness(self) -> int | None:
@@ -489,7 +489,7 @@ class XtoolAccessoriesSensor(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_accessories"
+        self._set_unique_id("accessories")
 
     @property
     def is_on(self) -> bool | None:
@@ -546,7 +546,7 @@ class XtoolAlarmSensor(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_alarm"
+        self._set_unique_id("alarm")
 
     @property
     def is_on(self) -> bool | None:
@@ -570,7 +570,7 @@ class XtoolXcsCompatMode(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_xcs_compat"
+        self._set_unique_id("xcs_compat")
 
     @property
     def is_on(self) -> bool | None:
@@ -586,7 +586,7 @@ class XtoolPurifierRunning(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_purifier_running"
+        self._set_unique_id("purifier_running")
 
     @property
     def is_on(self) -> bool | None:
@@ -605,7 +605,7 @@ class XtoolPurifierConnected(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_purifier_connected"
+        self._set_unique_id("purifier_connected")
 
     @property
     def is_on(self) -> bool | None:
@@ -632,7 +632,7 @@ class _AP2Sensor(XtoolEntity, SensorEntity):
         category: EntityCategory | None = None,
     ) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_{key}"
+        self._set_unique_id(f"{key}")
         self._attr_translation_key = key
         self._attr_icon = icon
         if unit is not None:
@@ -766,7 +766,7 @@ class S1FlameAlarmSensitivity(XtoolEntity, SelectEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_flame_alarm_sensitivity"
+        self._set_unique_id("flame_alarm_sensitivity")
 
     @property
     def current_option(self) -> str | None:

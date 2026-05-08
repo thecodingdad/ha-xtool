@@ -41,7 +41,7 @@ class XtoolCoverSensor(XtoolEntity, BinarySensorEntity):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.serial_number}_cover_open"
+        self._set_unique_id("cover_open")
 
     @property
     def is_on(self) -> bool | None:
