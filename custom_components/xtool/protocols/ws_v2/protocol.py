@@ -268,6 +268,26 @@ WSV2_MODE_MAP: dict[str, XtoolStatus] = {
 }
 
 
+# Map firmware-emitted button-press strings to the canonical
+# ``XtoolEvent`` button event types. The "SHOERT_PRESS" misspelling
+# was reported in live MetalFab traces (issue #3) — normalising here
+# keeps the entity vocabulary stable regardless of typo or case.
+_BUTTON_EVENT_TYPE_MAP: dict[str, str] = {
+    "SHORT_PRESS":  "short_press",
+    "SHOERT_PRESS": "short_press",  # firmware typo
+    "LONG_PRESS":   "long_press",
+    "DOUBLE_PRESS": "double_press",
+    "DOUBLE_CLICK": "double_press",
+}
+
+
+def _normalise_button_event(raw: object) -> str | None:
+    """Normalise ``/button/status BUTTON`` push ``type`` strings."""
+    if raw is None:
+        return None
+    return _BUTTON_EVENT_TYPE_MAP.get(str(raw).upper())
+
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -384,6 +404,11 @@ class WSV2Protocol(XtoolProtocol):
         # the model doesn't expose. Cleared on every fresh connect so a
         # firmware upgrade re-probes.
         self._unsupported_peripheral_types: set[str] = set()
+        # Push-event queue drained by the coordinator each poll. Each
+        # entry is ``(kind, event_type, attrs)``. Push handlers in
+        # ``_dispatch_push`` append; the WS-V2 coordinator forwards
+        # everything to HA's dispatcher under the event-loop thread.
+        self._pending_events: list[tuple[str, str, dict[str, Any] | None]] = []
         # Aggregator for partial BINARY frames — V2 firmware sometimes
         # splits a single CRC-wrapped envelope across multiple WS
         # messages, so we always feed bytes through ``_decode_frames``
@@ -941,6 +966,9 @@ class WSV2Protocol(XtoolProtocol):
             if typ in ("VOLTAGE_TRIGGER", "TRIGGER"):
                 self._latest["status"] = XtoolStatus.ERROR_LIMIT
                 self._latest["alarm_present"] = True
+                self._pending_events.append(
+                    ("error", "emergency_stop", {"raw_type": str(typ)}),
+                )
             elif typ == "RESUME":
                 self._latest["alarm_present"] = False
 
@@ -968,9 +996,16 @@ class WSV2Protocol(XtoolProtocol):
                         self._latest["firmware_version"] = pkg
 
         elif url == "/button/status" and module == "BUTTON":
-            self._latest["last_button_event"] = (
-                f"{typ}:{info}" if info else str(typ)
-            )
+            normalised = _normalise_button_event(typ)
+            if normalised:
+                self._pending_events.append(
+                    ("button", normalised, {"raw_type": str(typ), "info": info}),
+                )
+            else:
+                _LOGGER.debug(
+                    "V2 BUTTON push with unmapped type=%r info=%r — ignored",
+                    typ, info,
+                )
 
         elif url == "/device/config" and module == "DEVICE_CONFIG" and typ == "INFO":
             # Mirrors the BassXT push handler: when the device
@@ -1371,7 +1406,7 @@ class WSV2Protocol(XtoolProtocol):
         # 7. Push-cached values (overrule poll if newer)
         for k in (
             "status", "task_id", "task_time", "cover_open", "machine_lock",
-            "last_button_event", "last_job_time_seconds",
+            "last_job_time_seconds",
             "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
             "water_pump_running", "water_line_ok", "water_temperature",
             "water_flow", "drawer_open", "cpu_fan_running",

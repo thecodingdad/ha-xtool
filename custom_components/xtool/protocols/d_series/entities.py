@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.components.event import EventEntity
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -15,6 +16,7 @@ from homeassistant.const import EntityCategory, UnitOfLength, UnitOfTime
 from ...const import FlameAlarmSensitivity
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity
+from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
 
@@ -418,3 +420,66 @@ def build_d_series_updates(coordinator: XtoolCoordinator) -> list[UpdateEntity]:
     if coordinator.model.firmware_content_id:
         return [DSeriesFirmwareUpdate(coordinator)]
     return []
+
+
+# --- Events --------------------------------------------------------------
+
+# D-series event vocabularies. No button source. Errors include
+# tilt + moving since those flags surface as their own status states.
+
+DSERIES_JOB_EVENT_TYPES: tuple[str, ...] = (
+    "started",
+    "paused",
+    "resumed",
+    "cancelled",
+    "finished",
+)
+
+DSERIES_ERROR_EVENT_TYPES: tuple[str, ...] = (
+    "limit",
+    "laser_control",
+    "laser_module",
+    "tilt",
+    "moving",
+)
+
+DSERIES_FIRE_WARNING_EVENT_TYPES: tuple[str, ...] = (
+    "triggered",
+    "cleared",
+)
+
+
+class DSeriesJobEvent(XtoolEvent):
+    _kind = "job"
+    _attr_icon = "mdi:cog-play"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "job", DSERIES_JOB_EVENT_TYPES)
+
+
+class DSeriesErrorEvent(XtoolEvent):
+    _kind = "error"
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "error", DSERIES_ERROR_EVENT_TYPES)
+
+
+class DSeriesFireWarningEvent(XtoolEvent):
+    """Flame-detector triggered / cleared (D-series ``err:flameCheck`` push)."""
+
+    _kind = "fire_warning"
+    _attr_icon = "mdi:fire-alert"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "fire_warning", DSERIES_FIRE_WARNING_EVENT_TYPES,
+        )
+
+
+def build_d_series_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
+    return [
+        DSeriesJobEvent(coordinator),
+        DSeriesErrorEvent(coordinator),
+        DSeriesFireWarningEvent(coordinator),
+    ]

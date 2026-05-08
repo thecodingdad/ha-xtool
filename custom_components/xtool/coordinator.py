@@ -17,6 +17,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from homeassistant.components.binary_sensor import BinarySensorEntity
     from homeassistant.components.button import ButtonEntity
     from homeassistant.components.camera import Camera
+    from homeassistant.components.event import EventEntity
     from homeassistant.components.light import LightEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
@@ -152,3 +154,32 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
 
     def build_updates(self) -> list["UpdateEntity"]:
         return []
+
+    def build_events(self) -> list["EventEntity"]:
+        return []
+
+    # --- Event emission -----------------------------------------------------
+
+    def _emit_event(
+        self,
+        kind: str,
+        event_type: str,
+        attributes: dict[str, Any] | None = None,
+    ) -> None:
+        """Dispatch an event to every ``XtoolEvent`` entity bound to
+        this device.
+
+        Per-family coordinators call this from their poll loop (job /
+        error transitions detected from Status edges) or from a
+        protocol push-event drain (e.g. V2 button presses). Status →
+        event mapping is intentionally left to the family because the
+        meaningful transitions differ — S1's M222 codes, REST's
+        ``/cnc/status``, V2's ``P_*`` enum each have their own set of
+        intermediate states that don't all map 1:1 to the universal
+        ``XtoolStatus`` enum.
+        """
+        async_dispatcher_send(
+            self.hass,
+            f"xtool_event_{self.serial_number}",
+            kind, event_type, attributes or {},
+        )

@@ -29,6 +29,7 @@ from .protocols import DEVICE_MODELS, LaserInfo, detect_model
 PLATFORMS = [
     Platform.BINARY_SENSOR,
     Platform.CAMERA,
+    Platform.EVENT,
     Platform.SENSOR,
     Platform.LIGHT,
     Platform.SWITCH,

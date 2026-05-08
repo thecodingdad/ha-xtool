@@ -11,6 +11,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
+from homeassistant.components.event import EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ColorMode,
@@ -34,6 +35,7 @@ from ...const import (
 )
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity
+from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
 from ..base import XtoolDeviceModel, XtoolDeviceState
@@ -847,6 +849,69 @@ def build_s1_updates(coordinator: XtoolCoordinator) -> list[UpdateEntity]:
     if coordinator.model.firmware_content_id:
         return [S1FirmwareUpdate(coordinator)]
     return []
+
+
+# --- Events --------------------------------------------------------------
+
+# S1 only emits job + error events — there is no front-panel button
+# event source in the M-code surface.
+
+S1_JOB_EVENT_TYPES: tuple[str, ...] = (
+    "started",
+    "paused",
+    "resumed",
+    "cancelled",
+    "finished",
+    "framing_started",
+    "framing_finished",
+)
+
+S1_ERROR_EVENT_TYPES: tuple[str, ...] = (
+    "limit",
+    "laser_control",
+    "laser_module",
+)
+
+S1_FIRE_WARNING_EVENT_TYPES: tuple[str, ...] = (
+    "triggered",
+    "cleared",
+)
+
+
+class S1JobEvent(XtoolEvent):
+    _kind = "job"
+    _attr_icon = "mdi:cog-play"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "job", S1_JOB_EVENT_TYPES)
+
+
+class S1ErrorEvent(XtoolEvent):
+    _kind = "error"
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "error", S1_ERROR_EVENT_TYPES)
+
+
+class S1FireWarningEvent(XtoolEvent):
+    """Flame-detector triggered / cleared (S1: ``M340`` push)."""
+
+    _kind = "fire_warning"
+    _attr_icon = "mdi:fire-alert"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "fire_warning", S1_FIRE_WARNING_EVENT_TYPES,
+        )
+
+
+def build_s1_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
+    return [
+        S1JobEvent(coordinator),
+        S1ErrorEvent(coordinator),
+        S1FireWarningEvent(coordinator),
+    ]
 
 
 def build_s1_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:

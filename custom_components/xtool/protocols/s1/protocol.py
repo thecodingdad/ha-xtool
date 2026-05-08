@@ -150,9 +150,6 @@ HTTP_ACTION_VERSION = "version"
 HTTP_ACTION_SOCKET_CONN = "socket_conn_num"
 HTTP_ACTION_UPGRADE_PROGRESS = "get_upgrade_progress"
 
-# Firmware upload endpoint (S1 multi-board flash)
-HTTP_PATH_BURN = "/burn"
-
 # XCS Compatibility Mode (S1-only)
 XCS_KICK_LIMIT = 3  # disconnects within window to trigger XCS mode
 XCS_KICK_WINDOW = 30.0  # seconds
@@ -895,7 +892,7 @@ class S1Protocol(XtoolProtocol):
         controller (0x21), ``3`` for the WiFi/network MCU (0x22).
         """
         upload_url = f"http://{self.host}:{self._http_port}/upload"
-        burn_url = f"http://{self.host}:{self._http_port}{HTTP_PATH_BURN}"
+        burn_url = f"http://{self.host}:{self._http_port}/burn"
 
         async with aiohttp.ClientSession() as session:
             for idx, (fw_file, data) in enumerate(zip(files, blobs)):

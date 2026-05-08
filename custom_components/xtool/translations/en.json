@@ -135,7 +135,6 @@
       "origin_offset_y": { "name": "Origin offset Y" },
       "last_job_time": { "name": "Last job time" },
       "working_mode": { "name": "Working mode" },
-      "last_button_event": { "name": "Last button event" },
       "last_distance": { "name": "Last distance" },
       "purifier_speed": { "name": "Purifier speed" },
       "filter_pre": { "name": "Pre-filter remaining" },
@@ -284,6 +283,62 @@
       "quit_lightburn": { "name": "Quit LightBurn mode" },
       "reboot": { "name": "Reboot" },
       "time_sync": { "name": "Sync time" }
+    },
+    "event": {
+      "button": {
+        "name": "Button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "short_press": "Short press",
+              "long_press": "Long press",
+              "double_press": "Double press"
+            }
+          }
+        }
+      },
+      "job": {
+        "name": "Job",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "started": "Started",
+              "paused": "Paused",
+              "resumed": "Resumed",
+              "cancelled": "Cancelled",
+              "finished": "Finished",
+              "framing_started": "Framing started",
+              "framing_finished": "Framing finished"
+            }
+          }
+        }
+      },
+      "error": {
+        "name": "Error",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "limit": "Limit",
+              "laser_control": "Laser control",
+              "laser_module": "Laser module",
+              "tilt": "Tilt",
+              "moving": "Movement",
+              "emergency_stop": "Emergency stop"
+            }
+          }
+        }
+      },
+      "fire_warning": {
+        "name": "Fire warning",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "triggered": "Triggered",
+              "cleared": "Cleared"
+            }
+          }
+        }
+      }
     }
   }
 }

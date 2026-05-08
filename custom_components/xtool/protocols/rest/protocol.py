@@ -924,3 +924,22 @@ def _map_rest_mode(mode: str) -> XtoolStatus | None:
     return _REST_MODE_MAP.get(mode.upper())
 
 
+# Map firmware-emitted button-press strings (REST `/peripheral/button`)
+# to canonical event types. ``SHOERT_PRESS`` is a HJ003 firmware typo
+# documented in issue #3.
+_REST_BUTTON_EVENT_TYPE_MAP: dict[str, str] = {
+    "SHORT_PRESS":  "short_press",
+    "SHOERT_PRESS": "short_press",
+    "LONG_PRESS":   "long_press",
+    "DOUBLE_PRESS": "double_press",
+    "DOUBLE_CLICK": "double_press",
+}
+
+
+def _normalise_rest_button_event(raw: str) -> str | None:
+    """Normalise REST ``/peripheral/button`` event strings."""
+    if not raw:
+        return None
+    return _REST_BUTTON_EVENT_TYPE_MAP.get(str(raw).upper())
+
+

@@ -26,6 +26,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.camera import Camera
+from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ColorMode,
@@ -56,6 +57,7 @@ from homeassistant.util import dt as dt_util
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity
+from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
 
@@ -67,13 +69,6 @@ MIN_SNAPSHOT_INTERVAL = timedelta(seconds=30)
 # --- Sensors -----------------------------------------------------------
 
 WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
-    XtoolSensorEntityDescription(
-        key="last_button_event",
-        translation_key="last_button_event",
-        icon="mdi:gesture-tap-button",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda state, _: state.last_button_event or None,
-    ),
     XtoolSensorEntityDescription(
         key="task_id",
         translation_key="task_id",
@@ -845,6 +840,76 @@ class WSV2FirmwareUpdate(XtoolFirmwareUpdate):
     """V2 firmware update — same orchestrator, just a thin name marker."""
 
 
+# --- Events --------------------------------------------------------------
+
+# V2-specific event-type vocabularies. Job/error sets mostly align
+# with the universal XtoolStatus enum but P_EMERGENCY_STOP is V2-only,
+# and V2 push events deliver button presses directly (REST polls the
+# `last_button_event` peripheral once per cycle, S1/D-series have no
+# button push at all — see each family's entities.py for its own list).
+
+WSV2_BUTTON_EVENT_TYPES: tuple[str, ...] = (
+    "short_press",
+    "long_press",
+    "double_press",
+)
+
+WSV2_JOB_EVENT_TYPES: tuple[str, ...] = (
+    "started",
+    "paused",
+    "resumed",
+    "cancelled",
+    "finished",
+    "framing_started",
+    "framing_finished",
+)
+
+WSV2_ERROR_EVENT_TYPES: tuple[str, ...] = (
+    "limit",
+    "laser_control",
+    "laser_module",
+    "tilt",
+    "moving",
+    "emergency_stop",
+)
+
+WSV2_FIRE_WARNING_EVENT_TYPES: tuple[str, ...] = (
+    "triggered",
+    "cleared",
+)
+
+
+class WSV2ButtonEvent(XtoolEvent):
+    """Front-panel button presses (V2 ``/button/status`` push)."""
+
+    _kind = "button"
+    _attr_device_class = EventDeviceClass.BUTTON
+    _attr_icon = "mdi:gesture-tap-button"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "button", WSV2_BUTTON_EVENT_TYPES)
+
+
+class WSV2JobEvent(XtoolEvent):
+    """Job-lifecycle transitions derived from Status edges + P_* mode pushes."""
+
+    _kind = "job"
+    _attr_icon = "mdi:cog-play"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "job", WSV2_JOB_EVENT_TYPES)
+
+
+class WSV2ErrorEvent(XtoolEvent):
+    """Error transitions — Status enum edges + ``EMERGENCY_STOP`` push."""
+
+    _kind = "error"
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "error", WSV2_ERROR_EVENT_TYPES)
+
+
 # --- Builders ------------------------------------------------------------
 
 
@@ -1172,3 +1237,24 @@ def build_wsv2_updates(coordinator: XtoolCoordinator) -> list[UpdateEntity]:
     if not coordinator.model.firmware_content_id:
         return []
     return [WSV2FirmwareUpdate(coordinator)]
+
+
+class WSV2FireWarningEvent(XtoolEvent):
+    """Flame-detector triggered / cleared (V2: ``state.alarm_present`` edge)."""
+
+    _kind = "fire_warning"
+    _attr_icon = "mdi:fire-alert"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "fire_warning", WSV2_FIRE_WARNING_EVENT_TYPES,
+        )
+
+
+def build_wsv2_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
+    return [
+        WSV2ButtonEvent(coordinator),
+        WSV2JobEvent(coordinator),
+        WSV2ErrorEvent(coordinator),
+        WSV2FireWarningEvent(coordinator),
+    ]

@@ -12,6 +12,7 @@ from ..base import XtoolDeviceState
 if TYPE_CHECKING:
     from homeassistant.components.binary_sensor import BinarySensorEntity
     from homeassistant.components.button import ButtonEntity
+    from homeassistant.components.event import EventEntity
     from homeassistant.components.light import LightEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
@@ -72,6 +73,9 @@ class S1Coordinator(XtoolCoordinator):
                 await self._fetch_device_info()
                 self._device_info_fetched = True
 
+            prev_status = self.data.status if self.data else None
+            prev_alarm = self.data.alarm_present if self.data else False
+
             await self.protocol.poll_state(state)
 
             state.available = True
@@ -84,6 +88,9 @@ class S1Coordinator(XtoolCoordinator):
                 state.connection_count = await self.protocol.get_connection_count()
             except Exception:
                 pass
+
+            self._emit_status_transition_events(prev_status, state)
+            self._emit_fire_warning_if_changed(prev_alarm, state.alarm_present)
 
         except Exception as err:
             _LOGGER.debug("Error polling xTool S1: %s", err)
@@ -151,3 +158,88 @@ class S1Coordinator(XtoolCoordinator):
     def build_selects(self) -> list["SelectEntity"]:
         from .entities import build_s1_selects
         return build_s1_selects(self)
+
+    def build_events(self) -> list["EventEntity"]:
+        from .entities import build_s1_events
+        return build_s1_events(self)
+
+    # --- Event emission (S1-specific transitions) -----------------------
+
+    def _emit_status_transition_events(
+        self,
+        prev_status: Any,
+        state: XtoolDeviceState,
+    ) -> None:
+        """Job + error events on S1 Status edges. Mirrors the WS-V2
+        and REST mappings — once M222 status codes are normalised to
+        the universal ``XtoolStatus`` enum the transitions are
+        identical."""
+        from ...const import XtoolStatus
+
+        new_status = state.status
+        if new_status is None or new_status == prev_status:
+            return
+
+        running = {
+            XtoolStatus.PROCESSING,
+            XtoolStatus.WORKING_API,
+            XtoolStatus.WORKING_BUTTON,
+        }
+        idle_like = {
+            XtoolStatus.OFF,
+            XtoolStatus.IDLE,
+            XtoolStatus.SLEEPING,
+            XtoolStatus.INITIALIZING,
+            XtoolStatus.PROCESSING_READY,
+        }
+        framing = {XtoolStatus.FRAMING}
+        errors = {
+            XtoolStatus.ERROR_LIMIT:         "limit",
+            XtoolStatus.ERROR_LASER_CONTROL: "laser_control",
+            XtoolStatus.ERROR_LASER_MODULE:  "laser_module",
+        }
+
+        if prev_status in idle_like and new_status in running:
+            self._emit_event(
+                "job", "started",
+                {"task_id": state.task_id} if state.task_id else None,
+            )
+        elif prev_status in running and new_status == XtoolStatus.PAUSED:
+            self._emit_event("job", "paused", {"task_id": state.task_id})
+        elif prev_status == XtoolStatus.PAUSED and new_status in running:
+            self._emit_event("job", "resumed", {"task_id": state.task_id})
+        elif (
+            prev_status in (running | {XtoolStatus.PAUSED})
+            and new_status == XtoolStatus.FINISHED
+        ):
+            self._emit_event(
+                "job", "finished",
+                {
+                    "task_id": state.task_id,
+                    "duration": state.last_job_time_seconds or state.task_time,
+                },
+            )
+        elif new_status == XtoolStatus.CANCELLING:
+            self._emit_event("job", "cancelled", {"task_id": state.task_id})
+
+        if prev_status not in framing and new_status in framing:
+            self._emit_event("job", "framing_started", None)
+        if prev_status in framing and new_status not in framing:
+            self._emit_event("job", "framing_finished", None)
+
+        if new_status in errors:
+            self._emit_event("error", errors[new_status], None)
+
+    def _emit_fire_warning_if_changed(
+        self, prev: bool, new: bool,
+    ) -> None:
+        """Edge detector for ``state.alarm_present`` (M340) — emits
+        the dedicated ``fire_warning`` event when the flame detector
+        trips or recovers."""
+        if bool(prev) == bool(new):
+            return
+        self._emit_event(
+            "fire_warning",
+            "triggered" if new else "cleared",
+            None,
+        )

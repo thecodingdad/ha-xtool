@@ -26,6 +26,7 @@ from homeassistant.components.switch import (
     SwitchDeviceClass,
     SwitchEntity,
 )
+from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.update import UpdateEntity
 from homeassistant.const import (
     EntityCategory,
@@ -39,6 +40,7 @@ from homeassistant.util import dt as dt_util
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity
+from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
 from .protocol import (
@@ -538,7 +540,6 @@ def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
         entities.append(XtoolLastDistance(coordinator))
     # Universal diagnostic sensors
     entities.extend([
-        _RestStateSensor(coordinator, "last_button_event", "mdi:gesture-tap-button", "last_button_event"),
         _RestStateSensor(coordinator, "working_mode", "mdi:cog-play", "working_mode"),
         _RestStateSensor(coordinator, "print_tool_type", "mdi:tools", "print_tool_type"),
         _RestStateSensor(coordinator, "hardware_type", "mdi:chip", "hardware_type"),
@@ -1042,3 +1043,93 @@ def build_rest_updates(coordinator: XtoolCoordinator) -> list[UpdateEntity]:
     if coordinator.model.firmware_content_id:
         return [RestFirmwareUpdate(coordinator)]
     return []
+
+
+# --- Events --------------------------------------------------------------
+
+# REST event-type vocabularies. The legacy V1 firmware does not emit
+# the V2-only ``P_EMERGENCY_STOP`` mode, so the error vocabulary is a
+# strict subset of the WS-V2 one. Job + button vocabularies match —
+# the underlying ``XtoolStatus`` enum is shared across families and
+# REST polls the button peripheral every cycle.
+
+REST_BUTTON_EVENT_TYPES: tuple[str, ...] = (
+    "short_press",
+    "long_press",
+    "double_press",
+)
+
+REST_JOB_EVENT_TYPES: tuple[str, ...] = (
+    "started",
+    "paused",
+    "resumed",
+    "cancelled",
+    "finished",
+    "framing_started",
+    "framing_finished",
+)
+
+REST_ERROR_EVENT_TYPES: tuple[str, ...] = (
+    "limit",
+    "laser_control",
+    "laser_module",
+    "tilt",
+    "moving",
+)
+
+REST_FIRE_WARNING_EVENT_TYPES: tuple[str, ...] = (
+    "triggered",
+    "cleared",
+)
+
+
+class RestButtonEvent(XtoolEvent):
+    """Front-panel button presses, derived from ``/peripheral/button`` polling."""
+
+    _kind = "button"
+    _attr_device_class = EventDeviceClass.BUTTON
+    _attr_icon = "mdi:gesture-tap-button"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "button", REST_BUTTON_EVENT_TYPES)
+
+
+class RestJobEvent(XtoolEvent):
+    """Job-lifecycle transitions derived from REST Status edges."""
+
+    _kind = "job"
+    _attr_icon = "mdi:cog-play"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "job", REST_JOB_EVENT_TYPES)
+
+
+class RestErrorEvent(XtoolEvent):
+    """Error transitions on REST devices (no e-stop — V2-only)."""
+
+    _kind = "error"
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "error", REST_ERROR_EVENT_TYPES)
+
+
+class RestFireWarningEvent(XtoolEvent):
+    """Flame-detector triggered / cleared (REST: ``ERROR_FIRE_WARNING`` Status edge)."""
+
+    _kind = "fire_warning"
+    _attr_icon = "mdi:fire-alert"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "fire_warning", REST_FIRE_WARNING_EVENT_TYPES,
+        )
+
+
+def build_rest_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
+    return [
+        RestButtonEvent(coordinator),
+        RestJobEvent(coordinator),
+        RestErrorEvent(coordinator),
+        RestFireWarningEvent(coordinator),
+    ]

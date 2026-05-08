@@ -135,7 +135,6 @@
       "origin_offset_y": { "name": "Origin-Offset Y" },
       "last_job_time": { "name": "Letzte Auftragszeit" },
       "working_mode": { "name": "Betriebsmodus" },
-      "last_button_event": { "name": "Letzter Tastendruck" },
       "last_distance": { "name": "Letzte Distanz" },
       "purifier_speed": { "name": "Reiniger-Stufe" },
       "filter_pre": { "name": "Vorfilter Restkapazität" },
@@ -284,6 +283,62 @@
       "quit_lightburn": { "name": "LightBurn-Modus verlassen" },
       "reboot": { "name": "Neustart" },
       "time_sync": { "name": "Zeit synchronisieren" }
+    },
+    "event": {
+      "button": {
+        "name": "Taste",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "short_press": "Kurzer Druck",
+              "long_press": "Langer Druck",
+              "double_press": "Doppelklick"
+            }
+          }
+        }
+      },
+      "job": {
+        "name": "Auftrag",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "started": "Gestartet",
+              "paused": "Pausiert",
+              "resumed": "Fortgesetzt",
+              "cancelled": "Abgebrochen",
+              "finished": "Beendet",
+              "framing_started": "Rahmen gestartet",
+              "framing_finished": "Rahmen beendet"
+            }
+          }
+        }
+      },
+      "error": {
+        "name": "Fehler",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "limit": "Endschalter",
+              "laser_control": "Lasersteuerung",
+              "laser_module": "Lasermodul",
+              "tilt": "Neigung",
+              "moving": "Bewegung",
+              "emergency_stop": "Not-Halt"
+            }
+          }
+        }
+      },
+      "fire_warning": {
+        "name": "Feueralarm",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "triggered": "Ausgelöst",
+              "cleared": "Aufgehoben"
+            }
+          }
+        }
+      }
     }
   }
 }
