@@ -735,13 +735,18 @@ class S1Protocol(XtoolProtocol):
             state.position_y = parse_param_float(r[CMD_POSITION], "Y")
             state.position_z = parse_param_float(r[CMD_POSITION], "Z")
 
-        # Task ID (with push cache fallback)
+        # Task ID (with push cache fallback). M810 returns "NULL" while
+        # no job is loaded — keep the previous value in that case so
+        # the sensor still surfaces the most recent job ID rather than
+        # going Unknown between runs (matches the WS-V2 behaviour).
         if r[CMD_TASK_ID]:
             task_id = parse_quoted_string(r[CMD_TASK_ID]) or ""
-            state.task_id = "" if task_id == "NULL" else task_id
+            if task_id and task_id != "NULL":
+                state.task_id = task_id
         elif CMD_TASK_ID in self._push_state:
             task_id = parse_quoted_string(f'{CMD_TASK_ID} {self._push_state[CMD_TASK_ID]}') or ""
-            state.task_id = "" if task_id == "NULL" else task_id
+            if task_id and task_id != "NULL":
+                state.task_id = task_id
 
         if r[CMD_TASK_TIME]:
             # M815 keeps incrementing on the device even when no job is
