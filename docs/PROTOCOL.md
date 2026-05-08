@@ -1637,8 +1637,8 @@ device model exposes the peripheral):
 | `uv_fire_sensor` | UV flame-detector trip |
 | `water_pump` / `water_line` | water-loop pump + flow OK |
 | `water_tmp` / `water_flow` | water-loop temperature + flow |
-| `gyro` | accelerometer X/Y/Z |
-| `laser_head` | laser-head position X/Y/Z |
+| `gyro` | accelerometer X/Y/Z (also `acc_xyz`, `pitch`, `roll`, `yaw`) |
+| `laser_head` | laser-head position X/Y/Z. **Requires `data:{action:"get_coord"}`** — plain GET returns `code 1: failed`. |
 | `ir_measure_distance` | last distance reading |
 | `digital_screen` | display brightness |
 | `fill_light` | fill-light brightness (A/B channels) |
@@ -1662,7 +1662,14 @@ emits these push frames (all without `transactionId`):
 | `url` | `module` | Notes |
 |---|---|---|
 | `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). |
+| `/device/info` | `MACHINE_INFO` | `type:"INFO"` — full machine identity blob (`deviceName`, `sn`, `mac`, `firmware.package_version`, `laserPower[]`, `hardware{}`). MetalFab returns an empty body for the `GET /v1/device/machineInfo`; the same payload arrives via this push a few hundred ms after the WS opens. Consumers should fall back to it when the GET is empty. |
 | `/peripheral/<type>` | varies | Per-peripheral push. Observed types: `drawer`, `water_pump`, `water_line`, `cooling_fan`, `smoking_fan`, `cpu_fan`, `uv_fire_sensor`, `ir_led`, `fill_light`, `digital_screen`, `ext_purifier`, `gyro`, `laser_head`, `ir_measure_distance`. |
+| `/drawer/status` | `DRAWER` | `type:"OPEN"` / `type:"CLOSE"` — drawer transitions. |
+| `/emergency/status` | `EMERGENCY_STOP` | `type:"VOLTAGE_TRIGGER"` (e-stop pressed) / `"RESUME"` (released). MetalFab also pairs this with a `/work/mode MODE_CHANGE` push setting `mode: "P_EMERGENCY_STOP"`. |
+| `/board/link` | `BOARDS` | `type:"CONNECT"` — accessory board joined the device (e.g. `info:"weld_machine"`). |
+| `/move/status` | `CONTROLLER` | `type:"AXIS_HOME_FINISHED"` — homing per axis (`info:"x"` / `"y"` / `"z"` / `"xy"`). |
+| `/laserhead/status` | `LASER_HEAD` | `type:"BUSY"` / `"IDLE"` — laser-head working flag. |
+| `/weld/alarm` | `WELD_DEVICE` | MetalFab welding accessory: `type:"AIR_PRESSURE"` (`info` is bar × 100), `"CONNECT"` (`info` = laser power in W), `"DISCONNECT"`. |
 | `/button/status` | `BUTTON` | Physical-button event from the device's front panel. |
 
 #### Field-presence guarantees
@@ -1672,6 +1679,37 @@ value at the moment the response is produced. A consumer should treat
 absent fields as "unchanged" rather than clearing the previous value
 — several V2 firmware revisions omit numeric fields when their hardware
 sensor is currently warming up or unselected.
+
+#### Per-firmware peripheral availability
+
+Not every model accepts every `type` on `/v1/peripheral/param`. Live
+captures show the firmware returning one of three error codes when the
+type is unsupported:
+
+| Code | Meaning | Behaviour |
+|---|---|---|
+| `-3` | `error action type !` — type recognised but state-query path missing | Stop polling for the rest of this WS connection |
+| `10` | `device not support` — model does not have the hardware | Same |
+| `1` | `failed` — generic, often from a `type` that needs a specific `data.action` body | Same (or retry with a known action body) |
+
+E.g. MetalFab (HJ003) rejects `cooling_fan` / `smoking_fan` /
+`airassistV2` with `-3` and the water-loop trio with `10`, while the
+P-family answers all of them. A V2 client should keep a per-connection
+"known-unsupported types" cache and skip the rejected ones on
+subsequent polls.
+
+#### Statistics field aliases
+
+`/v1/device/statistics` returns model-specific keys:
+
+| Model family | Keys observed |
+|---|---|
+| F1 Ultra V2 / GS003 / P3 | `timeModeWorking`, `timeSystemWork`, `numOnlineWorking`, `numOfflineWorking`, `toolRuntime` |
+| MetalFab / HJ003 | `clickFlashDrive`, `clickLocalFile`, `fireboxV1_5Used`, `flashDriveGoProcessing`, `insertFlashDrive`, `lastProcessed`, `localFileGoProcessing`, `numOfflineWorking`, `numOnlineWorking` (no time-based counters) |
+
+Consumers should treat the absence of any key as "this firmware
+doesn't track that counter" — the corresponding sensor stays
+unavailable rather than reporting stale data.
 
 
 ---

@@ -264,6 +264,7 @@ WSV2_MODE_MAP: dict[str, XtoolStatus] = {
     "P_MEASURE":            XtoolStatus.MEASURING,
     "P_UPGRADE":            XtoolStatus.FIRMWARE_UPDATE,
     "P_ERROR":              XtoolStatus.ERROR_LIMIT,
+    "P_EMERGENCY_STOP":     XtoolStatus.ERROR_LIMIT,
 }
 
 
@@ -378,6 +379,11 @@ class WSV2Protocol(XtoolProtocol):
         # Slow-cadence counter for /v1/device/statistics + /v1/device/configs
         # — re-querying every poll wastes bandwidth + device CPU.
         self._poll_counter = 0
+        # Per-connection cache of peripheral types the firmware refused
+        # (`code -3`, `code 10`, `code 1`). Avoids re-hammering endpoints
+        # the model doesn't expose. Cleared on every fresh connect so a
+        # firmware upgrade re-probes.
+        self._unsupported_peripheral_types: set[str] = set()
         # Aggregator for partial BINARY frames — V2 firmware sometimes
         # splits a single CRC-wrapped envelope across multiple WS
         # messages, so we always feed bytes through ``_decode_frames``
@@ -440,6 +446,9 @@ class WSV2Protocol(XtoolProtocol):
             raise ConnectionError(f"V2 WebSocket connect failed: {err}") from err
         _LOGGER.debug("V2 WS open to %s — sending parity handshake", self.host)
         self._connected = True
+        # Reset the per-connection peripheral-rejection cache — fresh
+        # firmware revisions might expose types the previous one didn't.
+        self._unsupported_peripheral_types.clear()
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -862,6 +871,12 @@ class WSV2Protocol(XtoolProtocol):
                 mode = str(info.get("mode") or "").upper()
                 if info.get("taskId") is not None:
                     self._latest["task_id"] = info["taskId"]
+                # Only overwrite working_mode when the push carries a
+                # non-empty subMode — empty strings (idle / paused
+                # transitions) would otherwise blank the entity.
+                sub = info.get("subMode")
+                if sub:
+                    self._latest["working_mode"] = str(sub)
             mapped = WSV2_MODE_MAP.get(mode)
             if mapped is not None:
                 self._latest["status"] = mapped
@@ -898,10 +913,20 @@ class WSV2Protocol(XtoolProtocol):
                     self._latest["task_id"] = info["taskId"]
 
         elif url == "/gap/status" and module == "GAP":
+            # Push event names invert in step with the poll polarity
+            # — see MetalFab note in `_apply_peripheral_param`.
             if typ == "OPEN":
-                self._latest["cover_open"] = True
-            elif typ == "CLOSE":
                 self._latest["cover_open"] = False
+            elif typ == "CLOSE":
+                self._latest["cover_open"] = True
+
+        elif url == "/drawer/status" and module == "DRAWER":
+            # Same inversion as `/gap/status` — firmware emits OPEN
+            # when the drawer is pushed back in.
+            if typ == "OPEN":
+                self._latest["drawer_open"] = False
+            elif typ == "CLOSE":
+                self._latest["drawer_open"] = True
 
         elif url == "/machine_lock/status" and module == "MACHINE_LOCK":
             # Device emits OPEN when unlocked, CLOSE when locked.
@@ -909,6 +934,38 @@ class WSV2Protocol(XtoolProtocol):
                 self._latest["machine_lock"] = False
             elif typ == "CLOSE":
                 self._latest["machine_lock"] = True
+
+        elif url == "/emergency/status" and module == "EMERGENCY_STOP":
+            # MetalFab fires VOLTAGE_TRIGGER when the e-stop button
+            # is pressed and RESUME when the operator releases it.
+            if typ in ("VOLTAGE_TRIGGER", "TRIGGER"):
+                self._latest["status"] = XtoolStatus.ERROR_LIMIT
+                self._latest["alarm_present"] = True
+            elif typ == "RESUME":
+                self._latest["alarm_present"] = False
+
+        elif url == "/device/info" and module == "MACHINE_INFO" and typ == "INFO":
+            # MetalFab returns an empty body from GET
+            # /v1/device/machineInfo and only emits the real device
+            # info via this push (after the WS opens). Latch the
+            # fields the integration's DeviceInfo cares about so the
+            # device-card title + firmware-version show up.
+            if isinstance(info, dict):
+                if info.get("deviceName"):
+                    self._latest["device_name"] = info["deviceName"]
+                if info.get("sn"):
+                    self._latest["serial_number"] = info["sn"]
+                if info.get("mac"):
+                    self._latest["mac_address"] = info["mac"]
+                fw = info.get("firmware") or {}
+                if isinstance(fw, dict):
+                    pkg = (
+                        fw.get("package_version")
+                        or fw.get("master_rk3568_mainservice")
+                        or fw.get("master_h3_laserservice")
+                    )
+                    if pkg:
+                        self._latest["firmware_version"] = pkg
 
         elif url == "/button/status" and module == "BUTTON":
             self._latest["last_button_event"] = (
@@ -1067,6 +1124,7 @@ class WSV2Protocol(XtoolProtocol):
             if isinstance(firmware, dict):
                 info.main_firmware = (
                     firmware.get("package_version")
+                    or firmware.get("master_rk3568_mainservice")
                     or firmware.get("master_h3_laserservice")
                     or ""
                 )
@@ -1081,10 +1139,26 @@ class WSV2Protocol(XtoolProtocol):
                 # Set the underlying ``laser`` field — the property
                 # picks the value up automatically.
                 info.laser = LaserInfo(power_watts=watts)
+
+        # MetalFab firmware returns an empty body for the GET — the
+        # real machineInfo arrives via the `/device/info MACHINE_INFO
+        # INFO` push event after the WS opens. Fall back to whatever
+        # the push handler has already cached in ``_latest``.
+        if not info.device_name:
+            info.device_name = self._latest.get("device_name", "")
+        if not info.serial_number:
+            info.serial_number = self._latest.get("serial_number", "")
+        if not info.mac_address:
+            info.mac_address = self._latest.get("mac_address", "")
+        if not info.main_firmware:
+            info.main_firmware = self._latest.get("firmware_version", "")
+
         # Cache for later poll cycles
         self._latest["device_name"] = info.device_name
         self._latest["serial_number"] = info.serial_number
         self._latest["firmware_version"] = info.main_firmware
+        if info.mac_address:
+            self._latest["mac_address"] = info.mac_address
         return info
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
@@ -1114,41 +1188,80 @@ class WSV2Protocol(XtoolProtocol):
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
         # Build the type list dynamically from the model's capability
         # flags so we don't hammer the device with queries it has no
-        # peripheral for.
+        # peripheral for. The always-on baseline is restricted to
+        # types that work without an ``action`` body on every V2
+        # firmware variant we've seen — `cooling_fan`, `smoking_fan`
+        # and `airassistV2` are NOT in that set (HJ003 / GS003 reject
+        # them with `code -3 error action type !`).
         model = getattr(self, "_model", None)
-        ptypes: list[str] = ["gap", "machine_lock", "airassistV2",
-                              "cooling_fan", "smoking_fan"]
+        ptypes: list[tuple[str, dict[str, Any] | None]] = [
+            ("gap", None),
+            ("machine_lock", None),
+        ]
         if model is not None:
             if getattr(model, "has_drawer", False):
-                ptypes.append("drawer")
+                ptypes.append(("drawer", None))
             if getattr(model, "has_uv_fire", False):
-                ptypes.append("uv_fire_sensor")
+                ptypes.append(("uv_fire_sensor", None))
             if getattr(model, "has_water_cooling", False):
-                ptypes.extend(["water_pump", "water_line",
-                                "water_tmp", "water_flow"])
+                ptypes.extend([
+                    ("water_pump", None),
+                    ("water_line", None),
+                    ("water_tmp", None),
+                    ("water_flow", None),
+                ])
             if getattr(model, "has_gyro", False):
-                ptypes.append("gyro")
+                ptypes.append(("gyro", None))
             if (
                 getattr(model, "has_laser_head_position", False)
                 or getattr(model, "has_z_axis", False)
             ):
-                ptypes.append("laser_head")
+                # ``laser_head`` requires an explicit action — Studio
+                # bundles always send `data:{action:"get_coord"}` for
+                # state queries, plain GET returns `code 1: failed`.
+                ptypes.append(("laser_head", {"action": "get_coord"}))
             if getattr(model, "has_distance_measure", False):
-                ptypes.append("ir_measure_distance")
+                ptypes.append(("ir_measure_distance", None))
             if getattr(model, "has_display_screen", False):
-                ptypes.append("digital_screen")
+                ptypes.append(("digital_screen", None))
             if getattr(model, "has_fill_light_rest", False):
-                ptypes.append("fill_light")
+                ptypes.append(("fill_light", None))
             if getattr(model, "has_purifier_timeout", False) or \
                getattr(model, "has_air_assist_state", False):
-                ptypes.append("ext_purifier")
+                ptypes.append(("ext_purifier", None))
 
-        for ptype in ptypes:
+        for ptype, body in ptypes:
+            if ptype in self._unsupported_peripheral_types:
+                continue
             try:
                 p = await self.request(
                     "/v1/peripheral/param", "GET",
                     params={"type": ptype},
+                    data=body,
                 )
+            except RuntimeError as err:
+                msg = str(err)
+                # Firmware-side rejection — type is not exposed on this
+                # model. Cache it so we stop retrying every poll. The
+                # set is reset on each connect so a firmware upgrade
+                # gets re-probed.
+                if (
+                    "code -3" in msg
+                    or "code 10" in msg
+                    or "code 1:" in msg
+                ):
+                    _LOGGER.debug(
+                        "V2 peripheral type=%s rejected by firmware "
+                        "(%s) — suppressing for this connection",
+                        ptype, msg,
+                    )
+                    self._unsupported_peripheral_types.add(ptype)
+                else:
+                    _LOGGER.debug(
+                        "V2 /v1/peripheral/param type=%s failed: %s",
+                        ptype, err,
+                    )
+                continue
             except Exception as err:
                 _LOGGER.debug(
                     "V2 /v1/peripheral/param type=%s failed: %s",
@@ -1310,20 +1423,26 @@ class WSV2Protocol(XtoolProtocol):
         is_off = st == "off" if isinstance(st, str) else None
 
         if ptype == "gap":
-            # V2 firmware reports `state:"on"` when the cover is OPEN
-            # (mirrors the `gap_is_open` field surfaced in `machineInfo`
-            # on MetalFab + F1 Ultra). This is the inverse of the V1
-            # REST convention used by the legacy P-family firmware.
-            state.cover_open = is_on
+            # MetalFab user feedback (v2.3.4 → v2.3.5): the firmware
+            # uses the V1 REST convention — `state:"on"` = cover
+            # closed, `state:"off"` = cover open. (v2.3.2 had this
+            # flipped based on a `gap_is_open` field name in
+            # machineInfo, but live captures show the polarity is
+            # opposite to that label.)
+            state.cover_open = is_off
         elif ptype == "machine_lock":
             state.machine_lock = is_off  # off = unlocked → True (LOCK device class)
         elif ptype == "airassistV2":
             state.air_assist_connected = is_on
         elif ptype == "drawer":
-            # V2 firmware reports `state:"on"` when the drawer is OPEN
-            # (matches `drawer_is_off` semantics — "is_off" the slot,
-            # i.e. drawer not in slot). Same inversion as `gap` above.
-            state.drawer_open = is_on
+            # MetalFab user feedback (v2.3.4 → v2.3.5): drawer polarity
+            # is the inverse of `gap`. Firmware reports `state:"off"`
+            # when the drawer is pulled out (consistent with the
+            # `drawer_is_off` machineInfo field — "drawer is off the
+            # slot"). The accompanying push events `/drawer/status
+            # OPEN`/`CLOSE` invert too: `OPEN` = drawer pushed back
+            # in, `CLOSE` = drawer pulled out.
+            state.drawer_open = is_off
         elif ptype == "cooling_fan":
             state.cooling_fan_running = is_on
         elif ptype == "smoking_fan":

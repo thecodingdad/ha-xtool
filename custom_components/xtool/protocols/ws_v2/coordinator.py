@@ -56,9 +56,19 @@ class WSV2Coordinator(XtoolCoordinator):
             if not self.protocol.connected:
                 await self.protocol.connect()
 
-            if not self._device_info_fetched:
+            # Re-attempt the machineInfo fetch each poll until it
+            # actually returns identifying data — MetalFab's GET
+            # /v1/device/machineInfo is empty on first call and only
+            # populates after the `/device/info MACHINE_INFO INFO`
+            # push lands a few hundred ms into the connection.
+            if (
+                not self._device_info_fetched
+                or not self.serial_number
+                or not self.firmware_version
+            ):
                 await self._fetch_device_info()
-                self._device_info_fetched = True
+                if self.serial_number or self.firmware_version:
+                    self._device_info_fetched = True
 
             await self.protocol.poll_state(state)
 
