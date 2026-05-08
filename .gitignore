@@ -4,6 +4,7 @@ decompiled/
 extracted_assets/
 firmware/
 xTool Studio/
+logs/
 
 # Python
 __pycache__/
