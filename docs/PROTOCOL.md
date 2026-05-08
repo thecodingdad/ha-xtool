@@ -1558,7 +1558,7 @@ and without `type:"response"`. Frame schema:
 | `/device/status` | `STATUS_CONTROLLER` | `WORK_STARTED` | `framing` or `processing`. |
 | `/device/status` | `STATUS_CONTROLLER` | `WORK_FINISHED` | `idle` (if a framing run finished) or `finished`. |
 | `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | Captures `info.timeUse`, `info.taskId`. |
-| `/gap/status` | `GAP` | `OPEN`/`CLOSE` | Cover state. |
+| `/gap/status` | `GAP` | `OPEN`/`CLOSE` | Cover transitions. **Inverted naming:** firmware emits `OPEN` when the cover is closed and `CLOSE` when it is opened (matches the `state:"on"` / `state:"off"` polarity of the polled `gap` peripheral). |
 | `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | LOCK device class — `OPEN`=unlocked, `CLOSE`=locked. |
 
 ### `P_*` mode enum (V2 work-state)
@@ -1581,6 +1581,7 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 | `P_MEASURE` | Measure / probe in progress |
 | `P_UPGRADE` | Firmware upgrade in progress |
 | `P_ERROR` | Error state |
+| `P_EMERGENCY_STOP` | Emergency-stop button pressed (paired with the `/emergency/status EMERGENCY_STOP VOLTAGE_TRIGGER` push; cleared by `/emergency/status … RESUME`). |
 
 `subMode` carries the working-mode classifier (e.g. `LASER_PLANE`,
 `KNIFE_CUT`, `INK_PRINT`, `DTF_PRINT`, `ROTATE_ATTACHMENT`,
@@ -1627,23 +1628,23 @@ device model exposes the peripheral):
 
 | `type` | Reads |
 |---|---|
-| `gap` | cover open/close |
-| `machine_lock` | safety-lock state |
-| `drawer` | drawer open/close |
-| `airassistV2` | Air-Assist BLE connect state |
-| `cooling_fan` | cooling-fan run state |
-| `smoking_fan` | exhaust-fan run state |
-| `cpu_fan` | CPU-fan run state |
-| `uv_fire_sensor` | UV flame-detector trip |
-| `water_pump` / `water_line` | water-loop pump + flow OK |
-| `water_tmp` / `water_flow` | water-loop temperature + flow |
-| `gyro` | accelerometer X/Y/Z (also `acc_xyz`, `pitch`, `roll`, `yaw`) |
-| `laser_head` | laser-head position X/Y/Z. **Requires `data:{action:"get_coord"}`** — plain GET returns `code 1: failed`. |
-| `ir_measure_distance` | last distance reading |
-| `digital_screen` | display brightness |
-| `fill_light` | fill-light brightness (A/B channels) |
-| `led` (IR) | IR-LED close-up / overview state |
-| `ext_purifier` | external-purifier speed + on/off |
+| `gap` | Cover state. `state:"on"` = **closed**, `state:"off"` = **open** (V1 REST convention; V2 keeps the same polarity per live MetalFab + F1 Ultra captures). |
+| `machine_lock` | Safety-lock state. `state:"on"` = locked. |
+| `drawer` | Drawer state. Same polarity as `gap`: `state:"on"` = closed (drawer in slot), `state:"off"` = open / pulled out. |
+| `airassistV2` | Air-Assist BLE connect state. **Not exposed on V2 firmware** — HJ003 / GS003 reject the GET with `code -3: error action type !`. |
+| `cooling_fan` | Cooling-fan run state. **Not exposed on HJ003** — same `code -3`. |
+| `smoking_fan` | Exhaust-fan run state. **Not exposed on HJ003** — same `code -3`. |
+| `cpu_fan` | CPU-fan run state. |
+| `uv_fire_sensor` | UV flame-detector trip. |
+| `water_pump` / `water_line` | Water-loop pump + flow OK. Returns `code 10: device not support` on models without water cooling. |
+| `water_tmp` / `water_flow` | Water-loop temperature + flow. Same `code 10` on dry-laser models. |
+| `gyro` | Accelerometer X/Y/Z (also `acc_xyz`, `pitch`, `roll`, `yaw`). |
+| `laser_head` | Laser-head position X/Y/Z. **Requires `data:{action:"get_coord"}`** — plain GET returns `code 1: failed`. |
+| `ir_measure_distance` | Last distance reading. |
+| `digital_screen` | Display brightness. |
+| `fill_light` | Fill-light brightness (A/B channels). |
+| `led` (IR) | IR-LED close-up / overview state. |
+| `ext_purifier` | External-purifier speed + on/off. |
 
 Action paths:
 
@@ -1664,13 +1665,13 @@ emits these push frames (all without `transactionId`):
 | `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). |
 | `/device/info` | `MACHINE_INFO` | `type:"INFO"` — full machine identity blob (`deviceName`, `sn`, `mac`, `firmware.package_version`, `laserPower[]`, `hardware{}`). MetalFab returns an empty body for the `GET /v1/device/machineInfo`; the same payload arrives via this push a few hundred ms after the WS opens. Consumers should fall back to it when the GET is empty. |
 | `/peripheral/<type>` | varies | Per-peripheral push. Observed types: `drawer`, `water_pump`, `water_line`, `cooling_fan`, `smoking_fan`, `cpu_fan`, `uv_fire_sensor`, `ir_led`, `fill_light`, `digital_screen`, `ext_purifier`, `gyro`, `laser_head`, `ir_measure_distance`. |
-| `/drawer/status` | `DRAWER` | `type:"OPEN"` / `type:"CLOSE"` — drawer transitions. |
+| `/drawer/status` | `DRAWER` | Drawer transitions. **Note:** the `type` strings invert the obvious meaning — firmware emits `type:"OPEN"` when the drawer is pushed back into the slot, `type:"CLOSE"` when it is pulled out (matches the `state:"on"` / `state:"off"` polarity of the polled `drawer` peripheral). |
 | `/emergency/status` | `EMERGENCY_STOP` | `type:"VOLTAGE_TRIGGER"` (e-stop pressed) / `"RESUME"` (released). MetalFab also pairs this with a `/work/mode MODE_CHANGE` push setting `mode: "P_EMERGENCY_STOP"`. |
 | `/board/link` | `BOARDS` | `type:"CONNECT"` — accessory board joined the device (e.g. `info:"weld_machine"`). |
 | `/move/status` | `CONTROLLER` | `type:"AXIS_HOME_FINISHED"` — homing per axis (`info:"x"` / `"y"` / `"z"` / `"xy"`). |
 | `/laserhead/status` | `LASER_HEAD` | `type:"BUSY"` / `"IDLE"` — laser-head working flag. |
 | `/weld/alarm` | `WELD_DEVICE` | MetalFab welding accessory: `type:"AIR_PRESSURE"` (`info` is bar × 100), `"CONNECT"` (`info` = laser power in W), `"DISCONNECT"`. |
-| `/button/status` | `BUTTON` | Physical-button event from the device's front panel. |
+| `/button/status` | `BUTTON` | Physical-button event from the device's front panel. Observed `type` strings: `SHORT_PRESS`, `LONG_PRESS`, `DOUBLE_PRESS`. **Watch out** — HJ003 firmware emits `SHOERT_PRESS` (sic) for short presses; consumers should normalise the typo. |
 
 #### Field-presence guarantees
 
