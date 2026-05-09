@@ -16,6 +16,7 @@ for the V1 REST equivalents whose patterns we mirror.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
 from typing import Any
@@ -25,6 +26,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.components.button import ButtonEntity
+from aiohttp import web
 from homeassistant.components.camera import Camera
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
@@ -64,6 +66,11 @@ from ...update import XtoolFirmwareUpdate
 _LOGGER = logging.getLogger(__name__)
 
 MIN_SNAPSHOT_INTERVAL = timedelta(seconds=30)
+# Per-frame poll cadence for the MJPEG live-view entity. Studio's
+# ``captureGlobalImage`` route is on-demand only — no firmware-mandated
+# rate. Empirically the V2 firmware tolerates ~1 Hz comfortably; faster
+# than ~2 Hz queues snaps behind unfinished file_stream transfers.
+LIVE_FRAME_INTERVAL = 1.0
 
 
 # --- Sensors -----------------------------------------------------------
@@ -813,8 +820,8 @@ class _WSV2Camera(XtoolEntity, Camera):
     """Camera backed by ``/v1/camera/snap?type=<type>``.
 
     Snapshots are cached for ``MIN_SNAPSHOT_INTERVAL`` to keep the device
-    CPU + WS bandwidth low. Live MJPEG via ``function=media_stream`` is
-    a separate (parked) feature.
+    CPU + WS bandwidth low. The companion ``_WSV2LiveCamera`` entity
+    serves a poll-driven MJPEG stream on the same wire path.
     """
 
     _camera_type: str = ""
@@ -825,11 +832,12 @@ class _WSV2Camera(XtoolEntity, Camera):
         key: str,
         camera_type: str,
         icon: str | None = None,
+        translation_key: str | None = None,
     ) -> None:
         XtoolEntity.__init__(self, coordinator)
         Camera.__init__(self)
         self._set_unique_id(f"{key}")
-        self._attr_translation_key = key
+        self._attr_translation_key = translation_key or key
         self._camera_type = camera_type
         if icon is not None:
             self._attr_icon = icon
@@ -856,6 +864,62 @@ class _WSV2Camera(XtoolEntity, Camera):
             self._last_snapshot = image
             self._last_snapshot_time = now
         return self._last_snapshot
+
+
+class _WSV2LiveCamera(_WSV2Camera):
+    """Live MJPEG camera — repeated ``/v1/camera/snap`` polled at
+    ``LIVE_FRAME_INTERVAL``.
+
+    HA serves the multipart stream returned by
+    :meth:`async_handle_async_mjpeg_stream` as
+    ``multipart/x-mixed-replace`` directly to the browser, so HA's
+    Lovelace ``picture`` card renders the snaps as a continuous video
+    feed at ~1 Hz. Substitute for the unimplemented WebRTC
+    ``media_stream`` path (see PROTOCOL.md).
+    """
+
+    _attr_is_streaming = True
+
+    async def handle_async_mjpeg_stream(
+        self, request: web.Request,
+    ) -> web.StreamResponse | None:
+        boundary = "--xtoolframe"
+        response = web.StreamResponse(
+            status=200,
+            headers={
+                "Content-Type": (
+                    f"multipart/x-mixed-replace; boundary={boundary[2:]}"
+                ),
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
+        await response.prepare(request)
+        try:
+            while True:
+                try:
+                    jpeg = await self.coordinator.protocol.camera_snap(
+                        self._camera_type,
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "V2 live MJPEG %s: snap failed: %s",
+                        self._camera_type, err,
+                    )
+                    jpeg = None
+                if jpeg:
+                    await response.write(
+                        boundary.encode()
+                        + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                        + str(len(jpeg)).encode()
+                        + b"\r\n\r\n"
+                        + jpeg
+                        + b"\r\n"
+                    )
+                await asyncio.sleep(LIVE_FRAME_INTERVAL)
+        except (asyncio.CancelledError, ConnectionResetError):
+            pass
+        return response
 
 
 # --- Firmware update ----------------------------------------------------
@@ -1261,6 +1325,14 @@ def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
     cameras: list[Camera] = [
         _WSV2Camera(coordinator, "camera_overview", "overview", "mdi:camera"),
         _WSV2Camera(coordinator, "camera_closeup", "closeup", "mdi:camera-burst"),
+        _WSV2LiveCamera(
+            coordinator, "camera_overview_live", "overview",
+            "mdi:cctv", translation_key="camera_overview",
+        ),
+        _WSV2LiveCamera(
+            coordinator, "camera_closeup_live", "closeup",
+            "mdi:cctv", translation_key="camera_closeup",
+        ),
     ]
     if coordinator.model.has_fire_record:
         cameras.append(
