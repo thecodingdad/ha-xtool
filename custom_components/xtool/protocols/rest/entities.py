@@ -512,7 +512,7 @@ def build_rest_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 
 def build_rest_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
-    if coordinator.model.has_fill_light_rest:
+    if coordinator.model.has_fill_light:
         return [XtoolRestFillLight(coordinator)]
     return []
 

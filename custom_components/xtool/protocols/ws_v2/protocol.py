@@ -1259,7 +1259,7 @@ class WSV2Protocol(XtoolProtocol):
                 ptypes.append(("ir_measure_distance", None))
             if getattr(model, "has_display_screen", False):
                 ptypes.append(("digital_screen", None))
-            if getattr(model, "has_fill_light_rest", False):
+            if getattr(model, "has_fill_light", False):
                 ptypes.append(("fill_light", None))
             if getattr(model, "has_purifier_timeout", False) or \
                getattr(model, "has_air_assist_state", False):

@@ -98,12 +98,12 @@ class XtoolDeviceModel:
     name: str
     protocol_class: type["XtoolProtocol"] | None = None
     coordinator_class: type["XtoolCoordinator"] | None = None
-    has_flame_alarm: bool = True
+    has_flame_alarm: bool = False
     has_air_assist_state: bool = False  # REST: poll /peripheral/airassist for connect state
-    has_smoking_fan: bool = True
-    has_fill_light: bool = True
-    has_move_stop: bool = True
-    has_beeper: bool = True
+    has_smoking_fan: bool = False
+    has_fill_light: bool = False
+    has_move_stop: bool = False
+    has_beeper: bool = False
     has_z_axis: bool = False
     has_drawer: bool = False
     has_cover_sensor: bool = False
@@ -121,7 +121,6 @@ class XtoolDeviceModel:
     has_laser_head_position: bool = False
     has_mode_switch: bool = False
     has_purifier_timeout: bool = False
-    has_fill_light_rest: bool = False
     has_water_cooling: bool = False  # REST: F1 Ultra fiber-laser water loop
     has_z_temp: bool = False  # REST: M1 Ultra Z-axis NTC temperature
     has_workhead_id: bool = False  # REST: M1 Ultra detects mounted tool head

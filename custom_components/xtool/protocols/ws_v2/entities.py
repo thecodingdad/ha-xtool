@@ -1143,7 +1143,7 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
                 "air_assist_gear_grave", 0, 4, 1, None, "mdi:fan",
             ),
         ])
-    if model.has_fill_light_rest:
+    if model.has_fill_light:
         entities.append(
             _WSV2ConfigNumber(
                 coordinator, "fill_light_auto_off", "fillLightAutoOff",
@@ -1192,7 +1192,7 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 
 def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
-    if coordinator.model.has_fill_light_rest:
+    if coordinator.model.has_fill_light:
         return [WSV2FillLight(coordinator)]
     return []
 
