@@ -1533,6 +1533,122 @@ The WS-V2 firmware update is itself a 3-step API:
 |---|---|---|
 | `/v1/log` | GET | Returns `{filename}` of the next available log archive (paired with a download via `file_stream`). |
 
+#### Camera capture (WS-V2 still images)
+
+Studio's `captureGlobalImage` (and per-model siblings
+`cameraNearSnap`, `cameraUpsideSnap`, etc.) is a sequential 3- or
+4-step flow over `instruction` + `file_stream`. The `instruction`
+channel returns a filename handle; `file_stream` delivers the
+raw JPEG.
+
+| Step | Channel | Method | Path | Body | Purpose |
+|---|---|---|---|---|---|
+| 1 | `instruction` | GET | `/v1/camera/snap?type=overview\|closeup\|fireRecord` (or `/v1/camera/image` with `data:{stream:"0"\|"1"\|"near"\|"upside"}` on P2S/P3) | — | Capture frame on device → returns `{filename:"<uuid>"}`. |
+| 2 | `instruction` | PUT | `/v1/filetransfer/download` | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). |
+| 3 | `file_stream` | n/a | (open fresh WS, send descriptor `{fileType:5, fileName:"<uuid>"}`) | binary frames | Receive raw JPEG bytes; terminate on `{"transferFinish":true}` TEXT or WS close. |
+| 4 | `instruction` | PUT | `/v1/filetransfer/finish` | `{filename}` | Best-effort end-of-transfer ack — some firmware skips this and closes the WS instead. |
+
+Studio uses this on demand only — there is no Studio-driven
+camera-refresh interval. Implementations that want a "live preview"
+have to drive their own poll loop. Empirically a 1 Hz cadence is
+the lowest the device firmware tolerates without bunching the JPEG
+encoder; faster than ~2 Hz starts to drop frames or queue snaps
+behind unfinished `file_stream` transfers.
+
+Per-model step-1 variants (audited from each Studio bundle):
+
+| Firmware bundle | Step-1 endpoint | Step-1 query / body |
+|---|---|---|
+| GS003 (F1 Ultra V2), GS006 / GS004 / GS007 / GS009 (F2 family), HJ003 (MetalFab) | `/v1/camera/snap` | `?type=overview` (also `closeup` / `fireRecord` on F1U/HJ003) |
+| P2S | `/v1/camera/image` | body `{stream:"0"\|"1"}` |
+| P3 | `/v1/camera/image` | body `{stream:"near"\|"upside"}`, on `port:8329` (HTTP, not WS — V1 fallback) |
+| F1, M1 Ultra, DT001 | _no camera-snap route in bundle_ | n/a |
+
+#### Camera live video — `media_stream` channel + cloud-platform routes
+
+The third WS channel (`function=media_stream`) carries the live
+camera video, but the protocol is **WebRTC over a cloud-relayed
+signaling path**, not a simple WS-MJPEG stream. 
+
+**Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
+class `streamService` + `rtc::impl::PeerConnection`):
+
+- The device runs a libdatachannel-based WebRTC peer
+  (`rtc::impl::PeerConnection`) that publishes H.264 / H.265 video
+  + a SCTP/DTLS data-channel (`application 9 UDP/DTLS/SCTP
+  webrtc-datachannel` in the SDP). DataChannel is used for
+  control / metadata; the JPEG / video track is published as a
+  standard RTC media track.
+- `streamService` exposes `addClient(name, comm_base)`,
+  `removeClient(name, comm_base)`, `frameCallback`,
+  `jpegCallback`, `configCallback` — confirms the firmware can
+  serve raw JPEG frames per client over `media_stream` once the
+  WebRTC negotiation completes. The WS itself is the signaling +
+  data path; raw video is then sent over the negotiated SRTP
+  flow.
+- Trigger API: `hostApi::call_camera_live` → endpoint
+  `/v1/platform/camera/live` (cloud-platform namespace, see
+  below). Failure modes in the firmware string table:
+  `"call_camera_live failed, action is not string"`,
+  `"action is not valid"`, `"control video failed"`,
+  `"streamService not found"`, `"proxyMsgbus not found"`.
+
+**Signaling endpoints** (firmware string table):
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/signaling/offer` | POST `{id, sdp, deviceID, mid, iceServers}` | Send WebRTC SDP offer + ICE servers list. |
+| `/v1/signaling/answer` | POST `{id, sdp}` | Receive SDP answer from the device. |
+| `/v1/signaling/candidate` | POST `{id, candidate, deviceID, mid}` | Trickle ICE candidates both directions. |
+
+Failure modes from `hostApi::send_signaling_*`:
+`"send_signaling_offer failed, type is not offer"`,
+`"send_signaling_offer failed, sdp is empty"`,
+`"send_signaling_offer failed, deviceID is not match"`,
+`"send_signaling_offer failed, id or description or sdp or
+deviceID or iceServers is not found"`,
+`"send_signaling_candidate failed, mid is empty"`,
+`"send_signaling_candidate failed, id or candidate or deviceID
+or mid is not found"`,
+`"send_signaling_candidate failed, initService not found"` —
+all required fields are mandatory; partial offers are rejected.
+
+**Cloud-platform namespace** — every camera-live endpoint sits
+under `/v1/platform/*`, **not** the direct LAN namespace
+(`/v1/*`). Means the device acts as a relay client to xTool's
+cloud servers; the integration would need to authenticate against
+xTool cloud + bind the device first:
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/v1/platform/camera/list` | GET | Enumerate device cameras. |
+| `/v1/platform/camera/live` | POST `{action:"start"\|"stop", name:"<camera>"}` | Start / stop the live RTC stream. |
+| `/v1/platform/camera/snap` | POST | Cloud-relayed equivalent of `/v1/camera/snap`. |
+| `/v1/platform/camera/calibration/params` | GET | Calibration metadata. |
+| `/v1/platform/device/bind` | POST | Bind device → user account. |
+| `/v1/platform/device/bind-user` | POST | Reverse bind (user → device). |
+| `/v1/platform/device/dev-bind-code` | POST | Issue pairing code. |
+| `/v1/platform/device/sign` | POST | Authenticate request signature. |
+| `/v1/platform/device/timestamp` | GET | Cloud time-sync (signature freshness). |
+| `/v1/platform/device/register` | POST | Register device with xTool cloud. |
+| `/v1/platform/device/state/sync` | POST | Push runtime state to cloud. |
+| `/v1/platform/device/upgrade*` | various | Cloud-mediated firmware update path. |
+| `/v1/platform/filetransfer/{upload,download,finish}` | PUT | Cloud-relayed file transfer (mirrors `/v1/filetransfer/*`). |
+| `/v1/platform/log` | GET | Cloud-relayed log fetch. |
+| `/v1/platform/wifi/{ap-list,connected-info,credentials}` | various | Provisioning via cloud. |
+| `/v1/platform/env/domain` | GET | Discover the cloud relay's region domain. |
+| `/v1/platform/factory/sign-data` | POST | Factory-signing helper. |
+| `/v1/platform/user/{parity,ping}` | various | Account session keep-alive. |
+| `/v1/atomm-api/v1/device/{bind-user,dev-bind-code,register,sign,timestamp}` | various | Atomm-namespaced bind + sign endpoints (xTool's internal cloud SDK). |
+
+**Studio's actual usage:** zero. A `grep -c
+"RTCPeerConnection\|webrtc\|signaling\|mediasoup\|iceServer"` over
+every Studio `index.js` returns `0` everywhere — Studio runs
+LAN-only and never opens `media_stream` in any model bundle.
+Live preview is presumed to be exclusive to the xTool **mobile
+app** (which connects via the cloud relay even when the phone is
+on the same Wi-Fi as the device).
+
 ### Push events
 
 Push frames arrive on the `instruction` WS without a `transactionId`
