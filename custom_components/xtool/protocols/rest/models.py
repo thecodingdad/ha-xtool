@@ -43,6 +43,7 @@ XTOOL_M1_ULTRA = XtoolDeviceModel(
     has_uv_fire=True,
     has_gyro=True,
     has_runtime_stats=True,
+    has_button_event=True,
     firmware_content_id="xTool-m1-ultra-firmware",
     firmware_machine_type="MLM",
 )
@@ -99,6 +100,7 @@ XTOOL_P2S = XtoolDeviceModel(
     has_gyro=True,
     has_water_cooling=True,  # 55W CO2 glass tube — water tank + antifreeze
     has_runtime_stats=True,
+    has_button_event=True,
     firmware_content_id="xTool-p2s-firmware",
     firmware_machine_type="MXP",
 )
