@@ -273,7 +273,7 @@
     },
     "button": {
       "pause_job": { "name": "Pause job" },
-      "resume_job": { "name": "Resume job" },
+      "resume_job": { "name": "Start / Resume job" },
       "cancel_job": { "name": "Cancel job" },
       "home_all": { "name": "Home all axes" },
       "home_xy": { "name": "Home XY" },

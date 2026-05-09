@@ -273,7 +273,7 @@
     },
     "button": {
       "pause_job": { "name": "Auftrag pausieren" },
-      "resume_job": { "name": "Auftrag fortsetzen" },
+      "resume_job": { "name": "Auftrag starten / fortsetzen" },
       "cancel_job": { "name": "Auftrag abbrechen" },
       "home_all": { "name": "Alle Achsen homen" },
       "home_xy": { "name": "XY homen" },

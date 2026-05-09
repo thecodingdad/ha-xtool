@@ -128,6 +128,10 @@ class XtoolDeviceModel:
     has_uv_fire: bool = False  # REST: F1U / M1U / P2S UV-based fire sensor
     has_gyro: bool = False  # REST: P2 / P2S / F1U / M1U accelerometer
     has_display_screen: bool = False  # REST: F1 Ultra touchscreen brightness
+    has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral
+    has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
+    # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
+    has_button_event: bool = False  # WS-V2: /button/status push fires
     firmware_content_id: str = ""
     firmware_multi_package: bool = False
     firmware_board_ids: tuple[str, ...] = ()

@@ -42,6 +42,7 @@ XTOOL_M1_ULTRA = XtoolDeviceModel(
     has_cpu_fan=True,
     has_uv_fire=True,
     has_gyro=True,
+    has_runtime_stats=True,
     firmware_content_id="xTool-m1-ultra-firmware",
     firmware_machine_type="MLM",
 )
@@ -97,6 +98,7 @@ XTOOL_P2S = XtoolDeviceModel(
     has_uv_fire=True,
     has_gyro=True,
     has_water_cooling=True,  # 55W CO2 glass tube — water tank + antifreeze
+    has_runtime_stats=True,
     firmware_content_id="xTool-p2s-firmware",
     firmware_machine_type="MXP",
 )
@@ -205,6 +207,7 @@ XTOOL_P3 = XtoolDeviceModel(
     has_mode_switch=True,
     has_air_assist_state=True,
     has_water_cooling=True,  # peripheral/water_temp+water_flow seen
+    has_runtime_stats=True,
     firmware_content_id="xTool-p3-firmware",
     firmware_machine_type="MXP",
 )
@@ -283,8 +286,9 @@ XTOOL_F2_ULTRA_UV = XtoolDeviceModel(
     has_fill_light=True,
     has_machine_lock=True,
     has_mode_switch=True,
-    has_air_assist_state=True,
-    has_uv_fire=True,
+    has_ir_led=True,
+    # Air-pump V2 + UV fire sensor are BT-paired accessories, not
+    # built-in peripherals — see WS-V2 sibling.
     firmware_content_id="xTool-f2-ultra-uv-firmware",
     firmware_machine_type="MXF",
 )
@@ -327,6 +331,7 @@ XTOOL_APPAREL_PRINTER = XtoolDeviceModel(
     has_beeper=True,
     has_move_stop=True,
     has_camera=True,  # 16MP AI camera for nozzle calibration
+    has_runtime_stats=True,
     # Inkjet DTF device — no laser, no flame alarm, no smoke extraction.
     firmware_content_id="xTool-apparelprinter-firmware-1.5",
     firmware_machine_type="MDT",

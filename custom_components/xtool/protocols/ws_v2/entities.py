@@ -84,28 +84,11 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         value_fn=lambda state, _: state.working_mode or None,
     ),
     XtoolSensorEntityDescription(
-        key="last_job_time",
-        translation_key="last_job_time",
-        icon="mdi:timer-check",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        value_fn=lambda state, _: state.last_job_time_seconds or None,
-    ),
-    XtoolSensorEntityDescription(
         key="task_time",
         translation_key="task_time",
         icon="mdi:timer",
         native_unit_of_measurement=UnitOfTime.SECONDS,
         value_fn=lambda state, _: state.task_time or None,
-    ),
-    XtoolSensorEntityDescription(
-        key="working_seconds",
-        translation_key="working_time",
-        icon="mdi:timer-cog",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda state, _: state.working_seconds,
     ),
     XtoolSensorEntityDescription(
         key="session_count",
@@ -114,31 +97,6 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda state, _: state.session_count,
-    ),
-    XtoolSensorEntityDescription(
-        key="standby_seconds",
-        translation_key="standby_time",
-        icon="mdi:timer-sand",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda state, _: state.standby_seconds,
-    ),
-    XtoolSensorEntityDescription(
-        key="tool_runtime_seconds",
-        translation_key="tool_runtime",
-        icon="mdi:tools",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        value_fn=lambda state, _: state.tool_runtime_seconds,
-    ),
-    XtoolSensorEntityDescription(
-        key="print_tool_type",
-        translation_key="print_tool_type",
-        icon="mdi:cog",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda state, _: state.print_tool_type or None,
     ),
 )
 
@@ -268,6 +226,63 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             value_fn=lambda state, _: state.gyro_z,
         ),
         "has_gyro",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="last_job_time",
+            translation_key="last_job_time",
+            icon="mdi:timer-check",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            value_fn=lambda state, _: state.last_job_time_seconds or None,
+        ),
+        "has_runtime_stats",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="working_seconds",
+            translation_key="working_time",
+            icon="mdi:timer-cog",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda state, _: state.working_seconds,
+        ),
+        "has_runtime_stats",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="standby_seconds",
+            translation_key="standby_time",
+            icon="mdi:timer-sand",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda state, _: state.standby_seconds,
+        ),
+        "has_runtime_stats",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="tool_runtime_seconds",
+            translation_key="tool_runtime",
+            icon="mdi:tools",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda state, _: state.tool_runtime_seconds,
+        ),
+        "has_runtime_stats",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="print_tool_type",
+            translation_key="print_tool_type",
+            icon="mdi:cog",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.print_tool_type or None,
+        ),
+        "has_runtime_stats",
     ),
 )
 
@@ -646,8 +661,15 @@ class WSV2FillLight(XtoolEntity, LightEntity):
         device_brightness = int(
             ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
         )
+        # F2 Ultra UV firmware ``40.130.021.00.ht2`` rejects the legacy
+        # ``set_brightness`` verb with ``code 1: action failed, not
+        # set_bri|get_bri``. Every WS-V2 Studio bundle (F1, GS003-009,
+        # HJ003, M1Ultra, P2/P3, DT001) sends ``action:"set_bri"`` with
+        # body ``{front, back}`` — dual fill-light banks; passing the
+        # same value to both mirrors Studio's single-slider UX.
         await self.coordinator.protocol.set_peripheral(
-            "fill_light", action="set_brightness", value=device_brightness,
+            "fill_light", action="set_bri",
+            front=device_brightness, back=device_brightness,
         )
         if self.coordinator.data is not None:
             self.coordinator.data.fill_light_a = device_brightness
@@ -656,7 +678,7 @@ class WSV2FillLight(XtoolEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.protocol.set_peripheral(
-            "fill_light", action="set_brightness", value=0,
+            "fill_light", action="set_bri", front=0, back=0,
         )
         if self.coordinator.data is not None:
             self.coordinator.data.fill_light_a = 0
@@ -963,16 +985,23 @@ def build_wsv2_binary_sensors(
             )(coordinator)
         )
 
+    if model.has_cooling_fan:
+        entities.append(
+            _bool_sensor_factory(
+                "cooling_fan_running", "cooling_fan_running",
+                BinarySensorDeviceClass.RUNNING,
+            )(coordinator)
+        )
+    if model.has_smoking_fan:
+        entities.append(
+            _bool_sensor_factory(
+                "smoking_fan_running", "smoking_fan_running",
+                BinarySensorDeviceClass.RUNNING,
+            )(coordinator)
+        )
+
     # Always-on binary sensors (V2 baseline)
     entities.extend([
-        _bool_sensor_factory(
-            "cooling_fan_running", "cooling_fan_running",
-            BinarySensorDeviceClass.RUNNING,
-        )(coordinator),
-        _bool_sensor_factory(
-            "smoking_fan_running", "smoking_fan_running",
-            BinarySensorDeviceClass.RUNNING,
-        )(coordinator),
         _bool_sensor_factory(
             "alarm_present", "alarm",
             BinarySensorDeviceClass.PROBLEM,
@@ -1073,15 +1102,16 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         )
 
     # Peripheral-control toggles
-    cooling_fan = _WSV2PeripheralSwitch(
-        coordinator, "cooling_fan", "cooling_fan", "cooling_fan_running",
-        "mdi:fan", SwitchDeviceClass.SWITCH,
-    )
-    smoking_fan = _WSV2PeripheralSwitch(
-        coordinator, "smoking_fan", "smoking_fan", "smoking_fan_running",
-        "mdi:fan-chevron-up", SwitchDeviceClass.SWITCH,
-    )
-    entities.extend([cooling_fan, smoking_fan])
+    if model.has_cooling_fan:
+        entities.append(_WSV2PeripheralSwitch(
+            coordinator, "cooling_fan", "cooling_fan", "cooling_fan_running",
+            "mdi:fan", SwitchDeviceClass.SWITCH,
+        ))
+    if model.has_smoking_fan:
+        entities.append(_WSV2PeripheralSwitch(
+            coordinator, "smoking_fan", "smoking_fan", "smoking_fan_running",
+            "mdi:fan-chevron-up", SwitchDeviceClass.SWITCH,
+        ))
 
     if model.has_ir_led:
         entities.extend([
@@ -1259,9 +1289,11 @@ class WSV2FireWarningEvent(XtoolEvent):
 
 
 def build_wsv2_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
-    return [
-        WSV2ButtonEvent(coordinator),
+    entities: list[EventEntity] = [
         WSV2JobEvent(coordinator),
         WSV2ErrorEvent(coordinator),
         WSV2FireWarningEvent(coordinator),
     ]
+    if coordinator.model.has_button_event:
+        entities.insert(0, WSV2ButtonEvent(coordinator))
+    return entities

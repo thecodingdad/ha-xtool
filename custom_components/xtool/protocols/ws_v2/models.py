@@ -195,11 +195,14 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     has_smoking_fan=True,
     has_machine_lock=True,
     has_mode_switch=True,
-    has_air_assist_state=True,
-    has_uv_fire=True,
     has_camera=True,
     has_camera_exposure=True,
     has_fill_light=True,
+    has_ir_led=True,  # F2UV bundle queries `/v1/peripheral/param?type=ir_led`
+    # Air-pump V2 + UV fire sensor are BT-paired accessories on F2UV
+    # (`airassistV2` = AirPumpV2, `uv_sensor_wb031` = UvSensor) routed
+    # via `/v1/parts/control` — not built-in peripherals; entities
+    # would stay Unknown if the flags were set.
     firmware_content_id="xTool-f2-ultra-uv-firmware",
     firmware_machine_type="MXF",
     protocol_version="V2",
@@ -226,6 +229,7 @@ XTOOL_M1_ULTRA_WSV2 = XtoolDeviceModel(
     has_uv_fire=True,
     has_workhead_id=True,
     has_z_temp=True,
+    has_runtime_stats=True,  # M1Ultra bundle exposes standbyTime + printToolType
     firmware_content_id="xTool-m1-ultra-firmware",
     firmware_machine_type="MLM",
     protocol_version="V2",
@@ -257,6 +261,7 @@ XTOOL_P2S_WSV2 = XtoolDeviceModel(
     has_ir_led=True,
     has_laser_head_position=True,
     has_water_cooling=True,  # 55W CO2 glass tube — water tank + antifreeze
+    has_runtime_stats=True,  # P2S bundle exposes standbyTime
     firmware_content_id="xTool-p2s-firmware",
     firmware_machine_type="MXP",
     protocol_version="V2",
@@ -285,6 +290,7 @@ XTOOL_P3_WSV2 = XtoolDeviceModel(
     has_digital_lock=True,
     has_distance_measure=True,
     has_fill_light=True,
+    has_runtime_stats=True,  # P3 bundle exposes standbyTime
     firmware_content_id="xTool-p3-firmware",
     firmware_machine_type="MXP",
     protocol_version="V2",
@@ -329,6 +335,7 @@ XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     has_beeper=True,
     has_move_stop=True,
     has_camera=True,  # 16MP AI camera for nozzle calibration
+    has_runtime_stats=True,  # DT001 bundle exposes standbyTime
     # Inkjet DTF device — no laser, no flame alarm, no smoke extraction.
     firmware_content_id="xTool-apparelprinter-firmware-1.5",
     firmware_machine_type="MDT",
