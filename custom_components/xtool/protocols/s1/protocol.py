@@ -540,16 +540,23 @@ class S1Protocol(XtoolProtocol):
 
     def _handle_push_frame(self, text: str) -> None:
         """Process a push frame and cache the value."""
-        _LOGGER.warning("XTOOL_PUSH: %r", text)  # TEMP cover-probe log
         if " " not in text:
             return
         head, _, tail = text.partition(" ")
-        if head in (CMD_DEVICE_STATUS, CMD_TASK_ID, CMD_FLAME_ALARM, CMD_LIGHT_ACTIVE):
+        if head in (
+            CMD_DEVICE_STATUS,
+            CMD_TASK_ID,
+            CMD_FLAME_ALARM,
+            CMD_LIGHT_ACTIVE,
+            CMD_ACCESSORIES,
+        ):
             self._push_state[head] = tail.strip()
         elif head == CMD_AIRFLOW_PURIFIER:
             parsed = _parse_m9039(tail.strip())
             if parsed:
                 self._ap2_state.update(parsed)
+        else:
+            _LOGGER.debug("S1 unhandled push frame: %r", text)
 
     async def get_version(self) -> str | None:
         """Get firmware version via HTTP."""
