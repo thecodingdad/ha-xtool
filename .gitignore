@@ -6,6 +6,8 @@ firmware/
 xTool Studio/
 logs/
 
+CLAUDE.md
+
 # Python
 __pycache__/
 *.py[cod]
