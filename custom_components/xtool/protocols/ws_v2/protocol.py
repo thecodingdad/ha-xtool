@@ -741,14 +741,23 @@ class WSV2Protocol(XtoolProtocol):
         )
 
     async def camera_snap(self, camera_type: str = "overview") -> bytes | None:
-        """GET a JPEG snapshot from one of the device's cameras.
+        """Capture a JPEG snapshot from one of the device's cameras.
 
-        Returns the raw JPEG bytes or ``None`` if the device replied
-        with an empty body. Camera types: ``overview``, ``closeup``,
-        ``fireRecord``.
+        V2 camera capture is a three-step flow per the Studio bundle's
+        ``captureGlobalImage`` definition:
+
+        1. ``GET /v1/camera/snap?type=<overview|closeup|fireRecord>``
+           returns ``{filename:"<uuid>"}``.
+        2. ``PUT /v1/filetransfer/download`` with
+           ``{filename, fileType:5}`` initiates the blob transfer.
+        3. The JPEG bytes arrive over a fresh ``function=file_stream``
+           WS — see :meth:`_download_file_stream`.
+
+        ``PUT /v1/filetransfer/finish`` is best-effort; some firmware
+        skips it and closes the WS itself.
         """
         try:
-            data = await self.request(
+            snap = await self.request(
                 "/v1/camera/snap",
                 "GET",
                 params={"type": camera_type},
@@ -757,18 +766,48 @@ class WSV2Protocol(XtoolProtocol):
         except Exception as err:
             _LOGGER.debug("V2 camera_snap %s failed: %s", camera_type, err)
             return None
-        if not isinstance(data, dict):
+        if not isinstance(snap, dict):
             return None
-        # Most responses base64-encode the JPEG in ``data.image``; some
-        # firmware revisions inline the bytes under ``data.bytes``.
-        b64 = data.get("image") or data.get("data") or ""
-        if isinstance(b64, str) and b64:
-            try:
-                import base64
-                return base64.b64decode(b64)
-            except Exception:
-                return None
-        return None
+        filename = snap.get("filename")
+        if not isinstance(filename, str) or not filename:
+            _LOGGER.debug(
+                "V2 camera_snap %s: no filename in response %s",
+                camera_type, snap,
+            )
+            return None
+
+        try:
+            await self.request(
+                "/v1/filetransfer/download",
+                "PUT",
+                data={"filename": filename, "fileType": 5},
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "V2 camera_snap %s: filetransfer/download init failed: %s",
+                camera_type, err,
+            )
+            return None
+
+        try:
+            blob = await self._download_file_stream(filename, file_type=5)
+        except Exception as err:
+            _LOGGER.debug(
+                "V2 camera_snap %s: file_stream download failed: %s",
+                camera_type, err,
+            )
+            return None
+
+        try:
+            await self.request(
+                "/v1/filetransfer/finish",
+                "PUT",
+                data={"filename": filename},
+            )
+        except Exception:
+            pass
+
+        return blob if blob else None
 
     # ── reader / heartbeat loops ──────────────────────────────────────
 
@@ -1763,6 +1802,77 @@ class WSV2Protocol(XtoolProtocol):
                     _LOGGER.debug("V2 file_stream ack: %s", ack.data)
             except asyncio.TimeoutError:
                 _LOGGER.debug("V2 file_stream: no ack received (timeout)")
+
+    async def _download_file_stream(
+        self,
+        filename: str,
+        file_type: int = 5,
+        timeout: float = 30.0,
+    ) -> bytes:
+        """Open a file_stream WS, receive the binary blob for ``filename``.
+
+        Mirror of :meth:`_upload_file_stream` for the receive direction.
+        Studio's ``isFileTransfer:true, responseType:"blob"`` items —
+        camera snap, fire-record, log export — all flow through this
+        path. Sends the same descriptor envelope as the upload path
+        (``{fileType, fileName}``) and concatenates every BINARY frame
+        until the server signals end-of-stream (TEXT
+        ``{"transferFinish":true}`` / WS close / receive timeout).
+        """
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        url = (
+            f"wss://{self.host}:{self._port}{WSV2_PATH}"
+            f"?id={uuid.uuid4()}&function=file_stream"
+        )
+        buf = bytearray()
+        async with self._session.ws_connect(
+            url,
+            ssl=_ssl_context(),
+            timeout=aiohttp.ClientTimeout(total=timeout),
+            heartbeat=None,
+            max_msg_size=0,
+        ) as ws:
+            await ws.send_str(json.dumps({
+                "fileType": file_type,
+                "fileName": filename,
+            }))
+            deadline = time.monotonic() + timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    _LOGGER.debug(
+                        "V2 file_stream download %s: timeout after %ss",
+                        filename, timeout,
+                    )
+                    break
+                try:
+                    msg = await asyncio.wait_for(ws.receive(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
+                if msg.type == aiohttp.WSMsgType.BINARY:
+                    buf.extend(msg.data)
+                elif msg.type == aiohttp.WSMsgType.TEXT:
+                    # Server end-of-stream marker. Some firmware emits
+                    # ``{"transferFinish":true}``, others close the WS
+                    # without an explicit marker.
+                    try:
+                        payload = json.loads(msg.data)
+                    except (json.JSONDecodeError, TypeError):
+                        payload = None
+                    if isinstance(payload, dict) and payload.get("transferFinish"):
+                        break
+                    _LOGGER.debug(
+                        "V2 file_stream download text frame: %s", msg.data,
+                    )
+                elif msg.type in (
+                    aiohttp.WSMsgType.CLOSE,
+                    aiohttp.WSMsgType.CLOSED,
+                    aiohttp.WSMsgType.CLOSING,
+                    aiohttp.WSMsgType.ERROR,
+                ):
+                    break
+        return bytes(buf)
 
     def set_machine_type(self, machine_type: str) -> None:
         """Stash the model's firmware_machine_type for the next flash call."""
