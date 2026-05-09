@@ -1207,9 +1207,13 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         WSV2PauseJob(coordinator),
         WSV2ResumeJob(coordinator),
         WSV2CancelJob(coordinator),
-        WSV2HomeXY(coordinator),
-        WSV2HomeLaser(coordinator),
     ]
+    # XY-home + Move-to-origin only make sense on gantry models. Galvo
+    # devices (F2 family, F1 portable …) have no XY motion path and
+    # would only see ``code 1: failed`` if the buttons were pressed.
+    if coordinator.model.has_laser_head_position:
+        entities.append(WSV2HomeXY(coordinator))
+        entities.append(WSV2HomeLaser(coordinator))
     if coordinator.model.has_z_axis:
         entities.append(WSV2HomeAll(coordinator))
         entities.append(WSV2HomeZ(coordinator))

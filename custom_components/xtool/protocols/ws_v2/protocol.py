@@ -400,10 +400,20 @@ class WSV2Protocol(XtoolProtocol):
         # — re-querying every poll wastes bandwidth + device CPU.
         self._poll_counter = 0
         # Per-connection cache of peripheral types the firmware refused
-        # (`code -3`, `code 10`, `code 1`). Avoids re-hammering endpoints
-        # the model doesn't expose. Cleared on every fresh connect so a
-        # firmware upgrade re-probes.
+        # (`code -3`, `code -2`, `code 10`, `code 1`). Avoids re-hammering
+        # endpoints the model doesn't expose. Cleared on every fresh
+        # connect so a firmware upgrade re-probes.
         self._unsupported_peripheral_types: set[str] = set()
+        # Per-connection cache of /v1/device/configs keys whose firmware
+        # validator demands JSON ``true``/``false`` instead of int 0/1.
+        # HJ003 / GS003 firmware rejects bool with ``code 1: failed`` so
+        # set_config defaults to int (issue #3, v2.3.3); F2 Ultra UV
+        # firmware (40.130.021.00.ht2) rejects the int with
+        # ``[type_error.302] type must be boolean, but is number`` —
+        # set_config detects that error string, caches the key here and
+        # retries with the bool. Cleared on reconnect so a firmware
+        # upgrade re-probes.
+        self._config_keys_bool: set[str] = set()
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -474,6 +484,7 @@ class WSV2Protocol(XtoolProtocol):
         # Reset the per-connection peripheral-rejection cache — fresh
         # firmware revisions might expose types the previous one didn't.
         self._unsupported_peripheral_types.clear()
+        self._config_keys_bool.clear()
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -620,23 +631,49 @@ class WSV2Protocol(XtoolProtocol):
         kv:{<key>:<value>}}`` for runtime configuration; the same
         envelope is consumed by the V2 firmware's ``configs`` handler.
 
-        Booleans are coerced to ``1``/``0`` because some firmware
-        revisions (HJ003 / GS003 / …) reject JSON ``true``/``false``
-        with ``code 1: failed`` — the V1 REST `/config/set` historical
-        contract treated every flag as int and the V2 handler kept the
-        same backing store.
+        Bool / int divergence: V2 firmware schemas split per family:
+
+        * HJ003 (MetalFab) + GS003 (F1 Ultra V2) reject JSON
+          ``true``/``false`` for boolean-ish keys with ``code 1:
+          failed`` — issue #3 (v2.3.3) coerced bool → int 0/1 to fix.
+        * F2 Ultra UV firmware ``40.130.021.00.ht2`` typed those keys
+          strictly as boolean and rejects the int with
+          ``[type_error.302] type must be boolean, but is number``.
+
+        Strategy: default to int 0/1 (preserves the v2.3.3 fix). On the
+        F2UV-specific type-error response, cache the key in
+        ``_config_keys_bool`` and retry with the bool. Subsequent
+        writes to a cached key skip the int attempt.
         """
-        if isinstance(value, bool):
-            value = 1 if value else 0
-        return await self.request(
-            "/v1/device/configs",
-            "PUT",
-            data={
-                "alias": "config",
-                "type": "user",
-                "kv": {key: value},
-            },
-        )
+        coerced: Any = value
+        if isinstance(value, bool) and key not in self._config_keys_bool:
+            coerced = 1 if value else 0
+        try:
+            return await self.request(
+                "/v1/device/configs",
+                "PUT",
+                data={"alias": "config", "type": "user",
+                      "kv": {key: coerced}},
+            )
+        except RuntimeError as err:
+            if (
+                isinstance(value, bool)
+                and key not in self._config_keys_bool
+                and "type must be boolean" in str(err)
+            ):
+                _LOGGER.debug(
+                    "V2 set_config key=%s typed boolean by firmware "
+                    "— retrying with bool, caching for this connection",
+                    key,
+                )
+                self._config_keys_bool.add(key)
+                return await self.request(
+                    "/v1/device/configs",
+                    "PUT",
+                    data={"alias": "config", "type": "user",
+                          "kv": {key: value}},
+                )
+            raise
 
     async def set_peripheral(
         self,
@@ -1282,6 +1319,7 @@ class WSV2Protocol(XtoolProtocol):
                 # gets re-probed.
                 if (
                     "code -3" in msg
+                    or "code -2" in msg
                     or "code 10" in msg
                     or "code 1:" in msg
                 ):
@@ -1453,7 +1491,11 @@ class WSV2Protocol(XtoolProtocol):
         ``state`` field assignments. ``state`` field is the canonical
         target — ``_latest`` is bypassed because we're already inside
         the active poll cycle."""
-        st = p.get("state")
+        # F2 Ultra UV firmware (40.130.021.00.ht2) returns gap state as
+        # ``{stateMCU, stateRK3562}`` — the cover sensor is read by both
+        # the safety-MCU and the application processor. Fall back to the
+        # MCU value when the unified ``state`` field is missing.
+        st = p.get("state") or p.get("stateMCU") or p.get("stateRK3562")
         is_on = st == "on" if isinstance(st, str) else None
         is_off = st == "off" if isinstance(st, str) else None
 
