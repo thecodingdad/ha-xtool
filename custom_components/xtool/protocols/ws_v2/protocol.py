@@ -683,21 +683,57 @@ class WSV2Protocol(XtoolProtocol):
     ) -> dict[str, Any]:
         """PUT a peripheral-control command.
 
-        ``/v1/peripheral/control`` body shape:
-        ``{type: "<peripheral>", action: "<verb>", ...extra}``. The
-        action verb is peripheral-specific (``"on"`` / ``"off"`` for
+        Studio's V2 bundles route every peripheral write through
+        ``PUT /v1/peripheral/param?type=<peripheral>`` with body
+        ``{action: "<verb>", ...extra}`` — the same envelope used by
+        the GET state-query path. There is no ``/v1/peripheral/control``
+        route in any V2 firmware (F1 / GS003-009 / HJ003 / M1Ultra /
+        F2UV bundles all confirm), and F2 Ultra UV firmware
+        ``40.130.021.00.ht2`` returns ``code 404: Not Found`` for
+        anything addressed there.
+
+        Action verb is peripheral-specific (``"on"``/``"off"`` for
         binary peripherals, ``"set_brightness"`` / ``"home"`` /
-        ``"measure"`` etc. for richer ones).
+        ``"measure"`` for richer ones).
         """
-        data: dict[str, Any] = {"type": peripheral_type}
+        body: dict[str, Any] = {}
         if action is not None:
-            data["action"] = action
+            body["action"] = action
         if extra:
-            data.update(extra)
-        return await self.request("/v1/peripheral/control", "PUT", data=data)
+            body.update(extra)
+        return await self.request(
+            "/v1/peripheral/param",
+            "PUT",
+            params={"type": peripheral_type},
+            data=body,
+        )
+
+    async def set_processing_state(self, action: str) -> dict[str, Any]:
+        """PUT ``/v1/processing/state?action=<pause|start|stop>``.
+
+        Drives the job-control buttons (pause / resume / cancel). All
+        WS-V2 Studio bundles expose this route with the same shape:
+        ``pausePrint`` → ``action=pause``, resume = ``start``,
+        cancel = ``stop``. The legacy ``set_mode("P_PAUSE")`` path used
+        ``/v1/device/mode`` which is reserved for IDLE / AUTOFOCUS /
+        MEASURE transitions and rejected the job verbs with
+        ``code 1: failed`` on F2 Ultra UV.
+        """
+        return await self.request(
+            "/v1/processing/state",
+            "PUT",
+            params={"action": action},
+            data={},
+        )
 
     async def set_mode(self, mode: str) -> dict[str, Any]:
-        """PUT to ``/v1/device/mode`` to transition the device mode."""
+        """PUT to ``/v1/device/mode`` to transition the device mode.
+
+        Used for ``P_IDLE`` / ``P_AUTOFOCUS`` / ``P_MEASURE`` device
+        states. Job control (pause / resume / cancel) lives on
+        ``/v1/processing/state`` instead — see
+        :meth:`set_processing_state`.
+        """
         return await self.request(
             "/v1/device/mode",
             "PUT",

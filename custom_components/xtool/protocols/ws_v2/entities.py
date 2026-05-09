@@ -694,7 +694,7 @@ class WSV2PauseJob(_WSV2Button):
         super().__init__(coordinator, "pause_job", "mdi:pause")
 
     async def _action(self) -> None:
-        await self.coordinator.protocol.set_mode("P_PAUSE")
+        await self.coordinator.protocol.set_processing_state("pause")
 
 
 class WSV2ResumeJob(_WSV2Button):
@@ -702,7 +702,10 @@ class WSV2ResumeJob(_WSV2Button):
         super().__init__(coordinator, "resume_job", "mdi:play")
 
     async def _action(self) -> None:
-        await self.coordinator.protocol.set_mode("P_RESUME")
+        # Studio's bundle resumes a paused job by re-issuing
+        # ``action=start`` against ``/v1/processing/state``; there is
+        # no separate ``resume`` verb.
+        await self.coordinator.protocol.set_processing_state("start")
 
 
 class WSV2CancelJob(_WSV2Button):
@@ -710,7 +713,7 @@ class WSV2CancelJob(_WSV2Button):
         super().__init__(coordinator, "cancel_job", "mdi:stop")
 
     async def _action(self) -> None:
-        await self.coordinator.protocol.set_mode("P_IDLE")
+        await self.coordinator.protocol.set_processing_state("stop")
 
 
 class WSV2HomeAll(_WSV2Button):
