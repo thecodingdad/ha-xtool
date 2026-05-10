@@ -1831,6 +1831,221 @@ unavailable rather than reporting stale data.
 
 ---
 
+## BT accessory subsystem
+
+Cross-family wire reference for the Bluetooth-paired accessories
+(IF2 / IF2 2.0 smoke purifier, AP2 air cleaner, cabinet
+purifier, AirPump, FireExtinguisher, UV sensor, dongle, …) that
+hang off the laser via a UART485-tunneled BLE link.
+
+### Transport
+
+xTool Studio talks to BT accessories through **three equivalent
+transports**; every supported laser exposes at least one. The
+ha-xtool integration picks the highest-supported variant per
+family:
+
+| Family | Endpoint | Method | Notes |
+|---|---|---|---|
+| S1 (legacy raw — fallback) | M-code over WS port 8081 | — | No F0F7 envelope; M9039 push-driven only |
+| S1 (newer firmware, current default) | `http://<host>:8080/passthrough` | POST | F0F7 envelope; same wire as REST family |
+| REST V1 family | `http://<host>:8080/passthrough` | POST | F0F7 envelope |
+| D-series (D1 / D1 Pro / D1 Pro 2.0) | `http://<host>:8080/passthrough` | POST | F0F7 envelope |
+| WS-V2 family | `/v1/parts/control` over the `instruction` WS | POST | F0F7 envelope |
+
+Body shape (identical across families):
+
+```json
+{"link": "uart485", "data_b64": "<base64(F0F7-frame)>"}
+```
+
+Response carries the F0F7-framed reply under the same
+``data_b64`` field.
+
+### F0F7 envelope
+
+Mirror of Studio's ``Yt`` (encode) / ``Ft`` (decode) helpers from
+the minified bundle. Byte layout:
+
+```
+0xF0  prefix(5)  cmd_utf8  0x0A  checksum  0xF7
+```
+
+- ``prefix`` is the per-accessory-type discriminator. 5 bytes for
+  every supported accessory. ``checksum`` is
+  ``sum(prefix + cmd_utf8 + b"\n") & 0x7F``.
+- Encoded payload is base64-wrapped before being put into the
+  ``data_b64`` JSON field.
+
+Common prefixes from the Studio bundles:
+
+| Type | Prefix bytes |
+|---|---|
+| Dongle | `[71,115,100,1,0]` ("Gsd") |
+| Purifier (cabinet) | `[69,115,96,1,0]` ("Es`") |
+| LargePurifier | `[76,115,107,1,0]` ("Lsk") |
+| BackpackPurifier | `[84,115,111,1,0]` ("Tso") |
+| DuctFan (IF2) | `[70,115,99,1,0]` ("Fsc") |
+| DuctFanV3 (IF2 2.0) | `[78,115,99,1,0]` ("Nsc") |
+| AirPump / AirPumpV2 | `[70,115,99,1,0]` (shares with DuctFan) |
+
+The Python implementation lives in
+``protocols/accessories/base.py``
+(``encode_f0f7`` / ``decode_f0f7``).
+
+### Discovery — `M9098 getAllDangleConnectList`
+
+Lists currently-paired accessories on the dongle. Two wire
+shapes; both decode to ``{type_id, sn/mac, status}`` rows:
+
+**V2 / REST / D-series / newer S1 (CSV variant)** — used when the
+dongle's M9098 goes through the F0F7 ``/passthrough`` (or V2
+``/v1/parts/control``) tunnel:
+
+```
+num,mac,type_hex,status;num,mac,type_hex,status;…
+```
+
+- ``type_hex`` is the 2-char ``Te.*`` enum value
+  (e.g. ``"34"`` = 0x34 = 52 = ``Purifier``).
+- ``status`` is ``"1"`` for connected.
+
+Parser lives in
+``protocols/s1/coordinator.py:_parse_s1_m9098``; the numeric
+``type_id_raw`` is then resolved through ``coordinator.py:_resolve_type_id``.
+
+**Legacy S1 raw WS** — fallback when the F0F7 tunnel isn't
+advertised. ``M9098`` push frame carries MAC addresses only with
+no type discriminator; the integration falls back to the
+``protocol._ap2_state`` push cache (populated from M9039) to
+surface the AP2 air cleaner.
+
+### S1 ``M1098`` — directly-wired (USB / serial) accessories
+
+Distinct from the BT-bound ``M9098`` enumeration: S1's ``M1098``
+returns a fixed-position firmware-version array — one slot per
+hardwired accessory class the chassis can host. Indexes are
+stable across firmware revisions; the per-slot string is empty
+when nothing is attached, or the accessory's firmware version
+otherwise.
+
+| Slot | Type id | Notes |
+|---|---|---|
+| 0 | `Purifier` | AP2 air cleaner (also surfaces via the BT path / M9039 push cache — the BT entry wins because of its richer field set) |
+| 1 | `FireExtinguisher` | original Fire Extinguisher unit |
+| 2 | `AirPump` | Air Pump 1.0 |
+| 3 | `AirPumpV2` | Air Pump 2.0 |
+| 4 | `FireExtinguisherV1_5` | Fire Extinguisher v1.5 |
+
+``S1Coordinator._poll_accessories`` walks ``state.accessories_raw``
+(populated from the ``M1098`` reply) and adds an
+:class:`AccessoryState` entry per non-empty slot with
+``fields={"version": <firmware-string>}``. The build-time
+field-skip guard in ``accessories/entities.build_accessory_entities``
+keeps the ``sn`` entity off the registry — ``M1098`` carries
+firmware version only.
+
+Other families (REST V1 / D-series / WS-V2) don't expose
+``M1098`` as a slot array; their per-accessory firmware versions
+come back through individual ``M99`` / ``M9097`` info queries
+tunneled via the F0F7 path above.
+
+### Per-accessory M-codes
+
+Each accessory advertises a ``info_mcode`` that returns a single
+"state snapshot" line. Studio + the ha-xtool framework parse the
+reply into a flat ``dict[str, Any]`` of fields. Writers (gear
+set, buzzer toggle, filter reset) go through the same
+``passthrough`` helper with a different M-code.
+
+| Accessory type | Info M-code | Reply tokens | Writers |
+|---|---|---|---|
+| `DuctFan` / `DuctFanV3` | `M9082` | ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"`` | `M9064 A<gear>` (gear), `M9079 S<0\|1>` (buzzer), `M9258 A0` (reset filter) |
+| `Purifier` / `BigPurifierV3` / `LargePurifier` | `M9033` | ``<v1> <v2> <gear> H<H> I<I> J<J> K<K> L<L> E:"<sn>"`` (H/I/J/K/L = pre / medium / carbon / dense_carbon / hepa filter % per AP2 datasheet) | `M9039 <gear>` (gear), `M9258 0` (reset filter) |
+| `BackpackPurifier` | `M9033` | `<vA> H<H> I<I> L<L> E:"<sn>"` (3-filter variant) | `M9258 <filterType>0` (reset filter) |
+| `AirPump` / `AirPumpV2` | `M9082` | reuses the DuctFan parser (sn + gear) | — |
+| `Dongle` | `M9097` | `<version> E:"<sn>"` | — |
+| `FireExtinguisher` / `SafetyFireBoxPro` / `UvSensor` / `MultiFunctionalBase` / `Feeder` / `HotStampingPen` / `UltrasonicKnife` | (stub) | sn + version only | — |
+
+Filter wear semantics: the AP2 datasheet names the cabinet
+purifier's 5 filters
+``pre`` / ``medium`` / ``carbon`` / ``dense_carbon`` / ``hepa``.
+Studio's anonymous tokens H/I/J/K/L map onto these names in order;
+the ha-xtool entity layer surfaces the named keys.
+
+### `/accessory/status` push (V2 only)
+
+The WS-V2 ``instruction`` channel emits an ``/accessory/status``
+push event whenever a paired accessory connects / disconnects.
+Wire shape is not yet decoded — the integration logs the raw
+event payload at ``DEBUG`` level
+(``protocols/ws_v2/protocol.py:_dispatch_push``) so a future
+user-supplied log can drive the connect/disconnect handler.
+
+### `M9098` reply parser variants per family
+
+The integration's runtime per-family path:
+
+| Family | Entry point | Parser |
+|---|---|---|
+| WS-V2 | ``ws_v2/protocol.parts_control`` → F0F7 → ``accessories.discovery.parse_connected_list`` | V2 `A<type> B<status> E:"<sn>"` tokens |
+| REST V1 | ``rest/protocol.passthrough`` → F0F7 → ``accessories.discovery.parse_connected_list`` | V2 token shape (firmware mirrors REST and V2) |
+| D-series | ``d_series/protocol.passthrough`` → F0F7 → ``accessories.discovery.parse_connected_list`` | V2 token shape |
+| S1 (newer firmware) | ``s1/protocol.passthrough`` (HTTP port 8080) → F0F7 → ``s1/coordinator._parse_s1_m9098`` | CSV `num,mac,type_hex,status` |
+| S1 (legacy firmware) | M9039 push frames → ``protocol._ap2_state`` cache | AP2 only |
+
+### `Te.<type>` enum (cross-family)
+
+The 2-char hex ``Te.*`` value identifies an accessory type
+across every firmware. The ha-xtool map
+(``coordinator.py:_TYPE_ID_BY_NUMERIC``) covers the variants
+ha-xtool currently registers:
+
+| Value | Type id |
+|---|---|
+| 52 (0x34) | `Purifier` |
+| 61 (0x3D) | `AirPump` |
+| 64 (0x40) | `AirPumpV2` |
+| 70 (0x46) | `DuctFan` |
+| 71 (0x47) | `FireExtinguisher` |
+| 74 (0x4A) | `Dongle` |
+| 75 (0x4B) | `UvSensor` |
+| 76 (0x4C) | `LargePurifierV3` |
+| 78 (0x4E) | `DuctFanV3` |
+| 82 (0x52) | `SafetyFireBoxPro` |
+| 83 (0x53) | `MultiFunctionalBase` |
+| 84 (0x54) | `BackpackPurifier` |
+| 50 (0x32) | `FireExtinguisherV1_5` |
+
+Unknown ids are logged once and skipped; the registry extends
+as accessories with live logs land in the issue tracker.
+
+### HA entity model
+
+Each connected accessory hangs off a **child device** in the HA
+device registry
+(``identifiers={(DOMAIN, "<laser_serial>:<type>:<acc_sn>")}``,
+``via_device=(DOMAIN, "<laser_serial>")``). Entity unique-ids
+follow ``{laser_sn}_accessory_{type_lowercase}_{acc_sn}_{key}``
+so the same accessory paired across separate laser devices stays
+distinct.
+
+Entities whose declared ``field`` isn't present in the
+accessory's parsed-fields dict are skipped at build time (e.g.
+the unified ``Purifier`` spec carries optional ``running`` +
+``purifier_sensor_d`` / ``purifier_sensor_s`` entries that only
+S1's AP2 reports — cabinet purifiers don't gain phantom sensors).
+
+Newly-paired accessories are added without a config-entry reload
+via the coordinator's stored ``async_add_entities`` callback per
+platform (see ``coordinator.py:register_platform_add`` +
+``_dispatch_new_accessories``). Disconnected accessories switch
+to ``available=False`` rather than being deleted, so reconnects
+re-populate without registry churn.
+
+
+---
+
 ## REST API family (F1 / F1 Ultra / F1 Ultra V2 / F1 Lite / F2 / F2 Ultra / F2 Ultra Single / F2 Ultra UV / M1 / M1 Ultra / MetalFab / P1 / P2 / P2S / P3 / Apparel Printer)
 
 JSON over HTTP. Verified against the per-model `index.js` bundles in the XCS APK and the newer xTool Studio Windows app (`exts.zip/<model>/index.js`).
