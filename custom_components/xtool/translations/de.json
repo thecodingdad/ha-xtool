@@ -49,20 +49,16 @@
         "data": {
           "power_switch_entity_id": "Steckdose",
           "enable_firmware_updates": "Firmware-Updates aktivieren",
-          "has_ap2": "AP2 Luftreiniger angeschlossen",
           "scan_interval": "Abfrageintervall",
           "firmware_check_interval": "Intervall der Firmware-Update-Prüfung",
-          "ap2_poll_interval": "Abfrageintervall AP2 Luftreiniger",
           "stats_poll_interval": "Abfrageintervall Lebensdauer-Statistik",
           "dongle_poll_interval": "Abfrageintervall Bluetooth-Dongle"
         },
         "data_description": {
           "power_switch_entity_id": "Wähle einen Schalter, der die Stromversorgung des Lasers steuert (z.B. eine Funksteckdose). Leer lassen, wenn nicht vorhanden.",
           "enable_firmware_updates": "Wenn aktiviert, kann die Firmware-Update-Entität neue Firmware installieren. Wenn deaktiviert, zeigt sie nur an, dass ein Update verfügbar ist.",
-          "has_ap2": "Aktiviere um AP2-Luftreiniger-Sensoren (Filter-Restkapazität, Stufe, Partikelsensoren) anzuzeigen. Nur S1.",
           "scan_interval": "Wie oft die Integration den Gerätestatus abfragt. Kürzere Werte reagieren schneller, erzeugen aber mehr Netzwerk-Traffic.",
           "firmware_check_interval": "Wie oft die Integration die xTool Cloud nach neuen Firmware-Versionen prüft.",
-          "ap2_poll_interval": "Wie oft der AP2-Luftreiniger-Status (M9039) abgefragt wird. Wird nur verwendet, wenn ein AP2 angeschlossen ist.",
           "stats_poll_interval": "Wie oft Lebensdauer-Statistiken (M2008) aktualisiert werden. Langsam veränderliche Werte, Standard 5 Minuten.",
           "dongle_poll_interval": "Wie oft die verbundenen Bluetooth-Zubehörteile (M9098) abgefragt werden."
         }
@@ -108,20 +104,48 @@
           "unknown": "Unbekannt"
         }
       },
-      "laser_position_x": { "name": "Laserposition X" },
-      "laser_position_y": { "name": "Laserposition Y" },
-      "laser_position_z": { "name": "Laserposition Z" },
-      "fire_level": { "name": "Feuerlevel" },
-      "air_assist_level": { "name": "Air-Assist Stufe" },
-      "task_id": { "name": "Auftrags-ID" },
-      "task_time": { "name": "Auftragszeit" },
-      "working_time": { "name": "Betriebszeit" },
-      "session_count": { "name": "Aufträge gesamt" },
-      "standby_time": { "name": "Standby-Zeit" },
-      "tool_runtime": { "name": "Lasermodul-Laufzeit" },
-      "ip_address": { "name": "IP-Adresse" },
-      "laser_power": { "name": "Laserleistung" },
-      "laser_module": { "name": "Lasermodul" },
+      "laser_position_x": {
+        "name": "Laserposition X"
+      },
+      "laser_position_y": {
+        "name": "Laserposition Y"
+      },
+      "laser_position_z": {
+        "name": "Laserposition Z"
+      },
+      "fire_level": {
+        "name": "Feuerlevel"
+      },
+      "air_assist_level": {
+        "name": "Air-Assist Stufe"
+      },
+      "task_id": {
+        "name": "Auftrags-ID"
+      },
+      "task_time": {
+        "name": "Auftragszeit"
+      },
+      "working_time": {
+        "name": "Betriebszeit"
+      },
+      "session_count": {
+        "name": "Aufträge gesamt"
+      },
+      "standby_time": {
+        "name": "Standby-Zeit"
+      },
+      "tool_runtime": {
+        "name": "Lasermodul-Laufzeit"
+      },
+      "ip_address": {
+        "name": "IP-Adresse"
+      },
+      "laser_power": {
+        "name": "Laserleistung"
+      },
+      "laser_module": {
+        "name": "Lasermodul"
+      },
       "sd_card": {
         "name": "SD-Karte",
         "state": {
@@ -129,102 +153,364 @@
           "not_inserted": "Nicht eingelegt"
         }
       },
-      "workspace_size": { "name": "Arbeitsbereich" },
-      "connection_count": { "name": "Aktive Verbindungen" },
-      "origin_offset_x": { "name": "Origin-Offset X" },
-      "origin_offset_y": { "name": "Origin-Offset Y" },
-      "last_job_time": { "name": "Letzte Auftragszeit" },
-      "working_mode": { "name": "Betriebsmodus" },
-      "last_distance": { "name": "Letzte Distanz" },
-      "purifier_speed": { "name": "Reiniger-Stufe" },
-      "filter_pre": { "name": "Vorfilter Restkapazität" },
-      "filter_medium": { "name": "Mittelfilter Restkapazität" },
-      "filter_carbon": { "name": "Aktivkohle-Filter Restkapazität" },
-      "filter_dense_carbon": { "name": "Ultra-Aktivkohle-Filter Restkapazität" },
-      "filter_hepa": { "name": "HEPA-Filter Restkapazität" },
-      "purifier_sensor_d": { "name": "Reiniger Sensor D" },
-      "purifier_sensor_s": { "name": "Reiniger Sensor S" },
-      "water_temperature": { "name": "Wassertemperatur" },
-      "water_flow": { "name": "Wasserdurchfluss" },
-      "z_temperature": { "name": "Z-Achsen-Temperatur" },
-      "workhead_id": { "name": "Werkzeug" },
-      "workhead_z_height": { "name": "Werkzeug Z-Höhe" },
-      "print_tool_type": { "name": "Werkzeugtyp" },
-      "hardware_type": { "name": "Hardware-Typ" },
-      "gyro_x": { "name": "Gyro X" },
-      "gyro_y": { "name": "Gyro Y" },
-      "gyro_z": { "name": "Gyro Z" }
+      "workspace_size": {
+        "name": "Arbeitsbereich"
+      },
+      "connection_count": {
+        "name": "Aktive Verbindungen"
+      },
+      "origin_offset_x": {
+        "name": "Origin-Offset X"
+      },
+      "origin_offset_y": {
+        "name": "Origin-Offset Y"
+      },
+      "last_job_time": {
+        "name": "Letzte Auftragszeit"
+      },
+      "working_mode": {
+        "name": "Betriebsmodus"
+      },
+      "last_distance": {
+        "name": "Letzte Distanz"
+      },
+      "accessory_purifier_gear": {
+        "name": "Reiniger-Stufe"
+      },
+      "accessory_purifier_filter_pre": {
+        "name": "Vorfilter Restkapazität"
+      },
+      "accessory_purifier_filter_medium": {
+        "name": "Mittelfilter Restkapazität"
+      },
+      "accessory_purifier_filter_carbon": {
+        "name": "Aktivkohle-Filter Restkapazität"
+      },
+      "accessory_purifier_filter_dense_carbon": {
+        "name": "Ultra-Aktivkohle-Filter Restkapazität"
+      },
+      "accessory_purifier_filter_hepa": {
+        "name": "HEPA-Filter Restkapazität"
+      },
+      "accessory_purifier_purifier_sensor_d": {
+        "name": "Reiniger Sensor D"
+      },
+      "accessory_purifier_purifier_sensor_s": {
+        "name": "Reiniger Sensor S"
+      },
+      "accessory_fireextinguisher_version": {
+        "name": "Firmware"
+      },
+      "accessory_fireextinguisher_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_fireextinguisherv1_5_version": {
+        "name": "Firmware"
+      },
+      "accessory_fireextinguisherv1_5_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_airpump_version": {
+        "name": "Firmware"
+      },
+      "accessory_airpump_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_airpumpv2_version": {
+        "name": "Firmware"
+      },
+      "accessory_airpumpv2_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_dongle_version": {
+        "name": "Firmware"
+      },
+      "accessory_dongle_sn": {
+        "name": "Seriennummer"
+      },
+      "riser_base": {
+        "name": "Erhöhungsbasis"
+      },
+      "water_temperature": {
+        "name": "Wassertemperatur"
+      },
+      "water_flow": {
+        "name": "Wasserdurchfluss"
+      },
+      "z_temperature": {
+        "name": "Z-Achsen-Temperatur"
+      },
+      "workhead_id": {
+        "name": "Werkzeug"
+      },
+      "workhead_z_height": {
+        "name": "Werkzeug Z-Höhe"
+      },
+      "print_tool_type": {
+        "name": "Werkzeugtyp"
+      },
+      "hardware_type": {
+        "name": "Hardware-Typ"
+      },
+      "gyro_x": {
+        "name": "Gyro X"
+      },
+      "gyro_y": {
+        "name": "Gyro Y"
+      },
+      "gyro_z": {
+        "name": "Gyro Z"
+      },
+      "accessory_airpump_gear": {
+        "name": "Stufe"
+      },
+      "accessory_airpumpv2_gear": {
+        "name": "Stufe"
+      }
     },
     "binary_sensor": {
-      "accessories": { "name": "Zubehör" },
-      "cover_open": { "name": "Deckel" },
-      "machine_lock": { "name": "Geräteverriegelung" },
-      "alarm": { "name": "Alarm" },
-      "xcs_compatibility_mode": { "name": "XCS-Kompatibilitätsmodus" },
-      "purifier_running": { "name": "Luftreiniger aktiv" },
-      "purifier_connected": { "name": "Luftreiniger verbunden" },
-      "air_assist_connected": { "name": "Air-Assist verbunden" },
-      "drawer_open": { "name": "Schublade" },
-      "cooling_fan_running": { "name": "Kühllüfter" },
-      "smoking_fan_running": { "name": "Absauglüfter" },
-      "cpu_fan_running": { "name": "CPU-Lüfter" },
-      "uv_fire_alarm": { "name": "UV-Brandsensor" },
-      "water_pump_running": { "name": "Wasserpumpe" },
-      "water_line_ok": { "name": "Wasserkreislauf" },
-      "flame_alarm_enabled": { "name": "Feueralarm aktiv" },
-      "beep_enabled": { "name": "Signalton aktiv" },
-      "gap_check_enabled": { "name": "Deckelüberwachung aktiv" },
-      "machine_lock_check_enabled": { "name": "Verriegelungsüberwachung aktiv" }
+      "cover_open": {
+        "name": "Deckel"
+      },
+      "machine_lock": {
+        "name": "Geräteverriegelung"
+      },
+      "alarm": {
+        "name": "Alarm"
+      },
+      "xcs_compatibility_mode": {
+        "name": "XCS-Kompatibilitätsmodus"
+      },
+      "accessory_purifier_running": {
+        "name": "Luftreiniger aktiv"
+      },
+      "air_assist_connected": {
+        "name": "Air-Assist verbunden"
+      },
+      "drawer_open": {
+        "name": "Schublade"
+      },
+      "cooling_fan_running": {
+        "name": "Kühllüfter"
+      },
+      "smoking_fan_running": {
+        "name": "Absauglüfter"
+      },
+      "cpu_fan_running": {
+        "name": "CPU-Lüfter"
+      },
+      "uv_fire_alarm": {
+        "name": "UV-Brandsensor"
+      },
+      "water_pump_running": {
+        "name": "Wasserpumpe"
+      },
+      "water_line_ok": {
+        "name": "Wasserkreislauf"
+      },
+      "flame_alarm_enabled": {
+        "name": "Feueralarm aktiv"
+      },
+      "beep_enabled": {
+        "name": "Signalton aktiv"
+      },
+      "gap_check_enabled": {
+        "name": "Deckelüberwachung aktiv"
+      },
+      "machine_lock_check_enabled": {
+        "name": "Verriegelungsüberwachung aktiv"
+      },
+      "accessory_airpump_running": {
+        "name": "Läuft"
+      },
+      "accessory_airpumpv2_running": {
+        "name": "Läuft"
+      },
+      "accessory_airpump_connected": {
+        "name": "Verbunden"
+      },
+      "accessory_airpumpv2_connected": {
+        "name": "Verbunden"
+      }
     },
     "camera": {
-      "camera_overview": { "name": "Übersichtskamera" },
-      "camera_closeup": { "name": "Nahaufnahme-Kamera" },
-      "camera_fire_record": { "name": "Flammen-Aufnahme" }
+      "camera_overview": {
+        "name": "Übersichtskamera"
+      },
+      "camera_closeup": {
+        "name": "Nahaufnahme-Kamera"
+      },
+      "camera_fire_record": {
+        "name": "Flammen-Aufnahme"
+      }
     },
     "light": {
-      "fill_light": { "name": "Arbeitslicht" }
+      "fill_light": {
+        "name": "Arbeitslicht"
+      }
     },
     "switch": {
-      "buzzer": { "name": "Signalton" },
-      "move_stop": { "name": "Bewegungsstopp" },
-      "tilt_stop": { "name": "Neigungsstopp" },
-      "limit_stop": { "name": "Endschalter-Stopp" },
-      "smoking_fan": { "name": "Absaugung" },
-      "power_switch": { "name": "Strom" },
-      "ir_led_close": { "name": "IR-LED (Nahaufnahme)" },
-      "ir_led_global": { "name": "IR-LED (Übersicht)" },
-      "digital_lock": { "name": "Deckelverriegelung" },
-      "flame_alarm_v2": { "name": "Feueralarm" },
-      "beep_v2": { "name": "Signalton" },
-      "gap_check": { "name": "Deckelüberwachung" },
-      "machine_lock_check": { "name": "Verriegelungsüberwachung" },
-      "beep_enable": { "name": "Signalton" },
-      "drawer_check": { "name": "Schubladenprüfung" },
-      "filter_check": { "name": "Filterprüfung" },
-      "purifier_check": { "name": "Reiniger-Prüfung" },
-      "purifier_continue": { "name": "Reiniger Auto-Continue" },
-      "cooling_fan": { "name": "Kühllüfter" }
+      "buzzer": {
+        "name": "Signalton"
+      },
+      "move_stop": {
+        "name": "Bewegungsstopp"
+      },
+      "tilt_stop": {
+        "name": "Neigungsstopp"
+      },
+      "limit_stop": {
+        "name": "Endschalter-Stopp"
+      },
+      "smoking_fan": {
+        "name": "Absaugung"
+      },
+      "power_switch": {
+        "name": "Strom"
+      },
+      "ir_led_close": {
+        "name": "IR-LED (Nahaufnahme)"
+      },
+      "ir_led_global": {
+        "name": "IR-LED (Übersicht)"
+      },
+      "digital_lock": {
+        "name": "Deckelverriegelung"
+      },
+      "flame_alarm_v2": {
+        "name": "Feueralarm"
+      },
+      "beep_v2": {
+        "name": "Signalton"
+      },
+      "gap_check": {
+        "name": "Deckelüberwachung"
+      },
+      "machine_lock_check": {
+        "name": "Verriegelungsüberwachung"
+      },
+      "beep_enable": {
+        "name": "Signalton"
+      },
+      "drawer_check": {
+        "name": "Schubladenprüfung"
+      },
+      "filter_check": {
+        "name": "Filterprüfung"
+      },
+      "purifier_check": {
+        "name": "Reiniger-Prüfung"
+      },
+      "purifier_continue": {
+        "name": "Reiniger Auto-Continue"
+      },
+      "cooling_fan": {
+        "name": "Kühllüfter"
+      },
+      "accessory_purifier_check_enabled": {
+        "name": "Sicherheitsprüfung"
+      },
+      "accessory_purifier_auto_continue": {
+        "name": "Auto-Weiterlauf"
+      },
+      "accessory_largepurifier_check_enabled": {
+        "name": "Sicherheitsprüfung"
+      },
+      "accessory_largepurifier_auto_continue": {
+        "name": "Auto-Weiterlauf"
+      },
+      "accessory_largepurifierv3_check_enabled": {
+        "name": "Sicherheitsprüfung"
+      },
+      "accessory_largepurifierv3_auto_continue": {
+        "name": "Auto-Weiterlauf"
+      }
     },
     "number": {
-      "air_assist_close_delay": { "name": "Air-Assist-Nachlauf" },
-      "smoking_fan_duration": { "name": "Absaugung-Nachlauf" },
-      "tilt_threshold": { "name": "Neigungs-Schwellwert" },
-      "moving_threshold": { "name": "Bewegungs-Schwellwert" },
-      "camera_exposure_overview": { "name": "Belichtung (Übersicht)" },
-      "camera_exposure_closeup": { "name": "Belichtung (Nahaufnahme)" },
-      "air_assist_gear_cut": { "name": "Air-Assist Stufe (Schneiden)" },
-      "air_assist_gear_grave": { "name": "Air-Assist Stufe (Gravieren)" },
-      "purifier_timeout": { "name": "Filter-Nachlaufzeit" },
-      "sleep_timeout": { "name": "Schlaf-Timeout" },
-      "sleep_timeout_open_gap": { "name": "Schlaf-Timeout (Deckel offen)" },
-      "fill_light_auto_off": { "name": "Arbeitslicht Auto-Aus" },
-      "ir_light_auto_off": { "name": "IR-Licht Auto-Aus" },
-      "display_brightness": { "name": "Display-Helligkeit" },
-      "work_area_left": { "name": "Arbeitsbereich Links" },
-      "work_area_right": { "name": "Arbeitsbereich Rechts" },
-      "work_area_up": { "name": "Arbeitsbereich Oben" },
-      "work_area_down": { "name": "Arbeitsbereich Unten" },
-      "fire_level": { "name": "Feuererkennungs-Schwelle" }
+      "air_assist_close_delay": {
+        "name": "Air-Assist-Nachlauf"
+      },
+      "smoking_fan_duration": {
+        "name": "Absaugung-Nachlauf"
+      },
+      "tilt_threshold": {
+        "name": "Neigungs-Schwellwert"
+      },
+      "moving_threshold": {
+        "name": "Bewegungs-Schwellwert"
+      },
+      "camera_exposure_overview": {
+        "name": "Belichtung (Übersicht)"
+      },
+      "camera_exposure_closeup": {
+        "name": "Belichtung (Nahaufnahme)"
+      },
+      "air_assist_gear_cut": {
+        "name": "Air-Assist Stufe (Schneiden)"
+      },
+      "air_assist_gear_grave": {
+        "name": "Air-Assist Stufe (Gravieren)"
+      },
+      "purifier_timeout": {
+        "name": "Filter-Nachlaufzeit"
+      },
+      "sleep_timeout": {
+        "name": "Schlaf-Timeout"
+      },
+      "sleep_timeout_open_gap": {
+        "name": "Schlaf-Timeout (Deckel offen)"
+      },
+      "fill_light_auto_off": {
+        "name": "Arbeitslicht Auto-Aus"
+      },
+      "ir_light_auto_off": {
+        "name": "IR-Licht Auto-Aus"
+      },
+      "display_brightness": {
+        "name": "Display-Helligkeit"
+      },
+      "work_area_left": {
+        "name": "Arbeitsbereich Links"
+      },
+      "work_area_right": {
+        "name": "Arbeitsbereich Rechts"
+      },
+      "work_area_up": {
+        "name": "Arbeitsbereich Oben"
+      },
+      "work_area_down": {
+        "name": "Arbeitsbereich Unten"
+      },
+      "fire_level": {
+        "name": "Feuererkennungs-Schwelle"
+      },
+      "accessory_airpump_close_delay": {
+        "name": "Nachlaufzeit"
+      },
+      "accessory_airpumpv2_close_delay": {
+        "name": "Nachlaufzeit"
+      },
+      "accessory_airpump_gear_default_cut": {
+        "name": "Schneiden Standardstufe"
+      },
+      "accessory_airpumpv2_gear_default_cut": {
+        "name": "Schneiden Standardstufe"
+      },
+      "accessory_airpump_gear_default_engrave": {
+        "name": "Gravieren Standardstufe"
+      },
+      "accessory_airpumpv2_gear_default_engrave": {
+        "name": "Gravieren Standardstufe"
+      },
+      "accessory_purifier_auto_off_timeout": {
+        "name": "Abschalt-Verzögerung"
+      },
+      "accessory_largepurifier_auto_off_timeout": {
+        "name": "Abschalt-Verzögerung"
+      },
+      "accessory_largepurifierv3_auto_off_timeout": {
+        "name": "Abschalt-Verzögerung"
+      }
     },
     "select": {
       "flame_alarm_sensitivity": {
@@ -253,6 +539,9 @@
           "high": "Hoch"
         }
       },
+      "accessory_purifier_gear_select": {
+        "name": "Reiniger-Stufe einstellen"
+      },
       "flame_level_hl": {
         "name": "Flammen-Stufe",
         "state": {
@@ -266,23 +555,107 @@
           "cross": "Kreuz-Laser",
           "low_light": "Schwachlicht-Modus"
         }
+      },
+      "accessory_airpump_gear_select": {
+        "name": "Stufe einstellen"
+      },
+      "accessory_airpumpv2_gear_select": {
+        "name": "Stufe einstellen"
+      },
+      "accessory_purifier_speed_select": {
+        "name": "Geschwindigkeit"
+      },
+      "accessory_largepurifier_speed_select": {
+        "name": "Geschwindigkeit"
+      },
+      "accessory_largepurifierv3_speed_select": {
+        "name": "Geschwindigkeit"
       }
     },
     "update": {
-      "firmware": { "name": "Firmware" }
+      "firmware": {
+        "name": "Firmware"
+      },
+      "accessory_airpump_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_airpumpv2_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_purifier_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_largepurifier_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_largepurifierv3_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_backpackpurifier_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_ductfan_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_ductfanv3_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_dongle_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_fireextinguisher_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_fireextinguisherv1_5_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_safetyfireboxpro_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_uvsensor_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_multifunctionalbase_firmware": {
+        "name": "Firmware"
+      },
+      "accessory_feeder_firmware": {
+        "name": "Firmware"
+      }
     },
     "button": {
-      "pause_job": { "name": "Auftrag pausieren" },
-      "resume_job": { "name": "Auftrag starten / fortsetzen" },
-      "cancel_job": { "name": "Auftrag abbrechen" },
-      "home_all": { "name": "Alle Achsen homen" },
-      "home_xy": { "name": "XY homen" },
-      "home_z": { "name": "Z homen" },
-      "home_laser_head": { "name": "Laserkopf homen" },
-      "measure_distance": { "name": "Distanz messen" },
-      "quit_lightburn": { "name": "LightBurn-Modus verlassen" },
-      "reboot": { "name": "Neustart" },
-      "time_sync": { "name": "Zeit synchronisieren" }
+      "pause_job": {
+        "name": "Auftrag pausieren"
+      },
+      "resume_job": {
+        "name": "Auftrag starten / fortsetzen"
+      },
+      "cancel_job": {
+        "name": "Auftrag abbrechen"
+      },
+      "home_all": {
+        "name": "Alle Achsen homen"
+      },
+      "home_xy": {
+        "name": "XY homen"
+      },
+      "home_z": {
+        "name": "Z homen"
+      },
+      "home_laser_head": {
+        "name": "Laserkopf homen"
+      },
+      "measure_distance": {
+        "name": "Distanz messen"
+      },
+      "quit_lightburn": {
+        "name": "LightBurn-Modus verlassen"
+      },
+      "reboot": {
+        "name": "Neustart"
+      },
+      "time_sync": {
+        "name": "Zeit synchronisieren"
+      }
     },
     "event": {
       "button": {

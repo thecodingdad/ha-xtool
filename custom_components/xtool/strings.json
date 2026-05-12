@@ -48,13 +48,11 @@
       "init": {
         "data": {
           "power_switch_entity_id": "Power switch",
-          "enable_firmware_updates": "Enable firmware updates",
-          "has_ap2": "AP2 air cleaner attached"
+          "enable_firmware_updates": "Enable firmware updates"
         },
         "data_description": {
           "power_switch_entity_id": "Select a switch that controls the laser's power supply (e.g. a smart plug). Leave empty if not applicable.",
-          "enable_firmware_updates": "When enabled, the firmware update entity can install new firmware. When disabled, it only shows that an update is available.",
-          "has_ap2": "Enable to expose AP2 air cleaner sensors (filter life, speed, particle sensors). S1 only."
+          "enable_firmware_updates": "When enabled, the firmware update entity can install new firmware. When disabled, it only shows that an update is available."
         }
       },
       "confirm_updates": {
