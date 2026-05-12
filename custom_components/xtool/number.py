@@ -16,5 +16,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up xTool number entities."""
     coordinator = entry.runtime_data
+    coordinator.register_platform_add("number", async_add_entities)
     entities: list[NumberEntity] = list(coordinator.build_numbers())
+    entities.extend(coordinator.initial_accessory_entities("number"))
     async_add_entities(entities)

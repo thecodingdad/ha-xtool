@@ -40,8 +40,6 @@ from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
 from ..base import XtoolDeviceModel, XtoolDeviceState
 from .protocol import (
-    ACCESSORY_IDX_PURIFIER,
-    ACCESSORY_NAMES,
     CMD_AIR_ASSIST_DELAY,
     CMD_BEEPER,
     CMD_CANCEL_JOB,
@@ -137,19 +135,11 @@ SWITCH_DESCRIPTIONS: tuple[XtoolSwitchEntityDescription, ...] = (
 
 
 NUMBER_DESCRIPTIONS: tuple[XtoolNumberEntityDescription, ...] = (
-    XtoolNumberEntityDescription(
-        key="air_assist_close_delay",
-        translation_key="air_assist_close_delay",
-        icon="mdi:weather-windy",
-        entity_category=EntityCategory.CONFIG,
-        native_min_value=0,
-        native_max_value=600,
-        native_step=1,
-        native_unit_of_measurement=UnitOfTime.SECONDS,
-        value_fn=lambda state: state.air_assist_close_delay,
-        set_cmd_fn=lambda val: f"{CMD_AIR_ASSIST_DELAY} T{int(val)}",
-        update_state_fn=lambda state, val: setattr(state, "air_assist_close_delay", int(val)),
-    ),
+    # ``air_assist_close_delay`` migrated to the AirPump accessory
+    # child device (see ``protocols/accessories/air_pump.py`` —
+    # entity spec ``close_delay``). Air-assist data is logically a
+    # property of the pump, not of the laser; surfacing it under
+    # the AirPump device groups state + control consistently.
     XtoolNumberEntityDescription(
         key="smoking_fan_duration",
         translation_key="smoking_fan_duration",
@@ -238,12 +228,9 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         icon="mdi:fire",
         value_fn=lambda state, _: state.fire_level,
     ),
-    XtoolSensorEntityDescription(
-        key="air_assist_level",
-        translation_key="air_assist_level",
-        icon="mdi:weather-windy",
-        value_fn=lambda state, _: state.air_assist_level,
-    ),
+    # ``air_assist_level`` migrated to the AirPump accessory child
+    # device (entity spec ``gear``). See
+    # ``protocols/accessories/air_pump.py``.
     XtoolSensorEntityDescription(
         key="task_id",
         translation_key="task_id",
@@ -476,64 +463,36 @@ class XtoolFillLight(XtoolEntity, LightEntity):
         self.async_write_ha_state()
 
 
-# --- Accessories / alarm / AP2 binary sensors ------------------------------
+# --- Alarm / Riser base --------------------------------------------------
+# M1098 USB / serial accessories are now surfaced through the
+# generic accessory framework (one HA child device per slot via
+# S1Coordinator._poll_accessories); the legacy aggregate
+# ``XtoolAccessoriesSensor`` was removed in v2.5.0.
 
 
-class XtoolAccessoriesSensor(XtoolEntity, BinarySensorEntity):
-    """Indicates whether any accessories are attached (M1098)."""
+class XtoolRiserBaseSensor(XtoolEntity, SensorEntity):
+    """Riser base type — diagnostic sensor for the S1's removable base.
 
-    _attr_translation_key = "accessories"
-    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-    _attr_icon = "mdi:puzzle"
+    Reads ``state.riser_base`` (populated by the M1098 poll) and
+    translates the integer slot id through ``RISER_BASE_NAMES``.
+    Stays on the laser device — riser base is structural, not a
+    BT / USB accessory.
+    """
+
+    _attr_translation_key = "riser_base"
+    _attr_icon = "mdi:layers"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._set_unique_id("accessories")
+        self._set_unique_id("riser_base")
 
     @property
-    def is_on(self) -> bool | None:
-        if self.coordinator.data is None:
+    def native_value(self) -> str | None:
+        d = self.coordinator.data
+        if d is None or not d.riser_base:
             return None
-        return len(self._get_attached()) > 0
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        if self.coordinator.data is None:
-            return {}
-        attached = self._get_attached()
-        attrs: dict[str, Any] = {
-            "accessories": [a["name"] for a in attached],
-        }
-        for accessory in attached:
-            if accessory["firmware"]:
-                attrs[f"{accessory['name']} firmware"] = accessory["firmware"]
-        if self.coordinator.data.riser_base:
-            riser_type = RISER_BASE_NAMES.get(
-                self.coordinator.data.riser_base, RISER_BASE_NAMES[1]
-            )
-            attrs["riser_base"] = riser_type
-        return attrs
-
-    def _get_attached(self) -> list[dict[str, str]]:
-        if self.coordinator.data is None:
-            return []
-        attached: list[dict[str, str]] = []
-        for idx, firmware in enumerate(self.coordinator.data.accessories_raw):
-            if firmware and idx in ACCESSORY_NAMES:
-                attached.append({
-                    "name": ACCESSORY_NAMES[idx],
-                    "firmware": firmware,
-                })
-        if self.coordinator.data.riser_base:
-            riser_type = RISER_BASE_NAMES.get(
-                self.coordinator.data.riser_base, RISER_BASE_NAMES[1]
-            )
-            attached.append({"name": riser_type, "firmware": ""})
-        # Bluetooth dongle (M9098 returned at least one paired MAC)
-        if self.coordinator.data.ble_accessories:
-            attached.append({"name": "Bluetooth dongle", "firmware": ""})
-        return attached
+        return RISER_BASE_NAMES.get(d.riser_base, RISER_BASE_NAMES[1])
 
 
 class XtoolAlarmSensor(XtoolEntity, BinarySensorEntity):
@@ -577,113 +536,10 @@ class XtoolXcsCompatMode(XtoolEntity, BinarySensorEntity):
         return getattr(self.coordinator, "xcs_compatibility_mode", False)
 
 
-class XtoolPurifierRunning(XtoolEntity, BinarySensorEntity):
-    """AP2 purifier running state (M9039 push)."""
-
-    _attr_translation_key = "purifier_running"
-    _attr_device_class = BinarySensorDeviceClass.RUNNING
-    _attr_icon = "mdi:air-purifier"
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id("purifier_running")
-
-    @property
-    def is_on(self) -> bool | None:
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.purifier_on
-
-
-class XtoolPurifierConnected(XtoolEntity, BinarySensorEntity):
-    """AP2 connected (purifier slot in M1098 accessories array populated)."""
-
-    _attr_translation_key = "purifier_connected"
-    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-    _attr_icon = "mdi:air-purifier"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id("purifier_connected")
-
-    @property
-    def is_on(self) -> bool | None:
-        if self.coordinator.data is None:
-            return None
-        accs = self.coordinator.data.accessories_raw
-        if ACCESSORY_IDX_PURIFIER >= len(accs):
-            return False
-        return bool(accs[ACCESSORY_IDX_PURIFIER])
-
-
-# --- AP2 sensors (M9039 push) ----------------------------------------------
-
-
-class _AP2Sensor(XtoolEntity, SensorEntity):
-    """Common base for AP2 push-driven sensors."""
-
-    def __init__(
-        self,
-        coordinator: XtoolCoordinator,
-        key: str,
-        icon: str,
-        unit: str | None = None,
-        category: EntityCategory | None = None,
-    ) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id(f"{key}")
-        self._attr_translation_key = key
-        self._attr_icon = icon
-        if unit is not None:
-            self._attr_native_unit_of_measurement = unit
-        if category is not None:
-            self._attr_entity_category = category
-
-
-class XtoolPurifierSpeed(_AP2Sensor):
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "purifier_speed", "mdi:air-purifier")
-
-    @property
-    def native_value(self) -> int | None:
-        d = self.coordinator.data
-        return d.purifier_speed if d else None
-
-
-class _FilterSensor(_AP2Sensor):
-    _field: str
-
-    def __init__(self, coordinator: XtoolCoordinator, key: str, field: str) -> None:
-        super().__init__(coordinator, key, "mdi:air-filter", unit="%")
-        self._field = field
-
-    @property
-    def native_value(self) -> int | None:
-        d = self.coordinator.data
-        if d is None:
-            return None
-        return getattr(d, self._field)
-
-
-class _PurifierSensorRaw(_AP2Sensor):
-    _field: str
-
-    def __init__(self, coordinator: XtoolCoordinator, key: str, field: str) -> None:
-        super().__init__(
-            coordinator,
-            key,
-            "mdi:weather-dust",
-            category=EntityCategory.DIAGNOSTIC,
-        )
-        self._field = field
-
-    @property
-    def native_value(self) -> int | None:
-        d = self.coordinator.data
-        if d is None:
-            return None
-        return getattr(d, self._field)
+# AP2 entities now created by the generic accessory framework
+# (see ``protocols/accessories/ap2.py``). The S1 coordinator
+# converts ``protocol._ap2_state`` into an :class:`AccessoryState`
+# in :meth:`S1Coordinator._poll_accessories`.
 
 
 # --- Firmware update entity (S1 composite multi-board version) -------------
@@ -698,11 +554,23 @@ _BOARD_LABELS = {
 
 
 def _short_version(raw: str) -> str:
-    """Strip the 'V' prefix and any trailing build suffix for compact display."""
+    """Normalise firmware-version string for compact display.
+
+    Uses the same first-3-+-last digit-group form the cloud API
+    returns for ``data.version`` (see
+    :func:`xtool.firmware.parse_firmware_version`) so the
+    installed-vs-latest string comparison HA does on the update
+    entity actually matches when the device is on the latest
+    firmware. Without this both sides would show different shapes
+    (``40.32.015.2025.01`` raw vs ``40.32.15.10`` normalised),
+    leaving the entity stuck on ``state=on`` even when no update
+    is actually available.
+    """
     if not raw:
         return "?"
-    v = raw.lstrip("Vv")
-    return v.split()[0] if v else "?"
+    from ...firmware import parse_firmware_version
+    normalised = parse_firmware_version(raw)
+    return normalised or "?"
 
 
 class S1FirmwareUpdate(XtoolFirmwareUpdate):
@@ -816,32 +684,17 @@ def build_s1_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
 
 
 def build_s1_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorEntity]:
-    entities: list[BinarySensorEntity] = [
-        XtoolAccessoriesSensor(coordinator),
+    return [
         XtoolAlarmSensor(coordinator),
         XtoolXcsCompatMode(coordinator),
     ]
-    if coordinator.has_ap2:
-        entities.append(XtoolPurifierRunning(coordinator))
-        entities.append(XtoolPurifierConnected(coordinator))
-    return entities
 
 
 def build_s1_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     entities: list[SensorEntity] = [
         XtoolSensor(coordinator, description) for description in SENSOR_DESCRIPTIONS
     ]
-    if coordinator.has_ap2:
-        entities.extend([
-            XtoolPurifierSpeed(coordinator),
-            _FilterSensor(coordinator, "filter_pre", "filter_pre"),
-            _FilterSensor(coordinator, "filter_medium", "filter_medium"),
-            _FilterSensor(coordinator, "filter_carbon", "filter_carbon"),
-            _FilterSensor(coordinator, "filter_dense_carbon", "filter_dense_carbon"),
-            _FilterSensor(coordinator, "filter_hepa", "filter_hepa"),
-            _PurifierSensorRaw(coordinator, "purifier_sensor_d", "purifier_sensor_d"),
-            _PurifierSensorRaw(coordinator, "purifier_sensor_s", "purifier_sensor_s"),
-        ])
+    entities.append(XtoolRiserBaseSensor(coordinator))
     return entities
 
 

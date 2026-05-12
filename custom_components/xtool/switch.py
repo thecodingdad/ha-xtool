@@ -22,7 +22,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up xTool switch entities."""
     coordinator = entry.runtime_data
+    coordinator.register_platform_add("switch", async_add_entities)
     entities: list[SwitchEntity] = list(coordinator.build_switches())
+    entities.extend(coordinator.initial_accessory_entities("switch"))
     if coordinator.power_switch_entity_id:
         entities.append(XtoolPowerSwitch(coordinator))
     async_add_entities(entities)

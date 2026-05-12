@@ -21,6 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 __all__ = [
     "FirmwareFile",
     "FirmwareUpdateInfo",
+    "check_accessory_firmware_update",
     "check_firmware_update",
     "download_firmware",
     "parse_firmware_version",
@@ -200,11 +201,12 @@ async def _check_single_package(
     content_id: str,
     device_id: str,
     current_versions: dict[str, str],
+    domain: str = "atomm",
 ) -> FirmwareUpdateInfo | None:
     """Check single-package firmware update (REST models)."""
     version = next(iter(current_versions.values()), "")
     payload = {
-        "domain": "atomm",
+        "domain": domain,
         "region": "en",
         "contentId": content_id,
         "deviceId": device_id,
@@ -265,6 +267,71 @@ async def _check_single_package(
         release_summary=release_summary,
         files=files,
         total_size=sum(f.file_size for f in files),
+    )
+
+
+async def check_accessory_firmware_update(
+    content_id: str,
+    device_id: str,
+    current_version: str,
+    force_latest: bool = False,
+) -> FirmwareUpdateInfo | None:
+    """Check the cloud for an accessory firmware update.
+
+    Accessories ship as single-package bundles addressed by their
+    `content_id` (e.g. `xTool-airpump1.0-firmware`,
+    `xTool-extinguisherBox-firmware`). Cloud actually serves
+    accessory firmware under **two** namespaces:
+
+    - ``domain=atomm`` with ``xTool-*-firmware`` IDs — covers newer
+      V2-firmware accessories (DuctFan, BigPurifier, …).
+    - ``domain=xcs`` with ``xcs-*-firmware`` IDs — covers legacy
+      XCS accessories (FireExtinguisher v1.5, Dongle, …).
+
+    Both forms appear in Studio's ``Ss`` / ``hd`` enums with identical
+    suffixes; only the prefix and request domain swap. We try the
+    ``xTool`` / atomm pair first (matches the integration's stored
+    ``firmware_content_id``); on cloud miss (HTTP error, code 10000,
+    or empty contents) we retry against the ``xcs`` namespace with
+    the prefix-swapped id.
+
+    ``device_id`` is the laser's serial number — the cloud uses it
+    as the requesting-client identifier; it doesn't have to match
+    the accessory's own SN.
+    """
+    if not content_id:
+        return None
+
+    current_versions = {"main": current_version or "0.0.0.0"}
+    if force_latest:
+        current_versions = {"main": "0.0.0.0"}
+
+    # Primary lookup: whatever namespace the content_id carries.
+    primary_domain = "xcs" if content_id.startswith("xcs-") else "atomm"
+    info = await _check_single_package(
+        content_id=content_id,
+        device_id=device_id,
+        current_versions=current_versions,
+        domain=primary_domain,
+    )
+    if info is not None:
+        return info
+
+    # Fallback: try the other namespace with the prefix-swapped id.
+    if content_id.startswith("xTool-"):
+        fallback_id = "xcs-" + content_id[len("xTool-"):]
+        fallback_domain = "xcs"
+    elif content_id.startswith("xcs-"):
+        fallback_id = "xTool-" + content_id[len("xcs-"):]
+        fallback_domain = "atomm"
+    else:
+        return None
+
+    return await _check_single_package(
+        content_id=fallback_id,
+        device_id=device_id,
+        current_versions=current_versions,
+        domain=fallback_domain,
     )
 
 

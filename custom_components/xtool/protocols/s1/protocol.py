@@ -232,13 +232,32 @@ def parse_laser_info(raw: str) -> LaserInfo:
 
 
 def parse_m2003(raw: str) -> DeviceInfo:
-    """Parse the M2003 JSON dump into a structured DeviceInfo."""
+    """Parse the M2003 JSON dump into a structured DeviceInfo.
+
+    S1 firmware sometimes embeds raw ASCII control characters
+    (``\\x15`` NAK, etc.) inside the ``M1098`` accessory-slot array
+    when a slot's stale entry has corrupted/stub bytes. Strict
+    JSON rejects unescaped control chars in strings, which would
+    leak through as a full parse failure and leave the coordinator
+    permanently stuck on whatever ``firmware_version`` /
+    ``serial_number`` the config entry initially held.
+
+    Strip the offending bytes before handing the payload to
+    ``json.loads``. ``parse_accessories`` does its own
+    control-char filtering on the M1098 slot strings later, so we
+    can drop them here without losing any slot semantics.
+    """
     info = DeviceInfo()
     json_str = raw.replace(CMD_FULL_INFO, "", 1).strip()
     if not json_str:
         return info
+    # Drop ASCII control characters (< 0x20) other than tab / LF /
+    # CR — those are valid JSON whitespace.
+    sanitised = "".join(
+        c for c in json_str if ord(c) >= 0x20 or c in ("\t", "\n", "\r")
+    )
     try:
-        data = json.loads(json_str)
+        data = json.loads(sanitised)
     except json.JSONDecodeError:
         return info
 
@@ -261,11 +280,25 @@ def parse_workspace_dims(raw: str) -> tuple[float, float, float]:
 
 
 def parse_accessories(raw: str) -> list[str]:
-    """Parse the M1098 quoted-string array into a list of firmware versions."""
+    """Parse the M1098 quoted-string array into a list of firmware versions.
+
+    S1 firmware sometimes reports stub bytes (single control character
+    like ``\\x15`` or a ``V40.x.y\\x15<garbage>`` prefix) for slots that
+    are empty / detected-but-unplugged. Any entry containing an ASCII
+    control character (< 0x20, excluding nothing — versions are pure
+    printable text) is treated as empty so the slot doesn't materialise
+    as a phantom child device.
+    """
     content = raw.replace(CMD_ACCESSORIES, "", 1).strip()
     if not content:
         return []
-    return [part.strip().strip('"') for part in content.split(",")]
+    out: list[str] = []
+    for part in content.split(","):
+        v = part.strip().strip('"')
+        if v and any(ord(c) < 0x20 for c in v):
+            v = ""
+        out.append(v)
+    return out
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -342,24 +375,19 @@ class S1Protocol(XtoolProtocol):
         self._last_stats_poll: float = -float(self._stats_interval)
         self._last_dongle_poll: float = -float(self._dongle_interval)
 
-        # AP2 air-cleaner state (parsed from M9039 push frames)
+        # AP2 air-cleaner state (parsed from M9039 push frames + the
+        # base coordinator's M9098 / per-accessory info polls). Always
+        # tracked — there is no manual toggle anymore; if the AP2 isn't
+        # paired the M9039 push simply never lands.
         self._ap2_state: dict[str, Any] = {}
         self._last_ap2_poll: float = -float(self._ap2_interval)
-        self._ap2_enabled: bool = False
-
-    def set_ap2_enabled(self, enabled: bool) -> None:
-        """Toggle AP2 polling. Called by coordinator from config option."""
-        self._ap2_enabled = enabled
 
     def set_poll_intervals(
         self,
-        ap2: int | None = None,
         stats: int | None = None,
         dongle: int | None = None,
     ) -> None:
         """Override per-poll cadences from the user's options."""
-        if ap2 is not None:
-            self._ap2_interval = max(int(ap2), 1)
         if stats is not None:
             self._stats_interval = max(int(stats), 1)
         if dongle is not None:
@@ -442,6 +470,16 @@ class S1Protocol(XtoolProtocol):
                 len(self._kick_times),
             )
             self._xcs_mode = True
+
+    # No ``passthrough`` helper on S1: the firmware doesn't expose
+    # a F0F7 tunnel via ``/passthrough`` (confirmed by probe — the
+    # HTTP route returns ``404 This URI does not exist``). All
+    # accessory M-codes that S1's main MCU actually understands
+    # (``M9039`` / ``M9064`` / ``M9098`` …) go raw over the
+    # M-code WS via :meth:`send_command`; the accessory framework's
+    # ``_passthrough_write`` falls back to that path when no
+    # ``passthrough`` / ``parts_control`` attribute exists on the
+    # protocol.
 
     async def send_command(self, command: str, timeout: float = 5.0) -> str:
         """Send a G-code command and return the matching response.
@@ -804,22 +842,23 @@ class S1Protocol(XtoolProtocol):
             for key, value in self._ap2_state.items():
                 setattr(state, key, value)
 
-        # Periodically request M9039 to refresh AP2 state when armed
-        if self._ap2_enabled:
-            now2 = time.monotonic()
-            if now2 - self._last_ap2_poll >= self._ap2_interval:
-                self._last_ap2_poll = now2
-                try:
-                    raw = await self.send_command(CMD_AIRFLOW_PURIFIER, timeout=4)
-                    if raw and raw.startswith(CMD_AIRFLOW_PURIFIER):
-                        body = raw[len(CMD_AIRFLOW_PURIFIER):].strip()
-                        parsed = _parse_m9039(body)
-                        if parsed:
-                            self._ap2_state.update(parsed)
-                            for key, value in parsed.items():
-                                setattr(state, key, value)
-                except Exception as err:
-                    _LOGGER.debug("M9039 poll failed: %s", err)
+        # Periodically request M9039 to refresh AP2 state. Always
+        # polled; if the AP2 isn't paired the firmware silently
+        # returns nothing and ``_ap2_state`` stays empty.
+        now2 = time.monotonic()
+        if now2 - self._last_ap2_poll >= self._ap2_interval:
+            self._last_ap2_poll = now2
+            try:
+                raw = await self.send_command(CMD_AIRFLOW_PURIFIER, timeout=4)
+                if raw and raw.startswith(CMD_AIRFLOW_PURIFIER):
+                    body = raw[len(CMD_AIRFLOW_PURIFIER):].strip()
+                    parsed = _parse_m9039(body)
+                    if parsed:
+                        self._ap2_state.update(parsed)
+                        for key, value in parsed.items():
+                            setattr(state, key, value)
+            except Exception as err:
+                _LOGGER.debug("M9039 poll failed: %s", err)
 
         # Generic alarm flag (M340 != A0)
         if CMD_FLAME_ALARM in self._push_state:
@@ -1029,3 +1068,28 @@ class S1Protocol(XtoolProtocol):
                             f"S1 flash progress poll failed {errors}x in a row"
                         )
                 await asyncio.sleep(2.0)
+
+    async def upload_accessory_firmware(
+        self,
+        accessory_type_id: str,
+        blob: bytes,
+        md5: str,
+        filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Upload + flash firmware to a BT/wired accessory.
+
+        Three-stage HTTP flow on the laser's main port — shared with
+        REST V1 and D-series families. Delegated to the package-level
+        ``_http_accessory_upload`` helper so all three implementations
+        stay byte-identical.
+        """
+        from ..rest.protocol import _http_accessory_upload
+        await _http_accessory_upload(
+            base_url=f"http://{self.host}:{self._http_port}",
+            accessory_type_id=accessory_type_id,
+            blob=blob,
+            md5=md5,
+            filename=filename,
+            progress_cb=progress_cb,
+        )

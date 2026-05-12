@@ -137,6 +137,64 @@ class DSeriesProtocol(XtoolProtocol):
                 pass
         self._ws_task = None
 
+    async def passthrough(
+        self, mcode: str, prefix: bytes, timeout: float = 6.0,
+    ) -> str | None:
+        """Tunnel a BT-accessory M-code via ``/passthrough`` (port 8080).
+
+        Same wire shape as the REST family: ``POST /passthrough`` with
+        body ``{link:"uart485", data_b64:<F0F7-framed>}``; the
+        firmware mirrors the F0F7 reply back through the same field.
+        Returns the inner payload (stripped of the M-code prefix) or
+        ``None`` on failure.
+        """
+        from ..accessories import encode_f0f7, decode_f0f7
+
+        encoded = encode_f0f7(mcode, prefix)
+        url = f"{self._base_url}/passthrough"
+        _LOGGER.debug(
+            "D-series passthrough TX mcode=%r prefix=%r b64=%s",
+            mcode, prefix, encoded,
+        )
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json={"link": "uart485", "data_b64": encoded},
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as resp:
+                    if resp.status != 200:
+                        _LOGGER.debug(
+                            "D-series passthrough %r: HTTP %d",
+                            mcode, resp.status,
+                        )
+                        return None
+                    result = await resp.json(content_type=None)
+        except Exception as err:
+            _LOGGER.debug("D-series passthrough %s failed: %s", mcode, err)
+            return None
+        if isinstance(result, dict) and "data" in result:
+            result = result["data"]
+        if not isinstance(result, dict):
+            _LOGGER.debug(
+                "D-series passthrough %r: non-dict reply %r",
+                mcode, result,
+            )
+            return None
+        reply_b64 = result.get("data_b64")
+        if not isinstance(reply_b64, str) or not reply_b64:
+            _LOGGER.debug(
+                "D-series passthrough %r: no data_b64 in reply %r",
+                mcode, result,
+            )
+            return None
+        decoded = decode_f0f7(reply_b64, mcode)
+        _LOGGER.debug(
+            "D-series passthrough RX mcode=%r decoded=%r",
+            mcode, decoded,
+        )
+        return decoded
+
     async def send_command(self, command: str, timeout: float = 5.0) -> str:
         """Forward a raw G-code string to /cmd. Used by the buttons platform."""
         url = f"{self._base_url}/cmd"
@@ -396,6 +454,31 @@ class DSeriesProtocol(XtoolProtocol):
                         )
         if progress_cb is not None:
             progress_cb(1.0)
+
+    async def upload_accessory_firmware(
+        self,
+        accessory_type_id: str,
+        blob: bytes,
+        md5: str,
+        filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Upload + flash firmware to a BT/wired accessory.
+
+        Same three-stage HTTP flow Studio uses for D1 / D1 Pro /
+        D1 Pro 2.0 — delegated to the shared ``_http_accessory_upload``
+        helper in the REST family module so all three protocol
+        families stay byte-identical.
+        """
+        from ..rest.protocol import _http_accessory_upload
+        await _http_accessory_upload(
+            base_url=self._base_url,
+            accessory_type_id=accessory_type_id,
+            blob=blob,
+            md5=md5,
+            filename=filename,
+            progress_cb=progress_cb,
+        )
 
     async def _system_call(self, action: str, params: dict) -> None:
         """Issue a /system?action=… GET with extra query params."""

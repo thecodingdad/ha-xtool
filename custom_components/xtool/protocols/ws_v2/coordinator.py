@@ -24,6 +24,13 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+# Studio's V2 ``ext_purifier`` peripheral speeds map 0..3 to the
+# off/low/medium/high labels the accessory's speed-select uses.
+_PURIFIER_SPEED_INT_TO_LABEL: dict[int, str] = {
+    0: "off", 1: "low", 2: "medium", 3: "high",
+}
+
+
 class WSV2Coordinator(XtoolCoordinator):
     """Coordinator for the WS-V2 family (F1, F1U, F2 family, M1U, P2S, P3,
     MetalFab, Apparel Printer, F1 Lite, F1 Ultra V2 — anything that runs
@@ -86,12 +93,74 @@ class WSV2Coordinator(XtoolCoordinator):
             self._emit_fire_warning_if_changed(prev_alarm, state.alarm_present)
             self._drain_protocol_events()
 
+            await self._poll_accessories(state)
+
         except Exception as err:
             _LOGGER.debug("WS-V2 poll failed: %s", err)
             state.available = False
             await self.protocol.disconnect()
 
+        # Set state on coordinator before dispatching new-accessory
+        # entities so their ``available`` property reads the fresh data.
+        if state.available:
+            self.data = state
+            self._dispatch_new_accessories()
+
         return state
+
+    async def _poll_accessories(self, state: XtoolDeviceState) -> None:
+        """Run the standard BT-accessory walk, then merge laser-state
+        values into the AirPumpV2 / Purifier child-device accessory
+        states so the laser-host control entities (air-assist gear
+        defaults, close-delay, purifier check / continue / timeout,
+        external-purifier speed) surface on the accessory's HA
+        child device instead of on the laser itself.
+
+        Per-model gated by ``has_air_assist_state`` / ``has_purifier_timeout``
+        — those flags signal "this firmware exposes the laser-host
+        endpoints for the accessory". When False (e.g. F2 Ultra UV
+        whose AirPump V2 is fully BT-driven), the field merge is
+        skipped and the accessory keeps its pure BT-tunneled
+        wire surface.
+        """
+        await super()._poll_accessories(state)
+        accs = state.connected_accessories or {}
+        model = self.model
+        for acc in accs.values():
+            if (
+                acc.type_id in ("AirPump", "AirPumpV2")
+                and model.has_air_assist_state
+            ):
+                # V2 firmware exposes air-pump state through the
+                # laser's ``airassistV2`` peripheral push + the
+                # device-config endpoints; merge those into the
+                # accessory fields so the unified entity surface
+                # mirrors what S1 already does.
+                acc.fields.setdefault("gear", state.air_assist_level)
+                acc.fields["connected"] = bool(state.air_assist_enabled)
+                acc.fields["running"] = (
+                    bool(state.air_assist_enabled)
+                    and (state.air_assist_level or 0) > 0
+                )
+                acc.fields["close_delay"] = state.air_assist_close_delay
+                acc.fields["air_assist_gear_cut"] = state.air_assist_gear_cut
+                acc.fields["air_assist_gear_grave"] = (
+                    state.air_assist_gear_grave
+                )
+            elif (
+                acc.type_id in ("Purifier", "LargePurifier", "LargePurifierV3")
+                and model.has_purifier_timeout
+            ):
+                acc.fields["purifier_speed"] = _PURIFIER_SPEED_INT_TO_LABEL.get(
+                    int(state.purifier_speed or 0), "off",
+                )
+                if state.purifier_check is not None:
+                    acc.fields["purifier_check"] = bool(state.purifier_check)
+                if state.purifier_continue is not None:
+                    acc.fields["purifier_continue"] = bool(
+                        state.purifier_continue
+                    )
+                acc.fields["purifier_timeout"] = state.purifier_timeout
 
     async def _fetch_device_info(self) -> None:
         try:

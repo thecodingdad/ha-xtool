@@ -23,23 +23,36 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+# S1's M1098 reply carries a fixed-position firmware-version array
+# per directly-wired accessory slot (USB / serial). The framework
+# surfaces each non-empty slot as its own ``AccessoryState`` so the
+# user gets a child device per accessory instead of a single
+# aggregate binary sensor. Slot 0 (Purifier) is reserved for the BT
+# AP2 path — handled separately so its richer field set wins.
+_M1098_SLOT_TO_TYPE: dict[int, str] = {
+    1: "FireExtinguisher",
+    2: "AirPump",
+    3: "AirPumpV2",
+    4: "FireExtinguisherV1_5",
+}
+
+
 class S1Coordinator(XtoolCoordinator):
     """Coordinator for the xTool S1 (WebSocket M-code protocol)."""
 
-    def __init__(self, *args: Any, has_ap2: bool = False, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.has_ap2 = has_ap2
         # S1-only firmware/workspace fields populated by _fetch_device_info().
         self.laser_firmware: str = ""
         self.wifi_firmware: str = ""
         self.workspace_x: float = 0.0
         self.workspace_y: float = 0.0
         self.workspace_z: float = 0.0
-        # Push AP2 toggle into the protocol so it can use it before first poll.
-        self.protocol.set_ap2_enabled(has_ap2)
         # Forward poll intervals; protocol's defaults match const.py defaults.
+        # AP2 polling is now driven by the generic accessory framework
+        # (M9098 → per-accessory info M-codes) on the base coordinator's
+        # standard cadence — no S1-specific knob.
         self.protocol.set_poll_intervals(
-            ap2=self.ap2_poll_interval,
             stats=self.stats_poll_interval,
             dongle=self.dongle_poll_interval,
         )
@@ -47,6 +60,103 @@ class S1Coordinator(XtoolCoordinator):
     @property
     def xcs_compatibility_mode(self) -> bool:
         return self.protocol.xcs_compatibility_mode
+
+    async def _poll_accessories(self, state: XtoolDeviceState) -> None:
+        """S1-specific accessory enumeration.
+
+        S1 firmware doesn't expose the F0F7 ``/passthrough`` tunnel
+        the REST / D-series / WS-V2 families use (the route returns
+        404 — see PROTOCOL.md). Accessory data on S1 comes from two
+        always-available native sources:
+
+        - ``M1098`` slot array → per-slot firmware version for
+          directly-wired accessories (AirPump, FireExtinguisher,
+          AP2 …); the slot walk below adds an
+          :class:`AccessoryState` per non-empty slot.
+        - ``M9039`` push frames → live AP2 state cached on
+          :attr:`S1Protocol._ap2_state`; synthesised here into a
+          ``Purifier`` accessory so the AP2 entities (gear / 5
+          filter wear / running …) come up via the generic
+          framework.
+
+        No M9098 walk — S1's M9098 raw reply is a MAC list with no
+        type discriminator (Studio resolves type via a separate
+        ``/v1/project/accessory/list`` cloud query the integration
+        deliberately doesn't reach for).
+        """
+        from ..base import AccessoryState
+
+        proto = self.protocol
+        new_state: dict[str, AccessoryState] = {}
+
+        # AP2 push-driven state (M9039) → unified Purifier accessory.
+        ap2 = getattr(proto, "_ap2_state", None)
+        if ap2:
+            fields: dict[str, Any] = {
+                "gear": ap2.get("purifier_speed"),
+                "running": ap2.get("purifier_on"),
+            }
+            for key in (
+                "filter_pre", "filter_medium", "filter_carbon",
+                "filter_dense_carbon", "filter_hepa",
+                "purifier_sensor_d", "purifier_sensor_s",
+            ):
+                if key in ap2:
+                    fields[key] = ap2[key]
+            new_state["Purifier:ap2"] = AccessoryState(
+                type_id="Purifier", sn="ap2", fields=fields,
+            )
+
+        # M1098 walk — surfaces directly-wired (USB / serial)
+        # accessories that don't go through the BT dongle.
+        # Firmware-version-only; the M9098 walk above wins for any
+        # type that already populated a richer entry.
+        accessories_raw = getattr(state, "accessories_raw", None) or []
+        _LOGGER.debug(
+            "S1 M1098 accessories_raw=%r", accessories_raw,
+        )
+        for idx, type_id in _M1098_SLOT_TO_TYPE.items():
+            if idx >= len(accessories_raw):
+                continue
+            firmware = accessories_raw[idx]
+            if not firmware:
+                continue
+            if any(k.startswith(f"{type_id}:") for k in new_state):
+                continue
+            fields: dict[str, Any] = {"version": firmware}
+            # AirPump on S1: air-assist live state lives on the
+            # laser's M15 push + M1099 poll, not on a BT-tunneled
+            # M9082 info call. Merge those fields into the accessory
+            # state so the AirPump child device surfaces gear /
+            # running / close_delay alongside the firmware version.
+            if type_id in ("AirPump", "AirPumpV2"):
+                # M15 wire shape: ``A<enabled> S<gear>``. ``A=1``
+                # means the air-assist hardware is connected /
+                # circuit armed; ``S`` is the gear (0 = inactive,
+                # 1-3 = pumping). ``running`` should fire only when
+                # the pump is actively pushing air — both flags
+                # set; otherwise users see "on" with gear 0 even
+                # though no air flows.
+                gear = state.air_assist_level
+                if gear is not None:
+                    fields["gear"] = gear
+                fields["connected"] = bool(state.air_assist_enabled)
+                fields["running"] = (
+                    bool(state.air_assist_enabled)
+                    and gear is not None
+                    and gear > 0
+                )
+                if state.air_assist_close_delay is not None:
+                    fields["close_delay"] = state.air_assist_close_delay
+            _LOGGER.debug(
+                "S1 accessory detected (M1098 slot %d): %s fields=%r",
+                idx, type_id, fields,
+            )
+            new_state[f"{type_id}:slot{idx}"] = AccessoryState(
+                type_id=type_id, sn=f"slot{idx}", fields=fields,
+            )
+
+        state.connected_accessories = new_state
 
     async def send_command(self, command: str) -> str:
         """Send an M-code command to the S1 protocol with safe error logging."""
@@ -92,6 +202,8 @@ class S1Coordinator(XtoolCoordinator):
             self._emit_status_transition_events(prev_status, state)
             self._emit_fire_warning_if_changed(prev_alarm, state.alarm_present)
 
+            await self._poll_accessories(state)
+
         except Exception as err:
             _LOGGER.debug("Error polling xTool S1: %s", err)
             # XCS Compatibility Mode — keep cached state on transient errors.
@@ -101,6 +213,9 @@ class S1Coordinator(XtoolCoordinator):
             state.available = False
             await self.protocol.disconnect()
 
+        if state.available:
+            self.data = state
+            self._dispatch_new_accessories()
         return state
 
     async def _fetch_device_info(self) -> None:

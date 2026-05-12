@@ -21,6 +21,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up xTool binary sensor entities."""
     coordinator = entry.runtime_data
+    coordinator.register_platform_add("binary_sensor", async_add_entities)
     entities: list[BinarySensorEntity] = []
     model = coordinator.model
 
@@ -29,6 +30,7 @@ async def async_setup_entry(
         entities.append(XtoolCoverSensor(coordinator))
 
     entities.extend(coordinator.build_binary_sensors())
+    entities.extend(coordinator.initial_accessory_entities("binary_sensor"))
     async_add_entities(entities)
 
 

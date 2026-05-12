@@ -53,11 +53,16 @@ class DSeriesCoordinator(XtoolCoordinator):
                 prev_status, state.status,
             )
 
+            await self._poll_accessories(state)
+
         except Exception as err:
             _LOGGER.debug("Error polling xTool D-series: %s", err)
             state.available = False
             await self.protocol.disconnect()
 
+        if state.available:
+            self.data = state
+            self._dispatch_new_accessories()
         return state
 
     async def _fetch_device_info(self) -> None:

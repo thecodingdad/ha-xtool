@@ -7,7 +7,7 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..const import DEFAULT_DEVICE_NAME
 
@@ -91,6 +91,25 @@ class ConnectionInfo:
 
 
 @dataclass
+class AccessoryState:
+    """Live state of one BT-paired accessory.
+
+    ``type_id`` matches an ``AccessoryDefinition.type_id`` from
+    :mod:`accessories.definitions`; ``sn`` is the per-device serial.
+    ``fields`` carries the parsed M-code response (see
+    :mod:`accessories.mcodes`) and entity ``value_fn`` lookups read
+    from there. ``last_seen`` lets the coordinator decide when a
+    formerly-paired accessory has dropped off the dongle without
+    being explicitly unbound.
+    """
+
+    type_id: str
+    sn: str
+    fields: dict[str, Any] = field(default_factory=dict)
+    last_seen: float = 0.0
+
+
+@dataclass
 class XtoolDeviceModel:
     """Capabilities + protocol class for a specific xTool device model."""
 
@@ -132,6 +151,15 @@ class XtoolDeviceModel:
     has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
     # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
     has_button_event: bool = False  # WS-V2: /button/status push fires
+    # BT accessory subsystem. Default True — every Studio bundle (S1
+    # / D-series / REST / WS-V2) defines ``getAllDangleConnectList``
+    # (M9098), and the firmware returns an empty list when no dongle
+    # is attached, so the per-poll cost on accessory-less devices is
+    # one no-op M-code per cycle. Models that demonstrably can't
+    # tunnel BT (e.g. firmware bundles that confirm no
+    # ``/passthrough`` or ``/v1/parts/control`` route) opt out
+    # explicitly with ``has_bt_accessories=False``.
+    has_bt_accessories: bool = True
     firmware_content_id: str = ""
     firmware_multi_package: bool = False
     firmware_board_ids: tuple[str, ...] = ()
@@ -243,6 +271,14 @@ class XtoolDeviceState:
     connection_count: int = 0
     accessories_raw: list[str] = field(default_factory=list)
     riser_base: int = 0
+
+    # BT accessory subsystem — populated by ``coordinator._poll_accessories``
+    # for every model with ``has_bt_accessories=True``. Keyed by
+    # ``"<type_id>:<sn>"`` (sn falls back to the dongle slot index when the
+    # accessory doesn't report one). Each entry carries the decoded
+    # M-code fields per :func:`accessories.mcodes.parse_*` plus the
+    # accessory-type metadata from :class:`AccessoryDefinition`.
+    connected_accessories: dict[str, "AccessoryState"] = field(default_factory=dict)
 
     # D-series safety
     tilt_stop_enabled: bool = False
@@ -434,4 +470,37 @@ class XtoolProtocol(ABC):
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement firmware flashing"
+        )
+
+    async def upload_accessory_firmware(
+        self,
+        accessory_type_id: str,
+        blob: bytes,
+        md5: str,
+        filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Upload + trigger a firmware flash on a BT / wired accessory.
+
+        Studio's three-stage flow (mirrored verbatim for S1 / REST V1 /
+        D-series — these families serve the same `/parts` + `/v1/parts/firmware`
+        endpoints on the laser's main HTTP port 8080):
+
+        1. ``POST /parts`` (multipart, ``filetype=4&filename=<md5>.<ext>&md5=<md5>``)
+        2. wait ~5 s, then ``POST /v1/parts/firmware/upgrade`` with
+           ``{filename:"<md5>.<ext>"}``
+        3. poll ``GET /v1/parts/firmware/upgrade-progress`` until done
+
+        WS-V2 firmware uses a different shape: the blob rides the
+        ``file_stream`` channel with ``fileType:2`` and the trigger goes
+        through ``parts_control`` against ``/v1/platform/accessories/upgrade``.
+
+        Default raises NotImplementedError so the update entity can
+        surface a useful error if a family is missing the implementation.
+
+        ``accessory_type_id`` is the symbolic id ("DuctFan", "Purifier",
+        …); each protocol maps it to the numeric Te value when needed.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement accessory firmware upload"
         )

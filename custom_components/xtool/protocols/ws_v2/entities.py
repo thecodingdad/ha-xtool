@@ -597,37 +597,10 @@ class WSV2FlameLevelSelect(XtoolEntity, SelectEntity):
         self.async_write_ha_state()
 
 
-class WSV2PurifierSpeedSelect(XtoolEntity, SelectEntity):
-    """External-purifier speed via ``ext_purifier`` peripheral."""
-
-    _attr_translation_key = "purifier_speed_select"
-    _attr_icon = "mdi:air-purifier"
-    _attr_options = ["off", "low", "medium", "high"]
-    _LABEL_TO_INT = {"off": 0, "low": 1, "medium": 2, "high": 3}
-    _INT_TO_LABEL = {v: k for k, v in _LABEL_TO_INT.items()}
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id("purifier_speed")
-
-    @property
-    def current_option(self) -> str | None:
-        d = self.coordinator.data
-        if d is None:
-            return None
-        return self._INT_TO_LABEL.get(int(d.purifier_speed))
-
-    async def async_select_option(self, option: str) -> None:
-        raw = self._LABEL_TO_INT.get(option)
-        if raw is None:
-            return
-        await self.coordinator.protocol.set_peripheral(
-            "ext_purifier", action="set_speed", value=raw,
-        )
-        if self.coordinator.data is not None:
-            self.coordinator.data.purifier_speed = raw
-            self.coordinator.data.purifier_on = raw > 0
-        self.async_write_ha_state()
+# ``WSV2PurifierSpeedSelect`` migrated to the Purifier accessory
+# child device — its write path (``ext_purifier`` peripheral) lives
+# now in ``protocols/accessories/purifier.py`` as a ``write_action``
+# on the Purifier definition's ``speed_select`` entity spec.
 
 
 # --- Light --------------------------------------------------------------
@@ -1040,14 +1013,10 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.LOCK,
             )(coordinator)
         )
-    if model.has_air_assist_state:
-        entities.append(
-            _bool_sensor_factory(
-                "air_assist_connected", "air_assist_connected",
-                BinarySensorDeviceClass.CONNECTIVITY,
-                EntityCategory.DIAGNOSTIC,
-            )(coordinator)
-        )
+    # ``air_assist_connected`` migrated to the AirPump / AirPumpV2
+    # accessory child device (see ``protocols/accessories/air_pump``).
+    # The laser-state ``state.air_assist_enabled`` is merged into the
+    # accessory's ``fields["connected"]`` by ``_poll_accessories``.
 
     if model.has_cooling_fan:
         entities.append(
@@ -1141,14 +1110,11 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
             coordinator, "filter_check", "filterCheck", "filter_check",
             "mdi:air-filter",
         ),
-        _WSV2ConfigSwitch(
-            coordinator, "purifier_check", "purifierCheck", "purifier_check",
-            "mdi:air-purifier",
-        ),
-        _WSV2ConfigSwitch(
-            coordinator, "purifier_continue", "purifierContinue",
-            "purifier_continue", "mdi:autorenew",
-        ),
+        # ``purifier_check`` + ``purifier_continue`` migrated to the
+        # Purifier accessory child device; the entity layer surfaces
+        # them on the AP2 / AP2-Large / AP2-Max accessory whenever
+        # one is currently paired (laser-state values are merged via
+        # ``WSV2Coordinator._poll_accessories``).
     ])
     if model.has_machine_lock:
         entities.append(
@@ -1202,11 +1168,8 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
 
 def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     entities: list[NumberEntity] = [
-        _WSV2ConfigNumber(
-            coordinator, "air_assist_close_delay", "airAssistDelay",
-            "air_assist_close_delay", 0, 600, 1,
-            UnitOfTime.SECONDS, "mdi:fan-clock",
-        ),
+        # ``air_assist_close_delay`` migrated to the AirPump accessory
+        # child device. See ``protocols/accessories/air_pump.py``.
         _WSV2ConfigNumber(
             coordinator, "smoking_fan_duration", "smokingFanDelay",
             "smoking_fan_duration", 1, 600, 1,
@@ -1229,17 +1192,10 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         ),
     ]
     model = coordinator.model
-    if model.has_air_assist_state:
-        entities.extend([
-            _WSV2ConfigNumber(
-                coordinator, "air_assist_gear_cut", "airassistCut",
-                "air_assist_gear_cut", 0, 4, 1, None, "mdi:fan",
-            ),
-            _WSV2ConfigNumber(
-                coordinator, "air_assist_gear_engrave", "airassistGrave",
-                "air_assist_gear_grave", 0, 4, 1, None, "mdi:fan",
-            ),
-        ])
+    # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
+    # to the AirPump accessory child device (the per-job-mode default
+    # gear is conceptually an AirPump setting even though the wire
+    # path is the laser's ``/v1/device/configs`` API).
     if model.has_fill_light:
         entities.append(
             _WSV2ConfigNumber(
@@ -1256,14 +1212,10 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
                 UnitOfTime.SECONDS, "mdi:led-off",
             )
         )
-    if model.has_purifier_timeout:
-        entities.append(
-            _WSV2ConfigNumber(
-                coordinator, "purifier_timeout", "purifierTimeout",
-                "purifier_timeout", 0, 3600, 30,
-                UnitOfTime.SECONDS, "mdi:air-purifier",
-            )
-        )
+    # ``purifier_timeout`` migrated to the Purifier accessory child
+    # device. The laser-host config value is merged into the AP2
+    # accessory's ``fields["purifier_timeout"]`` via
+    # ``WSV2Coordinator._poll_accessories``.
     if model.has_camera_exposure:
         entities.extend([
             _WSV2ConfigNumber(
@@ -1284,7 +1236,9 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
     return [
         WSV2FlameAlarmSelect(coordinator),
         WSV2FlameLevelSelect(coordinator),
-        WSV2PurifierSpeedSelect(coordinator),
+        # ``WSV2PurifierSpeedSelect`` migrated to the Purifier
+        # accessory child device — the entity surfaces only when an
+        # AP2 / AP2-Large / AP2-Max is currently paired.
     ]
 
 

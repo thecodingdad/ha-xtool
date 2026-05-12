@@ -740,6 +740,51 @@ class WSV2Protocol(XtoolProtocol):
             data={"mode": mode},
         )
 
+    async def parts_control(
+        self, mcode: str, prefix: bytes, timeout: float = 6.0,
+    ) -> str | None:
+        """Tunnel an M-code to a BT accessory through ``/v1/parts/control``.
+
+        Body shape: ``{link:"uart485", data_b64:<F0F7-encoded>}``.
+        Response carries the F0F7-framed reply under the same
+        ``data_b64`` field. Returns the inner payload (stripped of
+        the leading M-code token) or ``None`` on failure.
+        """
+        from ..accessories import encode_f0f7, decode_f0f7
+
+        encoded = encode_f0f7(mcode, prefix)
+        _LOGGER.debug(
+            "V2 parts_control TX mcode=%r prefix=%r b64=%s",
+            mcode, prefix, encoded,
+        )
+        try:
+            result = await self.request(
+                "/v1/parts/control",
+                "POST",
+                data={"link": "uart485", "data_b64": encoded},
+                timeout=timeout,
+            )
+        except Exception as err:
+            _LOGGER.debug("V2 parts_control %s failed: %s", mcode, err)
+            return None
+        if not isinstance(result, dict):
+            _LOGGER.debug(
+                "V2 parts_control %r: non-dict reply %r", mcode, result,
+            )
+            return None
+        reply_b64 = result.get("data_b64")
+        if not isinstance(reply_b64, str) or not reply_b64:
+            _LOGGER.debug(
+                "V2 parts_control %r: no data_b64 in reply %r",
+                mcode, result,
+            )
+            return None
+        decoded = decode_f0f7(reply_b64, mcode)
+        _LOGGER.debug(
+            "V2 parts_control RX mcode=%r decoded=%r", mcode, decoded,
+        )
+        return decoded
+
     async def camera_snap(self, camera_type: str = "overview") -> bytes | None:
         """Capture a JPEG snapshot from one of the device's cameras.
 
@@ -1001,6 +1046,16 @@ class WSV2Protocol(XtoolProtocol):
             "V2 push url=%s module=%s type=%s info=%r",
             url, module, typ, info,
         )
+
+        # BT-accessory live status — wire shape not yet decoded; logged
+        # explicitly so a future debug-log capture can drive the
+        # connect/disconnect handler. Keep dispatching normally so any
+        # downstream processing can run once we add it.
+        if url == "/accessory/status":
+            _LOGGER.debug(
+                "V2 /accessory/status push (RAW): event=%r",
+                event,
+            )
 
         if url == "/work/mode" and module == "STATUS_CONTROLLER" and typ == "MODE_CHANGE":
             mode = ""
@@ -1889,3 +1944,39 @@ class WSV2Protocol(XtoolProtocol):
         """
         self._pending_model = model
         self._model = model
+
+    async def upload_accessory_firmware(
+        self,
+        accessory_type_id: str,
+        blob: bytes,
+        md5: str,
+        filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Not yet implemented on WS-V2 firmware.
+
+        V2 uses a different upload shape than the REST/S1/D-series
+        ``/upload`` + ``/v1/parts/firmware/upgrade`` path: the blob
+        rides the ``file_stream`` WS channel with
+        ``params={fileType:2, fileName:<md5>}`` and the trigger goes
+        through ``parts_control`` against
+        ``/v1/platform/accessories/upgrade`` with
+        ``{params:{id:<numeric-Te-type-id>}, data:{filename:<md5>}}``.
+
+        Needs:
+        - ``Te`` numeric type-id lookup table (Te enum from
+          PROTOCOL.md — already documented).
+        - File-stream client wiring (the integration already has
+          ``_ws_file`` initialised; needs a ``send_binary`` helper
+          that emits the chunked-upload framing Studio uses).
+        - Progress reporting via the ``accessory.upgradeProgressInfo``
+          push frame on the instruction channel.
+
+        Leaving as a clean ``NotImplementedError`` until a V2-firmware
+        owner can validate the flow end-to-end.
+        """
+        raise NotImplementedError(
+            "Accessory firmware updates over WS-V2 are not yet "
+            "implemented — feature flag pending hardware-side "
+            "validation. Track issue in the integration repo."
+        )

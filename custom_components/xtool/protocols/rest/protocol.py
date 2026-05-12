@@ -699,6 +699,48 @@ class RestProtocol(XtoolProtocol):
             _LOGGER.debug("REST POST JSON %s failed: %s", url, err)
         return None
 
+    async def passthrough(
+        self, mcode: str, prefix: bytes, timeout: float = 6.0,
+    ) -> str | None:
+        """Tunnel an M-code to a BT accessory through the device's
+        ``/passthrough`` endpoint (port 8080).
+
+        Body shape: ``{link:"uart485", data_b64:<F0F7-encoded>}``.
+        Response carries the F0F7-framed reply under the same
+        ``data_b64`` field. Returns the inner payload (stripped of
+        the leading M-code token) or ``None`` on failure / timeout.
+        """
+        from ..accessories import encode_f0f7, decode_f0f7
+
+        encoded = encode_f0f7(mcode, prefix)
+        _LOGGER.debug(
+            "REST passthrough TX mcode=%r prefix=%r b64=%s",
+            mcode, prefix, encoded,
+        )
+        result = await self._post_json(
+            "/passthrough",
+            data={"link": "uart485", "data_b64": encoded},
+            timeout=timeout,
+        )
+        if not isinstance(result, dict):
+            _LOGGER.debug(
+                "REST passthrough %r: empty/non-dict reply %r",
+                mcode, result,
+            )
+            return None
+        reply_b64 = result.get("data_b64")
+        if not isinstance(reply_b64, str) or not reply_b64:
+            _LOGGER.debug(
+                "REST passthrough %r: no data_b64 in reply %r",
+                mcode, result,
+            )
+            return None
+        decoded = decode_f0f7(reply_b64, mcode)
+        _LOGGER.debug(
+            "REST passthrough RX mcode=%r decoded=%r", mcode, decoded,
+        )
+        return decoded
+
     # --- Firmware update overrides --------------------------------------
 
     async def get_firmware_versions(self, coordinator) -> dict[str, str]:
@@ -870,6 +912,174 @@ class RestProtocol(XtoolProtocol):
     def set_strategy(self, strategy: str) -> None:
         """Stash the model's firmware_flash_strategy for the next flash call."""
         self._pending_strategy = strategy
+
+    async def upload_accessory_firmware(
+        self,
+        accessory_type_id: str,
+        blob: bytes,
+        md5: str,
+        filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Upload + flash firmware to a BT/wired accessory.
+
+        Same three-stage flow Studio uses for the REST V1 family:
+
+        1. ``POST /upload`` multipart, query string carries
+           ``filetype=4&filename=<md5>.<ext>&md5=<md5>``.
+        2. wait 5 s, then ``POST /v1/parts/firmware/upgrade`` with
+           JSON body ``{filename:"<md5>.<ext>"}``.
+        3. poll ``GET /v1/parts/firmware/upgrade-progress`` until
+           the device reports 100 %.
+
+        Shared shape with S1 + D-series — those families also use the
+        same accessory upgrade endpoints on the main HTTP port.
+        """
+        await _http_accessory_upload(
+            base_url=self._base_url,
+            accessory_type_id=accessory_type_id,
+            blob=blob,
+            md5=md5,
+            filename=filename,
+            progress_cb=progress_cb,
+        )
+
+
+async def _http_accessory_upload(
+    base_url: str,
+    accessory_type_id: str,
+    blob: bytes,
+    md5: str,
+    filename: str,
+    progress_cb: Callable[[float], None] | None,
+) -> None:
+    """Shared HTTP-side accessory firmware upload + flash flow.
+
+    Reused by every protocol family whose laser serves the
+    ``/upload`` + ``/v1/parts/firmware/upgrade`` endpoints on the
+    same HTTP port (S1, REST V1, D-series — pre-V2-platform
+    families). ``base_url`` is the laser's HTTP root
+    (``http://<host>:8080``); the helper appends the three paths
+    Studio's bundle calls.
+
+    Lifted out of the protocol classes so all three implementations
+    stay byte-identical and bug fixes land in one place.
+    """
+    import asyncio
+    import json as _json
+    upload_url = f"{base_url}/upload"
+    trigger_url = f"{base_url}/v1/parts/firmware/upgrade"
+    progress_url = f"{base_url}/v1/parts/firmware/upgrade-progress"
+
+    form = aiohttp.FormData()
+    form.add_field(
+        "file", blob,
+        filename=filename,
+        content_type="application/octet-stream",
+    )
+    async with aiohttp.ClientSession() as session:
+        # 1. upload
+        _LOGGER.debug(
+            "Accessory %s upload: POST %s filename=%s md5=%s (%d B)",
+            accessory_type_id, upload_url, filename, md5, len(blob),
+        )
+        async with session.post(
+            upload_url,
+            data=form,
+            params={"filetype": "4", "filename": filename, "md5": md5},
+            timeout=aiohttp.ClientTimeout(total=600),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(
+                    f"Accessory /upload HTTP {resp.status} for "
+                    f"{accessory_type_id}"
+                )
+            body = await resp.text()
+            try:
+                payload = _json.loads(body) if body else {}
+            except (ValueError, TypeError):
+                payload = {}
+            if payload.get("result") != "ok":
+                raise RuntimeError(
+                    f"Accessory /upload rejected for "
+                    f"{accessory_type_id}: {body!r}"
+                )
+
+        if progress_cb is not None:
+            progress_cb(0.2)
+        await asyncio.sleep(5)
+
+        # 2. trigger
+        _LOGGER.debug(
+            "Accessory %s trigger: POST %s filename=%s",
+            accessory_type_id, trigger_url, filename,
+        )
+        async with session.post(
+            trigger_url,
+            json={"filename": filename},
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(
+                    f"Accessory upgrade-trigger HTTP {resp.status} for "
+                    f"{accessory_type_id}"
+                )
+            body = await resp.text()
+            try:
+                payload = _json.loads(body) if body else {}
+            except (ValueError, TypeError):
+                payload = {}
+            code = payload.get("code")
+            if code is not None and code != 0:
+                raise RuntimeError(
+                    f"Accessory upgrade-trigger rejected for "
+                    f"{accessory_type_id}: {body!r}"
+                )
+
+        if progress_cb is not None:
+            progress_cb(0.3)
+
+        # 3. poll
+        errors = 0
+        deadline = asyncio.get_event_loop().time() + 30 * 60
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                async with session.get(
+                    progress_url,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json(content_type=None)
+                        progress: float | None = None
+                        if isinstance(payload, dict):
+                            progress = payload.get("progress")
+                            if progress is None:
+                                data = payload.get("data") or {}
+                                if isinstance(data, dict):
+                                    progress = data.get("progress")
+                        errors = 0
+                        if isinstance(progress, (int, float)):
+                            frac = max(0.0, min(progress / 100.0, 1.0))
+                            if progress_cb is not None:
+                                progress_cb(0.3 + 0.7 * frac)
+                            if progress >= 100:
+                                return
+            except Exception as err:
+                errors += 1
+                _LOGGER.debug(
+                    "Accessory %s progress poll error: %s",
+                    accessory_type_id, err,
+                )
+                if errors >= 30:
+                    raise RuntimeError(
+                        f"Accessory progress poll failed 30x in a "
+                        f"row for {accessory_type_id}"
+                    )
+            await asyncio.sleep(2.0)
+        raise RuntimeError(
+            f"Accessory flash timed out after 30 min for "
+            f"{accessory_type_id}"
+        )
 
 
 _REST_STATUS_MAP: dict[str, XtoolStatus] = {

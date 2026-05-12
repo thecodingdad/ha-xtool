@@ -24,15 +24,12 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
-    CONF_AP2_POLL_INTERVAL,
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
     CONF_FIRMWARE_CHECK_INTERVAL,
-    CONF_HAS_AP2,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
     CONF_STATS_POLL_INTERVAL,
-    DEFAULT_AP2_POLL_INTERVAL,
     DEFAULT_DEVICE_NAME,
     DEFAULT_DONGLE_POLL_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
@@ -289,7 +286,6 @@ class XtoolOptionsFlow(OptionsFlow):
             return self.async_create_entry(data=user_input)
 
         current_switch = current_options.get(CONF_POWER_SWITCH)
-        currently_has_ap2 = current_options.get(CONF_HAS_AP2, False)
         device_name = self._config_entry.data.get("device_name", "")
 
         from .protocols import detect_model
@@ -342,24 +338,8 @@ class XtoolOptionsFlow(OptionsFlow):
                 )
             )
 
-        # S1-only: AP2 toggle + per-poll cadences
+        # S1-only: per-poll cadences
         if is_s1:
-            schema_dict[vol.Optional(
-                CONF_HAS_AP2,
-                default=currently_has_ap2,
-            )] = bool
-            schema_dict[vol.Optional(
-                CONF_AP2_POLL_INTERVAL,
-                default=current_options.get(
-                    CONF_AP2_POLL_INTERVAL, DEFAULT_AP2_POLL_INTERVAL
-                ),
-            )] = NumberSelector(
-                NumberSelectorConfig(
-                    min=5, max=300, step=1,
-                    unit_of_measurement="s",
-                    mode=NumberSelectorMode.BOX,
-                )
-            )
             schema_dict[vol.Optional(
                 CONF_STATS_POLL_INTERVAL,
                 default=current_options.get(

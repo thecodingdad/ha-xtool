@@ -34,7 +34,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up xTool firmware update entity via per-family builder."""
     coordinator = entry.runtime_data
-    entities = list(coordinator.build_updates())
+    entities: list[Any] = list(coordinator.build_updates())
+    # Stash the platform's add-entities callback so newly-paired BT
+    # accessories can register their update entity at runtime without
+    # a config-entry reload.
+    coordinator.register_platform_add("update", async_add_entities)
+    # Pull accessories already connected at setup time so the user
+    # doesn't have to wait for the next pair-event to see them.
+    entities.extend(coordinator.initial_accessory_entities("update"))
     if entities:
         async_add_entities(entities)
 

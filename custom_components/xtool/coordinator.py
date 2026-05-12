@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
@@ -21,7 +22,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
-    DEFAULT_AP2_POLL_INTERVAL,
     DEFAULT_DONGLE_POLL_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_STATS_POLL_INTERVAL,
@@ -34,6 +34,7 @@ from .const import (
 # would eagerly load every family's __init__.py, which in turn loads each
 # family's models.py → coordinator.py, creating an import cycle.
 from .protocols.base import (
+    AccessoryState,
     LaserInfo,
     XtoolDeviceModel,
     XtoolDeviceState,
@@ -51,8 +52,45 @@ if TYPE_CHECKING:
     from homeassistant.components.sensor import SensorEntity
     from homeassistant.components.switch import SwitchEntity
     from homeassistant.components.update import UpdateEntity
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# M9098 → accessory type-id resolver. The numeric token in
+# Studio's `getAllDangleConnectList` response indexes into the
+# ``Te.*`` enum. Used by every family that exposes the F0F7
+# ``/passthrough`` (REST V1, D-series) or ``/v1/parts/control``
+# (WS-V2) tunnels. S1 doesn't go through this resolver — its
+# accessory surface is fed directly from ``M1098`` + the
+# ``M9039`` push cache (see ``S1Coordinator._poll_accessories``).
+_TE_TYPE_ID_BY_NUMERIC: dict[int, str] = {
+    0x32: "FireExtinguisherV1_5",
+    0x34: "Purifier",
+    0x3D: "AirPump",
+    0x40: "AirPumpV2",
+    0x46: "DuctFan",
+    0x4A: "Dongle",
+    0x4B: "UvSensor",
+    0x4C: "LargePurifierV3",
+    0x4E: "DuctFanV3",
+    0x52: "SafetyFireBoxPro",
+    0x53: "MultiFunctionalBase",
+    0x54: "BackpackPurifier",
+}
+
+
+def _resolve_type_id(row: dict[str, Any]) -> str | None:
+    """Map an M9098 row to an :class:`AccessoryDefinition` type id.
+
+    Unknown ids return ``None`` and are filtered out by the
+    accessory walk; the registry extends as new types land in
+    issue-tracker logs.
+    """
+    raw = row.get("type_id_raw")
+    if not isinstance(raw, (int, float)):
+        return None
+    return _TE_TYPE_ID_BY_NUMERIC.get(int(raw))
 
 
 class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
@@ -70,7 +108,6 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         enable_firmware_updates: bool = False,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
         firmware_check_interval: int = FIRMWARE_CHECK_INTERVAL,
-        ap2_poll_interval: int = DEFAULT_AP2_POLL_INTERVAL,
         stats_poll_interval: int = DEFAULT_STATS_POLL_INTERVAL,
         dongle_poll_interval: int = DEFAULT_DONGLE_POLL_INTERVAL,
         **_unused: Any,
@@ -92,7 +129,6 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.power_switch_entity_id = power_switch_entity_id
         self.enable_firmware_updates = enable_firmware_updates
         self.firmware_check_interval = max(int(firmware_check_interval), 60)
-        self.ap2_poll_interval = max(int(ap2_poll_interval), 1)
         self.stats_poll_interval = max(int(stats_poll_interval), 1)
         self.dongle_poll_interval = max(int(dongle_poll_interval), 1)
         self._device_info_fetched = False
@@ -100,6 +136,14 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         # mac_address is populated by S1/D-series/REST. F1 V2 leaves it empty.
         # entity.py reads it to add CONNECTION_NETWORK_MAC.
         self.mac_address: str = ""
+
+        # BT-accessory dynamic-add: each per-platform setup_entry stashes its
+        # ``async_add_entities`` callback here so :meth:`_dispatch_new_accessories`
+        # can register newly-paired accessory entities without a config-entry
+        # reload. Set of accessory keys ("<type>:<sn>") we've already built
+        # entities for in this session.
+        self._platform_callbacks: dict[str, "AddEntitiesCallback"] = {}
+        self._known_accessory_keys: set[str] = set()
 
     # --- Generic helpers ----------------------------------------------------
 
@@ -157,6 +201,209 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
 
     def build_events(self) -> list["EventEntity"]:
         return []
+
+    # --- BT accessory polling ----------------------------------------------
+
+    async def _poll_accessories(self, state: XtoolDeviceState) -> None:
+        """Refresh ``state.connected_accessories`` from the device.
+
+        Calls the protocol's ``passthrough`` (or ``parts_control``)
+        helper with ``M9098`` to enumerate connected accessories per
+        the dongle, then per-type ``info_mcode`` to refresh state.
+        Gated on ``model.has_bt_accessories``; protocols without the
+        passthrough helper silently no-op.
+        """
+        if not self.model.has_bt_accessories:
+            return
+        proto = self.protocol
+        passthrough = (
+            getattr(proto, "parts_control", None)
+            or getattr(proto, "passthrough", None)
+        )
+        if passthrough is None:
+            return
+        try:
+            from .protocols.accessories import (
+                ACCESSORY_DEFINITIONS,
+                get_definition,
+                parse_connected_list,
+            )
+            from .protocols.accessories.base import (
+                MCODE_DONGLE_CONNECTED_LIST,
+            )
+        except Exception as err:
+            _LOGGER.debug("Accessory imports failed: %s", err)
+            return
+        # Use the Dongle prefix for the M9098 enumeration call — the
+        # dongle is the BT bridge, every paired accessory hangs off it.
+        dongle = ACCESSORY_DEFINITIONS["Dongle"]
+        try:
+            reply = await passthrough(
+                MCODE_DONGLE_CONNECTED_LIST, dongle.prefix,
+            )
+        except Exception as err:
+            _LOGGER.debug("Accessory M9098 poll failed: %s", err)
+            return
+        _LOGGER.debug("Accessory M9098 reply: %r", reply)
+        if not isinstance(reply, str) or not reply:
+            state.connected_accessories = {}
+            return
+        rows = parse_connected_list(reply)
+        _LOGGER.debug(
+            "Accessory M9098 parsed %d row(s): %r", len(rows), rows,
+        )
+        new_state: dict[str, AccessoryState] = {}
+        loop_now = asyncio.get_event_loop().time()
+        for row in rows:
+            type_id = _resolve_type_id(row)
+            if type_id is None:
+                _LOGGER.debug(
+                    "Accessory row skipped — unknown type id "
+                    "type_id_raw=%r row=%r",
+                    row.get("type_id_raw"), row,
+                )
+                continue
+            definition = get_definition(type_id)
+            if definition is None:
+                _LOGGER.debug(
+                    "Accessory %s skipped — no AccessoryDefinition "
+                    "registered (raw=%r)", type_id, row,
+                )
+                continue
+            sn = str(row.get("sn") or row.get("type_id_raw") or "unknown")
+            key = f"{type_id}:{sn}"
+            fields: dict[str, Any] = {}
+            if definition.info_mcode:
+                try:
+                    info_reply = await passthrough(
+                        definition.info_mcode, definition.prefix,
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Accessory %s %s poll failed: %s",
+                        type_id, definition.info_mcode, err,
+                    )
+                    info_reply = None
+                _LOGGER.debug(
+                    "Accessory %s %s reply: %r",
+                    type_id, definition.info_mcode, info_reply,
+                )
+                if isinstance(info_reply, str) and info_reply:
+                    try:
+                        fields = definition.parse_info(info_reply)
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Accessory %s parse failed: %s — raw=%r",
+                            type_id, err, info_reply,
+                        )
+            _LOGGER.debug(
+                "Accessory %s detected: sn=%s fields=%r",
+                type_id, sn, fields,
+            )
+            new_state[key] = AccessoryState(
+                type_id=type_id, sn=sn, fields=fields,
+                last_seen=loop_now,
+            )
+        state.connected_accessories = new_state
+
+    # --- BT accessory dynamic-add hooks ------------------------------------
+
+    def register_platform_add(
+        self, platform: str, callback: "AddEntitiesCallback",
+    ) -> None:
+        """Stash a platform's ``async_add_entities`` for runtime reuse.
+
+        Called from each top-level ``<platform>.py`` setup_entry in
+        addition to its existing one-shot call. The accessory layer
+        invokes the stored callback whenever a newly-paired BT
+        accessory needs entities added without a config-entry
+        reload.
+        """
+        self._platform_callbacks[platform] = callback
+
+    def initial_accessory_entities(self, platform: str) -> list[Any]:
+        """Return accessory entities already present in
+        ``connected_accessories`` for one platform.
+
+        Called from each platform's ``async_setup_entry`` so the
+        first batch of entities is added in the same call as the
+        platform's regular entities. The dispatcher
+        (:meth:`_dispatch_new_accessories`) handles every accessory
+        that pairs **after** setup; this helper covers the ones
+        that were already paired when ``async_config_entry_first_refresh``
+        ran. Keys are marked known so the dispatcher doesn't
+        duplicate them.
+        """
+        if not self.data or not self.data.connected_accessories:
+            return []
+        try:
+            from .protocols.accessories.entities import (
+                build_accessory_entities,
+            )
+        except Exception as err:
+            _LOGGER.debug("Accessory entity import failed: %s", err)
+            return []
+        out: list[Any] = []
+        for key, acc in self.data.connected_accessories.items():
+            entities = build_accessory_entities(self, acc)
+            for entity in entities:
+                if getattr(entity, "_xtool_platform", None) == platform:
+                    out.append(entity)
+            self._known_accessory_keys.add(key)
+        _LOGGER.debug(
+            "Accessory initial %s entities: %d",
+            platform, len(out),
+        )
+        return out
+
+    def _dispatch_new_accessories(self) -> None:
+        """Build entities for every connected accessory we haven't
+        seen yet this session and dispatch them per platform.
+
+        Idempotent — accessories whose unique-id key is already in
+        ``_known_accessory_keys`` are skipped. Accessories that
+        disconnect simply leave their entities registered with
+        ``available=False``; they re-populate on reconnect because
+        the same unique-id key is hit again.
+        """
+        if not self.data or not self.data.connected_accessories:
+            return
+        try:
+            from .protocols.accessories.entities import (
+                build_accessory_entities,
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "Accessory entity import failed: %s", err,
+            )
+            return
+        new_per_platform: dict[str, list[Any]] = {}
+        for key, acc in self.data.connected_accessories.items():
+            if key in self._known_accessory_keys:
+                continue
+            entities = build_accessory_entities(self, acc)
+            if not entities:
+                self._known_accessory_keys.add(key)
+                continue
+            for entity in entities:
+                platform = getattr(entity, "_xtool_platform", None)
+                if platform is None:
+                    continue
+                new_per_platform.setdefault(platform, []).append(entity)
+            self._known_accessory_keys.add(key)
+        for platform, items in new_per_platform.items():
+            cb = self._platform_callbacks.get(platform)
+            if cb is None:
+                _LOGGER.debug(
+                    "Accessory %s: no %s platform callback registered",
+                    items, platform,
+                )
+                continue
+            _LOGGER.debug(
+                "Accessory dispatch: adding %d new %s entities",
+                len(items), platform,
+            )
+            cb(items)
 
     # --- Event emission -----------------------------------------------------
 

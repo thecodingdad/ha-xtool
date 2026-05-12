@@ -16,5 +16,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up xTool button entities."""
     coordinator = entry.runtime_data
+    coordinator.register_platform_add("button", async_add_entities)
     entities: list[ButtonEntity] = list(coordinator.build_buttons())
+    entities.extend(coordinator.initial_accessory_entities("button"))
     async_add_entities(entities)
