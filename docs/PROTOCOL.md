@@ -317,7 +317,7 @@ Codes marked **(WS-only)** do not work via HTTP `/cmd`.
 | `M1098` | `M1098 "<v0>","<v1>",...` | Accessories with firmware versions (10-element array) |
 | `M54` | `M54 T<0/1/2>` | Riser base / heightening kit |
 | `M2008 A1` | `M2008 A<work_s> B<jobs> C<standby_s> D<runtime_s>` | Lifetime statistics. **Bare `M2008` returns nothing — needs `A1` (or any single param)** |
-| `M9098` | `M9098 [...]` JSON-ish list | Bluetooth dongle: connected accessories snapshot (polled every 60 s) |
+| `M9098` | `M9098 [...]` JSON-ish list | Bluetooth dongle: connected-accessories snapshot. ⚠️ Used by Studio on V2 / REST / D-series via the `/passthrough` tunnel. **S1 firmware does not expose this M-code in a usable shape over raw WS**.
 
 #### Control
 
@@ -436,13 +436,18 @@ strings reveal the purpose of many otherwise-opaque codes:
 | `M9092 T<ms>` | BLE list nearby | dongle (already documented) |
 | `M9093 A<MAC> B<n>` | BLE pair | dongle |
 | `M9097 A<MAC>` | BLE probe | dongle |
-| `M9098` | BLE connected snapshot | dongle (currently used) |
+| `M9098` | BLE connected snapshot | dongle (V2 / REST / D-series only — S1 firmware doesn't serve this in a usable shape) |
 | `M9112` | setBluetoothUnbind | dongle: forget paired device |
 | `M9258` | resetFilterWorkTime | reset purifier filter timer |
 
-Many V3-purifier and duct-fan codes are sent over the **BLE dongle**
-sub-protocol (`uart485`/F0F7 framing, not raw WS) — see the Bluetooth
-dongle section.
+Studio sends most V3-purifier / duct-fan codes wrapped in the
+`uart485` + F0F7 `/passthrough` tunnel (see the BT accessory
+subsystem section). **The S1 firmware does not expose
+`/passthrough`** — on this family BT-accessory M-codes have to
+ride the raw M-code WS directly, and most of the codes below
+the firmware silently rejects over that channel. Listed here
+for completeness; only `M9039` push frames + the `M1098` slot
+array are actually serviceable on S1.
 
 #### Codes verified dangerous — DO NOT SEND
 
@@ -572,6 +577,8 @@ not exposed.**
 ### Full xTool Studio S1 api inventory
 
 Auto-extracted from `xTool Studio v3.70.90 / exts/S1/index.js`. Every axios api block that carries an `url:` or `cmd:` is listed. `?` in the description column means the api name didn't match the curated lookup — purpose is unknown but the endpoint/M-code is real.
+
+> ⚠️ **Heads-up:** Several rows below target a `/passthrough` endpoint on port 8080 (the F0F7-wrapped BT-accessory tunnel). **The S1 firmware does not actually serve `/passthrough`** — those rows are the Studio bundle's *attempted* code path; the device returns 404. On S1, BT accessories can only be reached via the raw M-code WS plus `M9039` push frames (AP2 only) and the `M1098` slot-array (Air Pump / Fire Extinguisher / Riser Base / …). The rows are kept here for forward-compatibility tracking if a future firmware turns the endpoint on.
 
 | api | method | path / cmd | description |
 |---|---|---|---|
@@ -1494,10 +1501,10 @@ Standalone peripheral paths (mostly carried over from V1):
 | `/v1/parts/control` | POST `{link:"uart485", data_b64:<F0F7-encoded M-code>}` | Send raw M-code (`M9091`–`M9098`, `M9032`–`M9085` …) to a BLE accessory tunneled through the dongle. |
 | `/v1/parts/firmware/upgrade` | POST | Push firmware to an attached accessory. |
 | `/v1/parts/firmware/upgrade-progress` | GET | Poll accessory-flash progress. |
-| `/v1/platform/accessories/list` | GET | Cloud-platform accessory list. |
-| `/v1/platform/accessories/control` | POST `{id:<n>, command:"<M-code>"}` | Higher-level control wrapper. |
-| `/v1/platform/accessories/upgrade` | POST | Platform-mediated accessory upgrade. |
-| `/v1/platform/device/config` | GET / PUT | Cloud platform config. |
+| `/v1/platform/accessories/list` | GET | Platform accessory list (newer V2-firmware API; replaces `M9098` enumeration). |
+| `/v1/platform/accessories/control` | POST `{id:<n>, command:"<M-code>"}` | Higher-level control wrapper (newer V2-firmware API). |
+| `/v1/platform/accessories/upgrade` | POST `{params:{id:<type-id>}, data:{filename:<md5>}}` | Trigger accessory firmware flash. Studio two-step flow: (1) upload blob via `file_stream` channel with `params:{fileType:2, fileName:<md5>}`, (2) POST here with the accessory's numeric `Te` type-id + the upload's md5. Device then F0F7-tunnels the firmware to the BT accessory and emits progress via the `accessory.upgradeProgressInfo` push frame. |
+| `/v1/platform/device/config` | GET / PUT | Platform device config. |
 | `/v1/project/accessory/list` | GET | Project-scoped accessory list. |
 | `/v1/project/api/mcode` | POST | Send a raw M-code via the project API. |
 | `/v1/project/device/accessory/control` | POST `{level:1\|2}` | Set accessory power level. |
@@ -1564,11 +1571,12 @@ Per-model step-1 variants (audited from each Studio bundle):
 | P3 | `/v1/camera/image` | body `{stream:"near"\|"upside"}`, on `port:8329` (HTTP, not WS — V1 fallback) |
 | F1, M1 Ultra, DT001 | _no camera-snap route in bundle_ | n/a |
 
-#### Camera live video — `media_stream` channel + cloud-platform routes
+#### Camera live video — `media_stream` channel + WebRTC signaling
 
 The third WS channel (`function=media_stream`) carries the live
-camera video, but the protocol is **WebRTC over a cloud-relayed
-signaling path**, not a simple WS-MJPEG stream. 
+camera video over **WebRTC**, not a simple WS-MJPEG stream.
+Signaling rides the `/v1/signaling/*` and `/v1/platform/camera/*`
+endpoints (see below).
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -1587,7 +1595,7 @@ class `streamService` + `rtc::impl::PeerConnection`):
   data path; raw video is then sent over the negotiated SRTP
   flow.
 - Trigger API: `hostApi::call_camera_live` → endpoint
-  `/v1/platform/camera/live` (cloud-platform namespace, see
+  `/v1/platform/camera/live` (`/v1/platform/*` namespace, see
   below). Failure modes in the firmware string table:
   `"call_camera_live failed, action is not string"`,
   `"action is not valid"`, `"control video failed"`,
@@ -1613,41 +1621,52 @@ or mid is not found"`,
 `"send_signaling_candidate failed, initService not found"` —
 all required fields are mandatory; partial offers are rejected.
 
-**Cloud-platform namespace** — every camera-live endpoint sits
-under `/v1/platform/*`, **not** the direct LAN namespace
-(`/v1/*`). Means the device acts as a relay client to xTool's
-cloud servers; the integration would need to authenticate against
-xTool cloud + bind the device first:
+**`/v1/platform/*` namespace.** Sits parallel to `/v1/*` on the
+same transport (no separate connection / host — the firmware
+serves both prefixes on the same TLS WS `instruction` channel).
+The namespace mixes two concerns:
+
+- xTool's cloud-account / device-binding SDK (atomm). Endpoints
+  like `device/register`, `device/sign`, `device/timestamp`,
+  `user/parity`, `user/ping`, `env/domain`, and the
+  `/v1/atomm-api/...` mirror unambiguously belong to the
+  cloud-account flow.
+- Per-feature endpoints (`camera/*`, `accessories/*`,
+  `filetransfer/*`, `log`, …) that exist alongside the
+  direct-LAN `/v1/*` variants. Studio's V2-firmware dispatch
+  uses the `/v1/platform/...` paths as its newer V2 API
+  generation, served over the **same** local TLS WS as the
+  older `/v1/...` calls.
 
 | Path | Method | Purpose |
 |---|---|---|
 | `/v1/platform/camera/list` | GET | Enumerate device cameras. |
 | `/v1/platform/camera/live` | POST `{action:"start"\|"stop", name:"<camera>"}` | Start / stop the live RTC stream. |
-| `/v1/platform/camera/snap` | POST | Cloud-relayed equivalent of `/v1/camera/snap`. |
+| `/v1/platform/camera/snap` | POST | Snap equivalent of `/v1/camera/snap`. |
 | `/v1/platform/camera/calibration/params` | GET | Calibration metadata. |
 | `/v1/platform/device/bind` | POST | Bind device → user account. |
 | `/v1/platform/device/bind-user` | POST | Reverse bind (user → device). |
 | `/v1/platform/device/dev-bind-code` | POST | Issue pairing code. |
 | `/v1/platform/device/sign` | POST | Authenticate request signature. |
-| `/v1/platform/device/timestamp` | GET | Cloud time-sync (signature freshness). |
+| `/v1/platform/device/timestamp` | GET | Time-sync for signature freshness (cloud-account flow). |
 | `/v1/platform/device/register` | POST | Register device with xTool cloud. |
 | `/v1/platform/device/state/sync` | POST | Push runtime state to cloud. |
 | `/v1/platform/device/upgrade*` | various | Cloud-mediated firmware update path. |
-| `/v1/platform/filetransfer/{upload,download,finish}` | PUT | Cloud-relayed file transfer (mirrors `/v1/filetransfer/*`). |
-| `/v1/platform/log` | GET | Cloud-relayed log fetch. |
-| `/v1/platform/wifi/{ap-list,connected-info,credentials}` | various | Provisioning via cloud. |
-| `/v1/platform/env/domain` | GET | Discover the cloud relay's region domain. |
+| `/v1/platform/filetransfer/{upload,download,finish}` | PUT | File transfer (mirrors `/v1/filetransfer/*`). |
+| `/v1/platform/log` | GET | Log fetch. |
+| `/v1/platform/wifi/{ap-list,connected-info,credentials}` | various | Wi-Fi provisioning. |
+| `/v1/platform/env/domain` | GET | Studio backend region hint — returns the URL the Studio desktop app uses to fetch its own runtime config (material database, AP2 filter-life curves, localization, etc.). Device-side it's purely a region resolver; the device itself doesn't consume this URL. |
 | `/v1/platform/factory/sign-data` | POST | Factory-signing helper. |
 | `/v1/platform/user/{parity,ping}` | various | Account session keep-alive. |
 | `/v1/atomm-api/v1/device/{bind-user,dev-bind-code,register,sign,timestamp}` | various | Atomm-namespaced bind + sign endpoints (xTool's internal cloud SDK). |
 
 **Studio's actual usage:** zero. A `grep -c
 "RTCPeerConnection\|webrtc\|signaling\|mediasoup\|iceServer"` over
-every Studio `index.js` returns `0` everywhere — Studio runs
-LAN-only and never opens `media_stream` in any model bundle.
-Live preview is presumed to be exclusive to the xTool **mobile
-app** (which connects via the cloud relay even when the phone is
-on the same Wi-Fi as the device).
+every Studio `index.js` returns `0` everywhere — Studio never
+opens `media_stream` in any model bundle. Live preview appears
+to be exclusive to the xTool **mobile app**, which is the only
+known consumer of `/v1/platform/camera/live` + the
+`/v1/signaling/*` exchange. Studio bundles don't exercise it.
 
 ### Push events
 
@@ -1840,20 +1859,17 @@ hang off the laser via a UART485-tunneled BLE link.
 
 ### Transport
 
-xTool Studio talks to BT accessories through **three equivalent
-transports**; every supported laser exposes at least one. The
-ha-xtool integration picks the highest-supported variant per
-family:
+xTool Studio talks to BT accessories through three equivalent
+transports — each family exposes at least one:
 
 | Family | Endpoint | Method | Notes |
 |---|---|---|---|
-| S1 (legacy raw — fallback) | M-code over WS port 8081 | — | No F0F7 envelope; M9039 push-driven only |
-| S1 (newer firmware, current default) | `http://<host>:8080/passthrough` | POST | F0F7 envelope; same wire as REST family |
+| S1 | M-code over WS port 8081 + `M9039` push frames | — | **No F0F7 tunnel.** S1 firmware doesn't serve `/passthrough`; raw WS is the only path. |
 | REST V1 family | `http://<host>:8080/passthrough` | POST | F0F7 envelope |
 | D-series (D1 / D1 Pro / D1 Pro 2.0) | `http://<host>:8080/passthrough` | POST | F0F7 envelope |
 | WS-V2 family | `/v1/parts/control` over the `instruction` WS | POST | F0F7 envelope |
 
-Body shape (identical across families):
+Body shape for the three families that do have an F0F7 tunnel:
 
 ```json
 {"link": "uart485", "data_b64": "<base64(F0F7-frame)>"}
@@ -1861,6 +1877,23 @@ Body shape (identical across families):
 
 Response carries the F0F7-framed reply under the same
 ``data_b64`` field.
+
+**S1 is the exception.** It has no `/passthrough` and no
+`parts_control` channel — the BT-accessory surface reachable on
+S1 is limited to:
+
+- ``M1098`` — fixed-slot firmware-version array of directly-
+  wired (USB / serial) accessories (Fire Extinguisher, Air
+  Pump, Riser Base, …).
+- ``M9039`` push frames — the firmware emits these whenever
+  the AP2 air cleaner state changes. The latest snapshot is
+  the only AP2 state available on this family.
+
+Air-assist (`M15` / `M1099`) is **not** a BT accessory on S1 —
+it's wired to the laser host. On the other families the
+equivalent functionality rides the BT tunnel, but on S1 the
+laser MCU drives the pump directly via the same M-code WS that
+carries the rest of the laser-host commands.
 
 ### F0F7 envelope
 
@@ -1889,18 +1922,15 @@ Common prefixes from the Studio bundles:
 | DuctFanV3 (IF2 2.0) | `[78,115,99,1,0]` ("Nsc") |
 | AirPump / AirPumpV2 | `[70,115,99,1,0]` (shares with DuctFan) |
 
-The Python implementation lives in
-``protocols/accessories/base.py``
-(``encode_f0f7`` / ``decode_f0f7``).
-
 ### Discovery — `M9098 getAllDangleConnectList`
 
-Lists currently-paired accessories on the dongle. Two wire
-shapes; both decode to ``{type_id, sn/mac, status}`` rows:
+Lists currently-paired accessories on the dongle. Only families
+that have an F0F7 tunnel (V2 / REST / D-series) use this M-code.
+The reply decodes into ``{type_id, sn/mac, status}`` rows.
 
-**V2 / REST / D-series / newer S1 (CSV variant)** — used when the
-dongle's M9098 goes through the F0F7 ``/passthrough`` (or V2
-``/v1/parts/control``) tunnel:
+**V2 / REST / D-series (CSV variant)** — request goes through
+the F0F7 ``/passthrough`` (REST + D-series) or
+``/v1/parts/control`` (V2) tunnel:
 
 ```
 num,mac,type_hex,status;num,mac,type_hex,status;…
@@ -1910,15 +1940,16 @@ num,mac,type_hex,status;num,mac,type_hex,status;…
   (e.g. ``"34"`` = 0x34 = 52 = ``Purifier``).
 - ``status`` is ``"1"`` for connected.
 
-Parser lives in
-``protocols/s1/coordinator.py:_parse_s1_m9098``; the numeric
-``type_id_raw`` is then resolved through ``coordinator.py:_resolve_type_id``.
+The numeric ``type_id_raw`` resolves through the ``Te`` enum
+(see below).
 
-**Legacy S1 raw WS** — fallback when the F0F7 tunnel isn't
-advertised. ``M9098`` push frame carries MAC addresses only with
-no type discriminator; the integration falls back to the
-``protocol._ap2_state`` push cache (populated from M9039) to
-surface the AP2 air cleaner.
+**S1 — no `M9098` walk.** S1 firmware doesn't serve the F0F7
+tunnel that carries the CSV reply, and the raw-WS variant of
+``M9098`` is shaped differently per firmware build with no
+stable type discriminator. There is no way to enumerate BT
+accessories on S1; AP2 state has to be read from the `M9039`
+push frames the firmware emits autonomously, and USB / serial
+accessories from the `M1098` slot array (below).
 
 ### S1 ``M1098`` — directly-wired (USB / serial) accessories
 
@@ -1937,13 +1968,11 @@ otherwise.
 | 3 | `AirPumpV2` | Air Pump 2.0 |
 | 4 | `FireExtinguisherV1_5` | Fire Extinguisher v1.5 |
 
-``S1Coordinator._poll_accessories`` walks ``state.accessories_raw``
-(populated from the ``M1098`` reply) and adds an
-:class:`AccessoryState` entry per non-empty slot with
-``fields={"version": <firmware-string>}``. The build-time
-field-skip guard in ``accessories/entities.build_accessory_entities``
-keeps the ``sn`` entity off the registry — ``M1098`` carries
-firmware version only.
+A non-empty slot carries the firmware-version string only — no
+serial, no per-accessory state fields. Anything richer requires
+the M-code surface listed below (which on S1 is largely
+unreachable; on the other families it's wrapped in the F0F7
+tunnel).
 
 Other families (REST V1 / D-series / WS-V2) don't expose
 ``M1098`` as a slot array; their per-accessory firmware versions
@@ -1952,11 +1981,19 @@ tunneled via the F0F7 path above.
 
 ### Per-accessory M-codes
 
-Each accessory advertises a ``info_mcode`` that returns a single
-"state snapshot" line. Studio + the ha-xtool framework parse the
-reply into a flat ``dict[str, Any]`` of fields. Writers (gear
-set, buzzer toggle, filter reset) go through the same
-``passthrough`` helper with a different M-code.
+Each accessory advertises a single "info M-code" that returns a
+flat state-snapshot line. Writers (gear set, buzzer toggle,
+filter reset) ride the same transport with a different M-code.
+
+> Laser-host M-codes — `M15`, `M1099`, `M1100` — do **not**
+> travel through the F0F7 tunnel even though they read /
+> write what looks like accessory state. They target the
+> laser MCU directly over the family's main API (raw WS on
+> S1; HTTP `/cmd` on REST / D-series; the `instruction` WS
+> on V2). The "AirPump" rows below combine BT-side info
+> (`M9082` reply) with laser-host writes (`M15` + `M1099`)
+> on families where both apply; S1 only has the laser-host
+> half.
 
 | Accessory type | Info M-code | Reply tokens | Writers |
 |---|---|---|---|
@@ -1970,78 +2007,101 @@ set, buzzer toggle, filter reset) go through the same
 Filter wear semantics: the AP2 datasheet names the cabinet
 purifier's 5 filters
 ``pre`` / ``medium`` / ``carbon`` / ``dense_carbon`` / ``hepa``.
-Studio's anonymous tokens H/I/J/K/L map onto these names in order;
-the ha-xtool entity layer surfaces the named keys.
+Studio's anonymous tokens H/I/J/K/L map onto these names in
+order.
 
 ### `/accessory/status` push (V2 only)
 
 The WS-V2 ``instruction`` channel emits an ``/accessory/status``
 push event whenever a paired accessory connects / disconnects.
-Wire shape is not yet decoded — the integration logs the raw
-event payload at ``DEBUG`` level
-(``protocols/ws_v2/protocol.py:_dispatch_push``) so a future
-user-supplied log can drive the connect/disconnect handler.
+Wire shape is not yet decoded — payloads observed in the wild
+are needed to map fields onto the connect / disconnect /
+state-change semantics.
 
-### `M9098` reply parser variants per family
+### `M9098` reply shape per family
 
-The integration's runtime per-family path:
-
-| Family | Entry point | Parser |
+| Family | Carrier | Reply tokens |
 |---|---|---|
-| WS-V2 | ``ws_v2/protocol.parts_control`` → F0F7 → ``accessories.discovery.parse_connected_list`` | V2 `A<type> B<status> E:"<sn>"` tokens |
-| REST V1 | ``rest/protocol.passthrough`` → F0F7 → ``accessories.discovery.parse_connected_list`` | V2 token shape (firmware mirrors REST and V2) |
-| D-series | ``d_series/protocol.passthrough`` → F0F7 → ``accessories.discovery.parse_connected_list`` | V2 token shape |
-| S1 (newer firmware) | ``s1/protocol.passthrough`` (HTTP port 8080) → F0F7 → ``s1/coordinator._parse_s1_m9098`` | CSV `num,mac,type_hex,status` |
-| S1 (legacy firmware) | M9039 push frames → ``protocol._ap2_state`` cache | AP2 only |
+| WS-V2 | `/v1/parts/control` (F0F7) | V2 `A<type> B<status> E:"<sn>"` tokens |
+| REST V1 | `/passthrough` port 8080 (F0F7) | V2 token shape (firmware mirrors REST and V2) |
+| D-series | `/passthrough` port 8080 (F0F7) | V2 token shape |
+| S1 | — | No usable `M9098`. AP2 derives from `M9039` push frames; USB/serial accessories from `M1098`. |
 
-### `Te.<type>` enum (cross-family)
+### `Te` enum (numeric type-id mapping)
 
-The 2-char hex ``Te.*`` value identifies an accessory type
-across every firmware. The ha-xtool map
-(``coordinator.py:_TYPE_ID_BY_NUMERIC``) covers the variants
-ha-xtool currently registers:
+The 2-char hex token in the `M9098` CSV identifies the
+accessory type. Only the WS-V2 / REST / D-series Studio
+bundles use this — they all share the ``Te.*`` enum:
 
-| Value | Type id |
+| Hex | Type id |
 |---|---|
-| 52 (0x34) | `Purifier` |
-| 61 (0x3D) | `AirPump` |
-| 64 (0x40) | `AirPumpV2` |
-| 70 (0x46) | `DuctFan` |
-| 71 (0x47) | `FireExtinguisher` |
-| 74 (0x4A) | `Dongle` |
-| 75 (0x4B) | `UvSensor` |
-| 76 (0x4C) | `LargePurifierV3` |
-| 78 (0x4E) | `DuctFanV3` |
-| 82 (0x52) | `SafetyFireBoxPro` |
-| 83 (0x53) | `MultiFunctionalBase` |
-| 84 (0x54) | `BackpackPurifier` |
-| 50 (0x32) | `FireExtinguisherV1_5` |
+| 0x32 (50) | FireExtinguisherV1_5 |
+| 0x34 (52) | Purifier |
+| 0x3D (61) | AirPump |
+| 0x40 (64) | AirPumpV2 |
+| 0x46 (70) | DuctFan |
+| 0x4A (74) | Dongle |
+| 0x4B (75) | UvSensor |
+| 0x4C (76) | LargePurifierV3 (AP2 Max) |
+| 0x4E (78) | DuctFanV3 |
+| 0x52 (82) | SafetyFireBoxPro |
+| 0x53 (83) | MultiFunctionalBase |
+| 0x54 (84) | BackpackPurifier |
 
 Unknown ids are logged once and skipped; the registry extends
 as accessories with live logs land in the issue tracker.
 
-### HA entity model
+### Brand-name mapping (Studio `bF` table)
 
-Each connected accessory hangs off a **child device** in the HA
-device registry
-(``identifiers={(DOMAIN, "<laser_serial>:<type>:<acc_sn>")}``,
-``via_device=(DOMAIN, "<laser_serial>")``). Entity unique-ids
-follow ``{laser_sn}_accessory_{type_lowercase}_{acc_sn}_{key}``
-so the same accessory paired across separate laser devices stays
-distinct.
+Studio's `bF` firmware-id → marketing-name dict:
 
-Entities whose declared ``field`` isn't present in the
-accessory's parsed-fields dict are skipped at build time (e.g.
-the unified ``Purifier`` spec carries optional ``running`` +
-``purifier_sensor_d`` / ``purifier_sensor_s`` entries that only
-S1's AP2 reports — cabinet purifiers don't gain phantom sensors).
+| Type id | Brand label |
+|---|---|
+| `DuctFan` | xTool SafetyPro IF2 |
+| `DuctFanV3` | xTool SafetyPro IF2 2.0 |
+| `Purifier` | xTool SafetyPro AP2 |
+| `LargePurifier` | xTool SafetyPro AP2 (Large) |
+| `LargePurifierV3` | xTool SafetyPro AP2 Max |
+| `BackpackPurifier` | xTool Backpack Purifier |
+| `AirPump` | xTool Smart Air Assist |
+| `AirPumpV2` | xTool Air-Compress Assist |
+| `FireExtinguisher` | xTool Fire Safety Set |
+| `FireExtinguisherV1_5` | xTool Fire Safety Set v1.5 |
+| `SafetyFireBoxPro` | xTool SafetyFireBoxPro |
+| `UvSensor` | xTool Firesense Hub |
+| `Dongle` | xTool Bluetooth Dongle |
+| `MultiFunctionalBase` | xTool MultiFunctional Base |
+| `Feeder` | xTool Feeder |
+| `HotStampingPen` | xTool Hot Stamping Pen |
+| `UltrasonicKnife` | xTool Ultrasonic Knife |
 
-Newly-paired accessories are added without a config-entry reload
-via the coordinator's stored ``async_add_entities`` callback per
-platform (see ``coordinator.py:register_platform_add`` +
-``_dispatch_new_accessories``). Disconnected accessories switch
-to ``available=False`` rather than being deleted, so reconnects
-re-populate without registry churn.
+### Semantics gotchas
+
+**M15 air-assist flags (laser host).** `M15 A<n> S<gear>`
+carries two independent fields:
+
+- `A` — accessory plug state. `A=1` means the air-assist pump
+  is wired up to the laser; `A=0` means no hardware detected.
+  Raw connectivity flag only.
+- `S` — commanded gear (0 … N). `S=0` means the pump is idle
+  even if `A=1`.
+
+Air is actually flowing only when both `A=1` **and** `S>0`.
+Watching `A` alone reports "running" the moment the hardware
+is plugged in.
+
+**`M1098` carries no serial numbers.** Slot index is the only
+stable per-accessory discriminator. Anything richer (firmware
+version, gear, filter wear, …) requires the M-code surface
+above — which on S1 is largely unreachable.
+
+**Cross-variant reply shapes.** The cabinet `Purifier` and the
+S1 AP2 share `M9033` as their info M-code but their replies
+diverge: the AP2 push frame carries the running flag plus the
+two `purifier_sensor_d` / `purifier_sensor_s` particle
+counters; a plain cabinet `Purifier` reply does not. Field-
+presence (rather than accessory type) is the reliable
+discriminator.
 
 
 ---
