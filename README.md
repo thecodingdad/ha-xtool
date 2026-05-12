@@ -17,7 +17,7 @@ This integration communicates directly with your xTool device over the local net
 - Job control buttons (pause, resume, cancel, ...)
 - Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
-- Attached accessories detection (air pump, fire extinguisher, riser base, Bluetooth dongle)
+- Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2, SafetyPro IF2, ...)
 - Camera support for P2 / P2S / F1 Ultra family / F2 Ultra family / P3 / MetalFab (overview + close-up + flame record)
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
@@ -88,7 +88,7 @@ The available options are gated by the device's protocol family — only relevan
 | AP2 air cleaner | **S1 only.** Opt-in toggle that adds the AP2 air-cleaner sensors (running / connected / speed / filter remaining / dust sensors) and starts polling the air-cleaner push frame. Leave off if you do not own an AP2. |
 | AP2 air-cleaner polling interval | **S1 only.** How often the AP2 push frame is queried (default 30 s). |
 | Lifetime-stats polling interval | **S1 only.** How often `M2008` is polled for working time / session count / standby / runtime (default 300 s). |
-| Bluetooth-dongle polling interval | **S1 only.** How often `M9098` is polled for connected BLE accessories (default 60 s). |
+| Accessory polling interval | **S1 only.** How often the accessory subsystem is refreshed (`M1098` slot-array walk for USB accessories like Air Pump and Fire Extinguisher. Default 60 s. |
 
 ## Entities
 
@@ -141,7 +141,8 @@ The available options are gated by the device's protocol family — only relevan
 | Cover | Cover / lid open detection |
 | Drawer | Front-drawer position |
 | Machine lock | Machine-lock state (LOCK device class — `on` = unlocked) |
-| Air-Assist connected | Air-Assist V2 BLE accessory paired |
+| Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |
+| Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
 | Cooling fan | Cooling fan currently running |
 | Exhaust fan | Smoke-extraction fan currently running |
 | CPU fan | CPU cooling fan currently running |
@@ -153,7 +154,7 @@ The available options are gated by the device's protocol family — only relevan
 | Gap check enabled | Cover-safety enforcement enabled |
 | Lock check enabled | Machine-lock safety enforcement enabled |
 | Alarm | Generic problem flag — on when device reports any active alarm |
-| Accessories | On when accessories are attached. Attributes list connected accessories (Air Pump, Fire Extinguisher, Riser Base, Bluetooth dongle) with firmware versions |
+| Accessories | On when at least one accessory is currently connected. Attributes list firmware versions per slot. Individual accessories also surface as their own child devices — see [Connected accessories](#connected-accessories) |
 | Air cleaner running / Air cleaner connected | AP2 module state (requires AP2 air cleaner) |
 | XCS compatibility mode | On when the XCS desktop app holds the WebSocket and writes are routed via HTTP `/cmd` |
 
@@ -275,6 +276,7 @@ The integration speaks four protocol families, all reverse-engineered from the x
 - **HTTP port 8087** (REST family) — firmware handshake + flash
 - **HTTP port 8329** (REST family) — camera snap + exposure
 - **TLS WebSocket port 28900** (WS-V2 family, V2 firmware ≥ 40.51) — three concurrent channels (`function=instruction` JSON request/response + push events, `function=file_stream` binary uploads, `function=media_stream` camera frames). Replaces the legacy REST API on devices running V2 firmware
+- **BT-accessory tunnel** (`uart485` + F0F7 envelope) — wraps BT-accessory M-codes (`M9033` purifier, `M9082` duct fan, `M9098` dongle, …) for transport over the laser's main API. The endpoint is `/passthrough` (REST + D-series, port 8080) or `/v1/parts/control` (WS-V2 instruction channel). **The S1 does not have this tunnel** — its BT accessories are reached over the raw M-code WS
 
 The firmware-update entity hits the public xTool cloud API (`api.xtool.com`) on the `atomm` namespace using `xTool-*-firmware` content IDs.
 
