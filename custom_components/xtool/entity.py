@@ -14,7 +14,17 @@ _MODEL_SLUG_RE = re.compile(r"[^a-z0-9]")
 
 
 class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
-    """Base entity for xTool devices."""
+    """Base entity for xTool devices.
+
+    ``has_entity_name`` stays **on** so HA resolves the localized
+    display name via ``translation_key`` (German UI keeps its
+    "Auftragszeit" etc. labels). The serial-prefixed entity-id
+    shape is enforced by a one-shot registry migration in
+    :func:`__init__._migrate_entity_registry` because HA's
+    ``suggested_object_id`` is only consulted on *fresh*
+    registrations — without the migration, existing installs
+    would keep their old non-serial-prefixed entity-ids.
+    """
 
     _attr_has_entity_name = True
 
@@ -27,10 +37,11 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
 
         ``unique_id`` keeps the long-standing ``{serial}_{key}`` shape
         so existing registry entries continue to match. The
-        ``suggested_object_id`` is consumed by HA only on first
+        ``suggested_object_id`` is consumed by HA on first
         registration — fresh entities land at
-        ``<platform>.xtool_<model>_<serial>_<key>`` so multi-device
-        setups stay collision-free; existing installs are unaffected.
+        ``<platform>.xtool_<model>_<serial>_<key>``. Existing
+        registrations are rebased to the same shape by the
+        integration's one-shot setup migration.
         """
         sid = self.coordinator.serial_number
         model_slug = _MODEL_SLUG_RE.sub(
