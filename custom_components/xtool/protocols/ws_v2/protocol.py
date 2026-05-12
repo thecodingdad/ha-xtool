@@ -1105,20 +1105,16 @@ class WSV2Protocol(XtoolProtocol):
                     self._latest["task_id"] = info["taskId"]
 
         elif url == "/gap/status" and module == "GAP":
-            # Push event names invert in step with the poll polarity
-            # — see MetalFab note in `_apply_peripheral_param`.
             if typ == "OPEN":
-                self._latest["cover_open"] = False
-            elif typ == "CLOSE":
                 self._latest["cover_open"] = True
+            elif typ == "CLOSE":
+                self._latest["cover_open"] = False
 
         elif url == "/drawer/status" and module == "DRAWER":
-            # Same inversion as `/gap/status` — firmware emits OPEN
-            # when the drawer is pushed back in.
             if typ == "OPEN":
-                self._latest["drawer_open"] = False
-            elif typ == "CLOSE":
                 self._latest["drawer_open"] = True
+            elif typ == "CLOSE":
+                self._latest["drawer_open"] = False
 
         elif url == "/machine_lock/status" and module == "MACHINE_LOCK":
             # Device emits OPEN when unlocked, CLOSE when locked.
@@ -1630,26 +1626,13 @@ class WSV2Protocol(XtoolProtocol):
         is_off = st == "off" if isinstance(st, str) else None
 
         if ptype == "gap":
-            # MetalFab user feedback (v2.3.4 → v2.3.5): the firmware
-            # uses the V1 REST convention — `state:"on"` = cover
-            # closed, `state:"off"` = cover open. (v2.3.2 had this
-            # flipped based on a `gap_is_open` field name in
-            # machineInfo, but live captures show the polarity is
-            # opposite to that label.)
-            state.cover_open = is_off
+            state.cover_open = is_on
         elif ptype == "machine_lock":
             state.machine_lock = is_off  # off = unlocked → True (LOCK device class)
         elif ptype == "airassistV2":
             state.air_assist_connected = is_on
         elif ptype == "drawer":
-            # MetalFab user feedback (v2.3.4 → v2.3.5): drawer polarity
-            # is the inverse of `gap`. Firmware reports `state:"off"`
-            # when the drawer is pulled out (consistent with the
-            # `drawer_is_off` machineInfo field — "drawer is off the
-            # slot"). The accompanying push events `/drawer/status
-            # OPEN`/`CLOSE` invert too: `OPEN` = drawer pushed back
-            # in, `CLOSE` = drawer pulled out.
-            state.drawer_open = is_off
+            state.drawer_open = is_on
         elif ptype == "cooling_fan":
             state.cooling_fan_running = is_on
         elif ptype == "smoking_fan":
