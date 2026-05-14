@@ -457,6 +457,32 @@ array are actually serviceable on S1.
 | `M341 S1` | Sends device into `wifi_setup` state (must power-cycle) |
 | `M9006 A1` | Crashed WebSocket / forced reboot |
 | `M120 A1.1`, `M2810` | Suspicious responses, avoid |
+| `M9097` (no MAC) | BLE probe expects ``A<MAC>`` argument — observed to kick the WS / require a reconnect when invoked bare. Only call with a valid paired MAC. |
+
+#### Codes still unverified (do not call blindly)
+
+The following S1 M-codes appear in xTool Studio's bundle but have
+not been exercised on a live device. Empirically one of them in
+the set kicks the WS — pending bisection. Treat as
+"unsafe to call without a controlled retest":
+
+- `M2000`, `M2001`, `M2008` — version / config queries (purpose
+  not yet decoded)
+- `M9006`, `M9043`, `M9046`, `M9055`, `M9066`, `M9085`,
+  `M9091`/`M9092`/`M9093`, `M9112` — accessory / pairing flow
+  helpers. ``M9006 A1`` is already flagged as crashing the WS;
+  the rest haven't been tested.
+
+#### HTTP probes verified dangerous
+
+- `GET /system?action=<unknown>` (e.g. `list` / `info` /
+  `status` / `get_alarm` / `get_dev_info` / `get_machine_info`).
+  The WiFi-MCU drops the connection (empty reply) and one of
+  these calls was observed to flip S1 into `FIRMWARE_UPDATE`
+  status (code 16) for ~6 seconds before it returned to `IDLE`
+  on its own. Stick to the four whitelisted actions documented
+  in the `/system?action=<name>` table — `version`,
+  `socket_conn_num`, `get_upgrade_progress`, `get_dev_name`.
 
 ### HTTP endpoints (S1, port 8080)
 
@@ -486,9 +512,97 @@ Other `get_*` actions return empty.
 | `/burn` | POST multipart | Multi-board firmware flash with `burnType` + `M22 S3` prelude | **yes** (S1) |
 | `/upgrade` | POST multipart / GET HTML | Single-blob firmware upload (alternative to `/burn`) | **yes** (REST models, fallback path) |
 | `/upload`, `/gcode/*`, `/delete/gcode/*`, `/frame.gcode`, `/tmp.gcode` | POST/DELETE | Job file workflow — upload G-code, set frame, run | no (not implemented yet) |
-| `/peripherals`, `/parts`, `/system` (no `action`) | GET | Returns `{"result":"ok"}` — body format unknown | no |
+| `/parts` (GET) | GET | Always returns `{"result":"ok"}`. POST → `405 "Request method for this URI is not handled by server"`. Stub with no data surface — confirmed on S1 40.32.x. | no |
+| `/peripherals` (GET) | GET | Same shape as `/parts` — unconditional `{"result":"ok"}`, no data. | no |
+| `/system` (no `action`) | GET | Unconditional `{"result":"ok"}` — only the explicit `action=...` variants above carry data; unknown actions drop the connection (empty reply). | no |
+| `/sdcard` | GET | `404 "This URI does not exist"`. The `/sdcard/` prefix is for file-server transfers (`/sdcard/<file>`), not a directory listing. | no |
 | `/net/get_ap_list`, `/net/set_wifi`, `/net/setWifi`, `/net/wifi_mode` | GET/POST | Wi-Fi reconfiguration | no (risky) |
 | `/dev/console`, `/dev/uart`, `/dev/secondary` | n/a | Internal device file paths | no |
+
+#### Firmware-level structure (decompile)
+
+S1 firmware is a three-binary bundle distributed through xTool's
+cloud-update API as `xTool-d2-firmware`:
+
+| Board ID | File | Size | Hardware | Notes |
+|---|---|---|---|---|
+| `xTool-d2-0x20` | `xtool_d2_gd470_*.bin` | ~430 kB | GD32 Cortex-M (Main MCU) | M-code parser + motion / peripheral state machine |
+| `xTool-d2-0x21` | (laser-mcu) | ~30 kB | Laser MCU co-processor | Small set of M-codes (`M115`/`M116`/`M340`/`M1100`-`M1116`/`M1198`-`M1199`/`M98`); firmware-version reporting |
+| `xTool-d2-0x22` | `xtool_d2_esp32_s3_app_*.bin` | ~930 kB | ESP32-S3 (Wi-Fi MCU) | Runs the actual HTTP + WebSocket server via ESP-IDF `httpd_ws` |
+
+The Wi-Fi MCU exposes the HTTP routes listed above. The Main MCU
+holds the symbolic state-token table that maps `M222 S<n>` codes
+to readable names. Tokens visible in the decompile (some still
+unmapped to integration semantics):
+
+- Standard work states: `IDLE`, `WORKING`, `FINISH`, `PAUSE`,
+  `START`, `SLEEP`, `WORK_READY`, `FRAME_READY`, `FRAME_ONLINE`,
+  `PREPARE_DATA`, `PREPARE_STOP`, `TESTING`, `UPGRADE`,
+  `MEASURING` / `MEASURE_AREA` (via `BASEPLATE`).
+- Errors / faults: `ERROR`, `FLAME_WARNING`, `MACHINE_TILT`,
+  `MACHINE_MOVING`, `TROGGER_LIMIT` (sic — firmware typo for
+  TRIGGER), `LIGHTBURN` (LightBurn-mode flag).
+- Comm-state pushes: `LASER_COMM_STATE`, `WIFI_COMM_STATE`,
+  `NETWORK_STATE`, `WIFI_CONFIG` — fired by the Main MCU as
+  unsolicited WS frames when the corresponding subsystem changes
+  state. Not currently consumed by any documented integration.
+- Capability flags: `FACILITY_SUPPORT_BLE_PURIFIER_V2` — Main
+  MCU exposes a capability hint for V2-protocol BT purifiers
+  (separate from the older `M9039` push path). Useful as runtime
+  gate for `has_purifier_timeout`-class flags.
+- Mode helpers: `ACTIVE_REPORT` (active-reporting flag),
+  `MCODE_HANDLE` (M-code-handler module name),
+  `SYSTEM_MODE_IDLE`, `UPGRADE_MODE_STATE_IDLE`,
+  `ERROR_MODE_STATE_IDLE`, `TRANSFER_FILE`, `POSITION`,
+  `POWERON`.
+
+#### Studio `/v1/*` envelopes on S1 — Studio doesn't actually send them
+
+xTool Studio's S1 bundle (`/tmp/xtool-exts/S1/index.js`) *contains*
+a number of `/v1/*` envelope routes (`/v1/device/configs`,
+`/v1/peripheral/param`, `/v1/platform/accessories/list`, the
+`/v1/project/*` namespace with `accessory/list`, `accessory/status`,
+`accessory/link_status`, `accessory/message`,
+`accessory/message_update`, `accessory/upgrade-progress`,
+`device/accessory/control`, `api/mcode`).
+
+These routes are gated by `useV2Platform()` which resolves to
+`kF.includes(this.channel.deviceCode)` with
+`kF = ["JS002", "JS001"]`. S1's `deviceCode` is `MD2`, so
+`useV2Platform()` is **always false on S1** and Studio never
+actually emits any of these envelopes during an S1 session — they
+are shared-bundle scaffolding for the genuinely V2-platform
+devices.
+
+Live-probed regardless against S1 firmware 40.32.x — every route
+returns `HTTP 404 "This URI does not exist"` across all method
+combinations (GET / POST / PUT) and body shapes (`{}`, full
+payload, raw M-code text). JSON envelopes of the form
+`{"path":"/v1/...","method":"GET"}` sent over the M-code WS
+(port 8081) are silently dropped too. The S1 firmware exposes
+neither shape.
+
+Implication: every accessory / device-info query on S1 rides the
+raw M-code WS or one of the documented HTTP routes (`/cmd`,
+`/system?action=...`, `/burn`, `/upgrade`, `/upload`, `/net/...`).
+
+#### Studio "push" mechanics (client-side)
+
+Studio's S1 bundle uses several names that look like firmware
+push channels but are mostly internal Electron message-bus
+plumbing. Documented here only so an audit doesn't mistake them
+for new firmware events:
+
+| Studio name | What it actually does |
+|---|---|
+| `pushAlarmModal` | Stacks alarm codes into an in-memory error-table for the UI's modal |
+| `pushProcessingStatusToMessageCenter` | Renderer-side notification (job finish / disconnect) |
+| `notifyFirmwareUpgrade` | IPC into the Electron main process to confirm a firmware upload |
+| `broadcastEvent` / `broadcastEventToAllTabs` | Pub-sub between Studio renderer tabs |
+| `messageChannel`, `messageType`, `messageUuid` | Identifiers for the in-app message center |
+| `SocketReport` / `_handleReportedData` | Real firmware-side push entry point — wraps the unsolicited WS frames (`M222`, `M340`, `M810`, `M9039`, …) |
+| `_handleReportedDataForV2Platform` | Alt path used when Studio detects the device speaks V2 envelopes; routes accessory-progress / message-report into the same UI surface |
+| `triggerReport` | Studio API verb that forces the firmware to emit a `SocketReport` burst (equivalent of sending `M2211`) |
 ### Data parsing (S1)
 
 #### M2003 — full device info
