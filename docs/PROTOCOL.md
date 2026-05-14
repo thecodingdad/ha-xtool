@@ -1789,9 +1789,47 @@ Action paths:
 | Path | Method | Body | Purpose |
 |---|---|---|---|
 | `/v1/device/configs` | PUT | `{kv:{<key>:<value>}}` | Set a single config key (toggles, timeouts, levels, gear). |
+| `/v1/device/configs/backup` | GET / PUT | — | Export the full config blob (GET) or apply a previously-exported one (PUT). |
+| `/v1/device/configs/restore` | PUT | — | Reset device configs to factory defaults. |
+| `/v1/device/operate-log` | GET | — | Recent device-event history (backed by `/dev/operateRecord`). Response shape not fully audited; observed as an array of action records keyed by timestamp. |
+| `/v1/device/connect` | PUT | `{action}` | Explicit transport-level connect/disconnect verb. Studio uses it during handover. |
 | `/v1/peripheral/control` | PUT | `{type, action, …}` | Actuate a peripheral (turn on/off, set brightness, set speed, home, measure). |
+| `/v1/peripherals` | GET | — | List of peripherals currently advertised by the controller. |
 | `/v1/device/mode` | PUT | `{mode:"<P_*>"}` | Switch processing mode (`P_PAUSE` / `P_RESUME` / `P_IDLE` / …). |
 | `/v1/camera/snap?name=<camera-name>` | GET | — | Single JPEG snapshot. Returns `{filename:"<uuid>"}` over `instruction`; the JPEG arrives on the `file_stream` channel (`fileType:5`). `name` is firmware-specific (`main` / `deep` / `overview` / `closeup` / `fireRecord`). |
+| `/v1/camera/image` | GET | — | Legacy P2S/P3 snap variant (body carries `data:{stream:"0"\|"1"}`). |
+| `/v1/camera/power` | PUT | `{action:"on"\|"off"}` | Power-cycle the on-board camera. Same surface is also reachable through `/v1/peripheral/control` with `type:"camera_power"`. Camera is on by default after boot — Studio never calls this and `/v1/camera/snap` works without an explicit power-on. Useful for privacy or to reset a wedged stream. |
+| `/v1/camera/params` | GET / PUT | — | Camera-wide parameter group (exposure, gain, white-balance — full param surface; live-tuning Studio does not expose). |
+| `/v1/camera/fire-record` | GET | — | Most recent flame-detection frame (the snapshot also reachable as `camera_fire_record` via the `?name=fireRecord` snap path). |
+| `/v1/camera/fire-record/clear` | PUT | — | Discard the cached flame-detection frame. |
+| `/v1/platform/camera/snap` | POST | — | `/v1/platform/*` equivalent of `/v1/camera/snap`. |
+| `/v1/laser-head/control` | PUT | `{action, …}` | Laser-head verbs (move, jog, calibrate). |
+| `/v1/laser-head/parameter` | GET / PUT | — | Laser-head-wide tuning parameters (power curve, focus offsets, …). |
+| `/v1/laser-head/focus/control` | PUT | `{action:"start"\|"stop"}` | Autofocus run. |
+| `/v1/laser-head/focus/parameter` | GET / PUT | — | Autofocus configuration (search range, step size, dwell). |
+| `/v1/motion_control/paramter` | GET / PUT | — | Motion-controller-wide tuning (acceleration, max speed). **Note**: the spelling `paramter` is firmware-canonical (typo in the route table — verified across GS003/GS005/GS006/GS007/HJ003). |
+| `/v1/extender/control` | PUT | `{action, …}` | Extender-attachment control (conveyor / rotary table). Paired with the `/conveyor/alarm` push. |
+| `/v1/processing/state` | GET | — | Current processing state snapshot (mode + job descriptor). |
+| `/v1/processing/progress` | GET | — | Current job progress (`{percent, time_used_s}` — `time_used_s` increments live during a run). |
+| `/v1/processing/worktime` | GET | — | Per-job work-time stats. Surface not fully audited; appears to return cumulative durations rather than a live remaining-time estimate. |
+| `/v1/processing/type` | GET | — | Job-type discriminator (`engrave`, `cut`, `score`, …). |
+| `/v1/processing/batch` | GET / PUT | — | Batch-production mode (run the same job N times). Paired with `/batch/status` push. |
+| `/v1/processing/frame/replace` | PUT | — | Swap the framing rectangle mid-job (Studio's "adjust framing" flow). |
+| `/v1/processing/upload/config` | PUT | — | Upload a job-config blob to the device (separate from the file-stream payload). |
+| `/v1/processing/powerResume` | GET / PUT | `{action:"query"\|"start"}` | Power-loss recovery — query whether a paused job exists from before a power outage, or resume it. |
+| `/v1/parts/control` | PUT | `{link, data_b64}` | F0F7-tunnelled M-code to a BT-paired accessory (`M9091`–`M9098`, `M9032`–`M9085`). |
+| `/v1/parts/firmware/upgrade` | PUT | — | Push a firmware blob to a paired accessory. |
+| `/v1/parts/firmware/upgrade-progress` | GET | — | Poll the in-progress accessory flash. |
+| `/v1/file-backups` | GET | — | List the file-backups stored on the device (project storage). |
+| `/v1/net/ssid` | GET | — | Currently-joined SSID. |
+| `/v1/net/wifi_signal_strength` | GET | — | Current WiFi RSSI as a small integer. |
+| `/v1/net/clear-wifi` | PUT | — | Drop stored WiFi credentials. |
+| `/v1/wifi/ap-list` | GET | — | Scan result (visible APs). |
+| `/v1/wifi/connected-ssid` | GET | — | Same as `/v1/net/ssid` (legacy alias). |
+| `/v1/wifi/credentials` | PUT | `{ssid, psk}` | Set new WiFi credentials. |
+| `/v1/wifi/interfaces` | GET | — | List network interfaces. |
+| `/v1/display/control` | PUT | `{action}` | Front-panel display control (brightness / wake / sleep). |
+| `/v1/device/alarms` | GET | — | Currently-active alarm list. |
 
 #### Push events (full table)
 
@@ -1804,12 +1842,28 @@ emits these push frames (all without `transactionId`):
 | `/device/info` | `MACHINE_INFO` | `type:"INFO"` — full machine identity blob (`deviceName`, `sn`, `mac`, `firmware.package_version`, `laserPower[]`, `hardware{}`). MetalFab returns an empty body for the `GET /v1/device/machineInfo`; the same payload arrives via this push a few hundred ms after the WS opens. Consumers should fall back to it when the GET is empty. |
 | `/peripheral/<type>` | varies | Per-peripheral push. Observed types: `drawer`, `water_pump`, `water_line`, `cooling_fan`, `smoking_fan`, `cpu_fan`, `uv_fire_sensor`, `ir_led`, `fill_light`, `digital_screen`, `ext_purifier`, `gyro`, `laser_head`, `ir_measure_distance`. |
 | `/drawer/status` | `DRAWER` | Drawer transitions. **Note:** the `type` strings invert the obvious meaning — firmware emits `type:"OPEN"` when the drawer is pushed back into the slot, `type:"CLOSE"` when it is pulled out (matches the `state:"on"` / `state:"off"` polarity of the polled `drawer` peripheral). |
-| `/emergency/status` | `EMERGENCY_STOP` | `type:"VOLTAGE_TRIGGER"` (e-stop pressed) / `"RESUME"` (released). MetalFab also pairs this with a `/work/mode MODE_CHANGE` push setting `mode: "P_EMERGENCY_STOP"`. |
+| `/emergency_stop/status` | `EMERGENCY_STOP` | `type:"VOLTAGE_TRIGGER"` (e-stop pressed) / `"RESUME"` (released). Emitted by GS002 (F1) / GS003 (F1 Ultra V2) / GS005 (F1 Lite) / GS006 (F2 Ultra UV) and the rest of the F2 family. Newer firmware spelling. |
+| `/emergency/status` | `EMERGENCY_STOP` | Older spelling used **only** by HJ003 (MetalFab). Same `type` payload. Pairs with a `/work/mode MODE_CHANGE` push that sets `mode: "P_EMERGENCY_STOP"`. A consumer should subscribe to **both** URL variants. |
 | `/board/link` | `BOARDS` | `type:"CONNECT"` — accessory board joined the device (e.g. `info:"weld_machine"`). |
 | `/move/status` | `CONTROLLER` | `type:"AXIS_HOME_FINISHED"` — homing per axis (`info:"x"` / `"y"` / `"z"` / `"xy"`). |
 | `/laserhead/status` | `LASER_HEAD` | `type:"BUSY"` / `"IDLE"` — laser-head working flag. |
 | `/weld/alarm` | `WELD_DEVICE` | MetalFab welding accessory: `type:"AIR_PRESSURE"` (`info` is bar × 100), `"CONNECT"` (`info` = laser power in W), `"DISCONNECT"`. |
 | `/button/status` | `BUTTON` | Physical-button event from the device's front panel. Observed `type` strings: `SHORT_PRESS`, `LONG_PRESS`, `DOUBLE_PRESS`. **Watch out** — HJ003 and the F2 family (GS006 / GS007 / GS009) firmware emit `SHOERT_PRESS` (sic) for short presses; consumers should normalise the typo. |
+| `/fire/alarm` | `FIRE_RECOGNITION` | Vision-based flame detection (separate from the e-stop / `state.alarm_present` polled field). Use as the canonical trigger for a fire-warning event. |
+| `/batch/status` | `BATCH_PRODUCTION` | Progress / state changes in `/v1/processing/batch` runs. |
+| `/conveyor/alarm` | `CONVEYOR` | Extender / conveyor attachment errors. |
+| `/display/status` | `DISPLAY` | Front-panel display events (brightness change, wake / sleep). |
+| `/bluetooth_dongle/alarm` | `BLUETOOTH_DONGLE` | BT-dongle errors (disconnect / pairing failure). |
+| `/boards/alarm` | `BOARDS` | Aggregate board-side alarm — distinct from `/board/link CONNECT`. |
+| `/camera/alarm` | `CAMERA` | Camera subsystem error (init / restart failure). |
+| `/temperature/alarm` | `CONTROLLER` | Over-temperature alarm (controller-board thermistor). `type` values include `TMP_HIGH`, `CUR_HIGH`. Surface as part of the Error Event. |
+| `/gyro/alarm` | `GYRO_SENSOR` | Tilt / shock alarm. `type:"MACHINE_TILTED"`. Surface as part of the Error Event. |
+| `/laser_head/alarm` | `LASER_HEAD` | Laser-head fault (not the BUSY/IDLE state push above). Surface as part of the Error Event. |
+| `/z_axis/alarm` | `MOTOR_DRIVER` / `MOTOR_ALL` | Z-axis motion fault (`ELEMENT_NOT_FOUND`, `ELEMENT_ABNORMAL`, `FIND_EXCEPTION`). |
+| `/u_axis/alarm` | `MOTOR_DRIVER` / `MOTOR_ALL` | U-axis (rotary) motion fault — only fires when a rotary attachment is bound. |
+| `/machine_lock_for_md/status` | `MACHINE_LOCK_FOR_MD` | MetalFab-specific machine-lock variant (separate from `/machine_lock/status`). |
+| `/machine_lock_for_md/alarm` | `MACHINE_LOCK_FOR_MD` | MetalFab machine-lock fault. |
+| `/udisk/alarm` | `UDISK` | USB-disk-related fault (insertion-failure / read-failure). |
 
 #### Field-presence guarantees
 
