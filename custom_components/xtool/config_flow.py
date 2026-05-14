@@ -210,8 +210,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 "device_name": conn_info.name,
                 "firmware_version": conn_info.firmware_version,
                 "laser_power_watts": conn_info.laser_power_watts,
-                "protocol_version": conn_info.protocol_version,
-                "model_id": conn_info.model_id,
+                "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
             },
         )
 
@@ -243,8 +242,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                         "device_name": conn_info.name,
                         "firmware_version": conn_info.firmware_version,
                         "laser_power_watts": conn_info.laser_power_watts,
-                        "protocol_version": conn_info.protocol_version,
-                        "model_id": conn_info.model_id,
+                        "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
                     },
                 )
             errors["base"] = conn_info or "cannot_connect"

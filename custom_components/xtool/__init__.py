@@ -57,19 +57,70 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     serial_number = entry.data.get("serial_number", "")
     firmware_version = entry.data.get("firmware_version", "")
 
-    # Prefer the explicit (model_id, protocol_version) pair the config
-    # flow persisted; fall back to name-based detect_model for legacy
-    # entries that pre-date the V2 family split.
-    persisted_model_id = entry.data.get("model_id")
-    persisted_protocol_version = entry.data.get("protocol_version", "V1")
-    composite_key = f"{persisted_model_id}_{persisted_protocol_version}"
-    model = DEVICE_MODELS.get(composite_key) if persisted_model_id else None
+    # ``model_key`` (single composite field, e.g. ``"F2UltraUV_V2"``)
+    # is the source of truth for which ``XtoolDeviceModel`` entry
+    # this config refers to. Legacy entries persisted ``model_id`` +
+    # ``protocol_version`` as separate fields; compose them once and
+    # migrate forward.
+    persisted_model_key = entry.data.get("model_key")
+    legacy_model_id = entry.data.get("model_id")
+    legacy_protocol_version = entry.data.get("protocol_version")
+    if persisted_model_key is None and legacy_model_id:
+        # One-shot migration: combine the two old fields into the
+        # canonical composite key.
+        persisted_model_key = (
+            f"{legacy_model_id}_{legacy_protocol_version or 'V1'}"
+        )
+
+    model = (
+        DEVICE_MODELS.get(persisted_model_key)
+        if persisted_model_key else None
+    )
     if model is None:
         model = detect_model(device_name)
     if model.protocol_class is None or model.coordinator_class is None:
         raise RuntimeError(
             f"Unknown xTool model {device_name!r} — cannot pick a protocol"
         )
+
+    # Auto-upgrade legacy V1 entries that were created before the
+    # v2.2.0 V2 split. If a ``_V2`` sibling exists in DEVICE_MODELS
+    # and the device answers a port-28900 TLS probe, switch in-place.
+    # Without this, a V1 entry on V2-firmware hardware keeps hitting
+    # the port-8080 REST endpoints firmware no longer serves and
+    # entities never populate.
+    if model.protocol_version == "V1":
+        v2_model = DEVICE_MODELS.get(f"{model.model_id}_V2")
+        if v2_model is not None and v2_model.protocol_class is not None:
+            try:
+                from .protocols import probe_v2
+                v2_alive = await probe_v2(host)
+            except Exception as err:
+                _LOGGER.debug("V2 probe failed for %s: %s", host, err)
+                v2_alive = False
+            if v2_alive:
+                _LOGGER.info(
+                    "xTool %s at %s: legacy V1 config entry on a V2-firmware "
+                    "device — upgrading to V2 protocol",
+                    model.model_id, host,
+                )
+                model = v2_model
+
+    # Normalise entry.data: persist ``model_key`` as the single
+    # source of truth and drop the legacy ``model_id`` +
+    # ``protocol_version`` fields.
+    canonical_key = f"{model.model_id}_{model.protocol_version}"
+    new_data = dict(entry.data)
+    data_dirty = False
+    if new_data.get("model_key") != canonical_key:
+        new_data["model_key"] = canonical_key
+        data_dirty = True
+    for stale in ("model_id", "protocol_version"):
+        if stale in new_data:
+            new_data.pop(stale)
+            data_dirty = True
+    if data_dirty:
+        hass.config_entries.async_update_entry(entry, data=new_data)
 
     power_switch_entity_id = entry.options.get(CONF_POWER_SWITCH)
     enable_firmware_updates = entry.options.get(CONF_ENABLE_UPDATES, False)
