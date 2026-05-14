@@ -75,6 +75,14 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         self._attr_supported_features = features
 
     @property
+    def available(self) -> bool:
+        """Update entity stays available across device outages so the
+        cloud release-notes / latest-version probe keeps running. The
+        install action itself is gated separately in ``async_install``.
+        """
+        return self.coordinator.data is not None
+
+    @property
     def installed_version(self) -> str | None:
         """Default: single firmware string from the coordinator."""
         return self.coordinator.firmware_version or None
@@ -120,8 +128,6 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         async def _check_for_update() -> None:
             if self._checked_once:
                 return
-            if self.coordinator.data is None or not self.coordinator.data.available:
-                return
             await self.async_update()
             self.async_write_ha_state()
 
@@ -133,20 +139,21 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
             self.hass.async_create_task(_check_for_update())
 
         self.async_on_remove(self.coordinator.async_add_listener(_check_for_update_listener))
-        # Also try immediately in case data is already available.
-        if self.coordinator.data and self.coordinator.data.available:
-            await _check_for_update()
+        # Cloud-only check; runs independently of device-state polling.
+        await _check_for_update()
 
     async def async_update(self) -> None:
-        """Periodic cloud-side update check (every 6 h, plus first availability)."""
+        """Periodic cloud-side update check (every 6 h, plus first availability).
+
+        Runs even when the device is offline so users see whether a
+        newer firmware is available before powering the laser up.
+        """
         now = time.monotonic()
         should_check = (
             not self._checked_once
             or (now - self._last_check >= self.coordinator.firmware_check_interval)
         )
         if not should_check:
-            return
-        if self.coordinator.data is None or not self.coordinator.data.available:
             return
 
         self._last_check = now
@@ -157,6 +164,11 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
             self.coordinator
         )
         if not current_versions:
+            # No installed-version baseline yet (device never polled
+            # successfully on this HA instance). Skip — the next
+            # successful poll caches ``coordinator.firmware_version``
+            # and the following cloud probe runs normally.
+            self._checked_once = False
             return
 
         self._update_info = await check_firmware_update(
@@ -189,6 +201,15 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         if not self.coordinator.enable_firmware_updates:
             raise HomeAssistantError(
                 "Firmware updates are disabled. Enable them in the integration options."
+            )
+        if (
+            self.coordinator.power_switch_is_off
+            or self.coordinator.data is None
+            or not self.coordinator.data.available
+        ):
+            raise HomeAssistantError(
+                "Device is offline — power the laser on and wait for it "
+                "to reconnect before installing firmware."
             )
         if not self._update_info or not self._update_info.files:
             _LOGGER.warning("No firmware update files available to install")

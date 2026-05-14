@@ -46,7 +46,7 @@ from homeassistant.helpers.entity import EntityCategory
 
 from ...const import DOMAIN
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity
+from ...entity import XtoolEntity, XtoolReadOnlyEntity
 from ...firmware import (
     FirmwareUpdateInfo,
     check_accessory_firmware_update,
@@ -161,7 +161,25 @@ class _AccessoryEntity(XtoolEntity):
         return s.fields.get(self._spec.field)
 
 
-class _AccessorySensor(_AccessoryEntity, SensorEntity):
+class _AccessoryReadOnlyEntity(_AccessoryEntity):
+    """Base for accessory sensor + binary-sensor entities.
+
+    Stays available across laser-side outages so the last-known
+    accessory field values keep rendering on dashboards. The
+    accessory must still be paired (``self._state is not None``)
+    — unpaired accessories really are gone and the entity goes
+    unavailable.
+    """
+
+    @property
+    def available(self) -> bool:
+        return (
+            self.coordinator.data is not None
+            and self._state is not None
+        )
+
+
+class _AccessorySensor(_AccessoryReadOnlyEntity, SensorEntity):
     _xtool_platform = "sensor"
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -176,7 +194,7 @@ class _AccessorySensor(_AccessoryEntity, SensorEntity):
         return self._field()
 
 
-class _AccessoryBinarySensor(_AccessoryEntity, BinarySensorEntity):
+class _AccessoryBinarySensor(_AccessoryReadOnlyEntity, BinarySensorEntity):
     _xtool_platform = "binary_sensor"
 
     @property
@@ -360,7 +378,11 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self._state is not None
+        # Update entity stays available across laser-side outages so
+        # the cloud release-notes / latest-version probe keeps
+        # running. Only the accessory still being paired matters; the
+        # install action is gated separately in ``async_install``.
+        return self.coordinator.data is not None and self._state is not None
 
     @property
     def installed_version(self) -> str | None:
@@ -454,6 +476,15 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
             raise HomeAssistantError(
                 "Firmware updates are disabled. Enable them in the "
                 "integration options."
+            )
+        if (
+            self.coordinator.power_switch_is_off
+            or self.coordinator.data is None
+            or not self.coordinator.data.available
+        ):
+            raise HomeAssistantError(
+                "Laser is offline — power it on and wait for it to "
+                "reconnect before installing accessory firmware."
             )
         if not self._update_info or not self._update_info.files:
             _LOGGER.warning(

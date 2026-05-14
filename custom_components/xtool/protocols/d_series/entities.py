@@ -15,7 +15,7 @@ from homeassistant.const import EntityCategory, UnitOfLength, UnitOfTime
 
 from ...const import FlameAlarmSensitivity
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity
+from ...entity import XtoolEntity, XtoolReadOnlyEntity
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -292,7 +292,7 @@ class XtoolRedCrossMode(XtoolEntity, SelectEntity):
 # --- Diagnostic sensors -----------------------------------------------------
 
 
-class _DSeriesOriginOffset(XtoolEntity, SensorEntity):
+class _DSeriesOriginOffset(XtoolReadOnlyEntity, SensorEntity):
     """Origin offset (D-series)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC

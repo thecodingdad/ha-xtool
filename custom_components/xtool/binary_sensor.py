@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import XtoolConfigEntry
 from .coordinator import XtoolCoordinator
-from .entity import XtoolEntity
+from .entity import XtoolReadOnlyEntity
 
 
 async def async_setup_entry(
@@ -34,7 +34,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class XtoolCoverSensor(XtoolEntity, BinarySensorEntity):
+class XtoolCoverSensor(XtoolReadOnlyEntity, BinarySensorEntity):
     """Cover/lid open sensor (F1 V2 push + REST cover models like P2/P2S)."""
 
     _attr_translation_key = "cover_open"

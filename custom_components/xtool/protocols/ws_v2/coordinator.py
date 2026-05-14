@@ -55,10 +55,15 @@ class WSV2Coordinator(XtoolCoordinator):
             self.protocol.set_model(self.model)
 
     async def _async_update_data(self) -> XtoolDeviceState:
-        if self.data and self.data.available:
+        # Always carry the last poll's field values forward so the
+        # read-only entities (XtoolReadOnlyEntity) keep rendering
+        # across a sustained outage. ``state.available`` is flipped
+        # to True only on a successful poll below.
+        if self.data:
             state = dataclass_replace(self.data)
         else:
             state = XtoolDeviceState()
+        state.available = False
 
         try:
             if not self.protocol.connected:

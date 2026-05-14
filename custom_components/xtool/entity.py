@@ -80,3 +80,16 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
         return super().available and (
             self.coordinator.data is not None and self.coordinator.data.available
         )
+
+
+class XtoolReadOnlyEntity(XtoolEntity):
+    """Base for read-only entities (sensor, binary_sensor) that should
+    remain available across device outages so the last-known value
+    stays visible on dashboards. Controls (button / switch / number /
+    select / camera) keep the stricter :class:`XtoolEntity.available`
+    gate because actuating them requires a live device.
+    """
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.data is not None

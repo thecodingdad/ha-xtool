@@ -39,7 +39,7 @@ from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity
+from ...entity import XtoolEntity, XtoolReadOnlyEntity
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -363,7 +363,7 @@ class XtoolFireRecordCamera(XtoolEntity, Camera):
 # --- Sensor (REST diagnostic) ----------------------------------------------
 
 
-class XtoolLastDistance(XtoolEntity, SensorEntity):
+class XtoolLastDistance(XtoolReadOnlyEntity, SensorEntity):
     """Last IR distance measurement (P2/P2S)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -567,7 +567,7 @@ def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
 # --- Binary sensors --------------------------------------------------------
 
 
-class XtoolAirAssistConnected(XtoolEntity, BinarySensorEntity):
+class XtoolAirAssistConnected(XtoolReadOnlyEntity, BinarySensorEntity):
     """Air-Assist V2 (M1 Ultra accessory) connect state."""
 
     _attr_translation_key = "air_assist_connected"
@@ -810,7 +810,7 @@ class XtoolReboot(XtoolEntity, ButtonEntity):
 # --- Generic REST diagnostic sensors ---------------------------------------
 
 
-class _RestStateSensor(XtoolEntity, SensorEntity):
+class _RestStateSensor(XtoolReadOnlyEntity, SensorEntity):
     """Sensor that reads ``state.<attr>`` on the coordinator."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -870,7 +870,7 @@ class _RestNumericSensor(_RestStateSensor):
             self._attr_suggested_display_precision = precision
 
 
-class _RestPushBinary(XtoolEntity, BinarySensorEntity):
+class _RestPushBinary(XtoolReadOnlyEntity, BinarySensorEntity):
     """Generic ``state.<attr>`` binary sensor (None = unavailable)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC

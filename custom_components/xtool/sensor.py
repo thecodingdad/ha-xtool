@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import XtoolConfigEntry
 from .const import XtoolStatus
 from .coordinator import XtoolCoordinator
-from .entity import XtoolEntity
+from .entity import XtoolReadOnlyEntity
 from .protocols import XtoolDeviceState
 
 
@@ -27,7 +27,7 @@ class XtoolSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[XtoolDeviceState, XtoolCoordinator], str | int | float | None]
 
 
-class XtoolSensor(XtoolEntity, SensorEntity):
+class XtoolSensor(XtoolReadOnlyEntity, SensorEntity):
     """Description-driven sensor. Used by family entity factories."""
 
     entity_description: XtoolSensorEntityDescription
@@ -48,7 +48,7 @@ class XtoolSensor(XtoolEntity, SensorEntity):
         return self.entity_description.value_fn(self.coordinator.data, self.coordinator)
 
 
-class XtoolStatusSensor(XtoolEntity, SensorEntity):
+class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):
     """Status sensor that shows 'off' when device is unreachable."""
 
     _attr_translation_key = "status"

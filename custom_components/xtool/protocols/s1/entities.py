@@ -34,7 +34,7 @@ from ...const import (
     FlameAlarmSensitivity,
 )
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity
+from ...entity import XtoolEntity, XtoolReadOnlyEntity
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -470,7 +470,7 @@ class XtoolFillLight(XtoolEntity, LightEntity):
 # ``XtoolAccessoriesSensor`` was removed in v2.5.0.
 
 
-class XtoolRiserBaseSensor(XtoolEntity, SensorEntity):
+class XtoolRiserBaseSensor(XtoolReadOnlyEntity, SensorEntity):
     """Riser base type — diagnostic sensor for the S1's removable base.
 
     Reads ``state.riser_base`` (populated by the M1098 poll) and
@@ -495,7 +495,7 @@ class XtoolRiserBaseSensor(XtoolEntity, SensorEntity):
         return RISER_BASE_NAMES.get(d.riser_base, RISER_BASE_NAMES[1])
 
 
-class XtoolAlarmSensor(XtoolEntity, BinarySensorEntity):
+class XtoolAlarmSensor(XtoolReadOnlyEntity, BinarySensorEntity):
     """Generic alarm flag — true when device reports any active alarm (M340)."""
 
     _attr_translation_key = "alarm"
@@ -514,7 +514,7 @@ class XtoolAlarmSensor(XtoolEntity, BinarySensorEntity):
         return self.coordinator.data.alarm_present
 
 
-class XtoolXcsCompatMode(XtoolEntity, BinarySensorEntity):
+class XtoolXcsCompatMode(XtoolReadOnlyEntity, BinarySensorEntity):
     """Diagnostic flag — true when XCS Compatibility Mode is active.
 
     Set by the S1 protocol when it detects ≥3 WebSocket disconnects within
