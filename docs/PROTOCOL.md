@@ -234,11 +234,12 @@ Common LAN-side reasons V2 discovery fails:
   device first.
 
 When discovery cannot identify a device, fall back to a manual model
-picker: the user supplies the IP and selects the (model,
-protocol_version) pair from a registry-driven dropdown, and the
-client jumps straight to the per-protocol handshake (port-28900 TLS
-WS for V2, REST/8080 for V1, M-code WS/8081 for S1, …). UDP discovery
-is a hint, not a hard requirement.
+picker: the user supplies the IP and selects a model + firmware-
+generation entry (e.g. ``F2UltraUV`` on V2 firmware) from a
+registry-driven dropdown, and the client jumps straight to the
+per-protocol handshake (port-28900 TLS WS for V2, REST/8080 for V1,
+M-code WS/8081 for S1, …). UDP discovery is a hint, not a hard
+requirement.
 
 
 ---
@@ -1550,7 +1551,7 @@ raw JPEG.
 
 | Step | Channel | Method | Path | Body | Purpose |
 |---|---|---|---|---|---|
-| 1 | `instruction` | GET | `/v1/camera/snap?type=overview\|closeup\|fireRecord` (or `/v1/camera/image` with `data:{stream:"0"\|"1"\|"near"\|"upside"}` on P2S/P3) | — | Capture frame on device → returns `{filename:"<uuid>"}`. |
+| 1 | `instruction` | GET | `/v1/camera/snap?name=<camera-name>` (or `/v1/camera/image` with `data:{stream:"0"\|"1"\|"near"\|"upside"}` on P2S/P3) | — | Capture frame on device → returns `{filename:"<uuid>"}`. `name` is firmware-specific (`main` / `deep` / `overview` / `closeup` / `fireRecord`); see the per-model table below. |
 | 2 | `instruction` | PUT | `/v1/filetransfer/download` | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). |
 | 3 | `file_stream` | n/a | (open fresh WS, send descriptor `{fileType:5, fileName:"<uuid>"}`) | binary frames | Receive raw JPEG bytes; terminate on `{"transferFinish":true}` TEXT or WS close. |
 | 4 | `instruction` | PUT | `/v1/filetransfer/finish` | `{filename}` | Best-effort end-of-transfer ack — some firmware skips this and closes the WS instead. |
@@ -1566,9 +1567,11 @@ Per-model step-1 variants (audited from each Studio bundle):
 
 | Firmware bundle | Step-1 endpoint | Step-1 query / body |
 |---|---|---|
-| GS003 (F1 Ultra V2), GS006 / GS004 / GS007 / GS009 (F2 family), HJ003 (MetalFab) | `/v1/camera/snap` | `?type=overview` (also `closeup` / `fireRecord` on F1U/HJ003) |
+| GS003 (F1 Ultra V2) | `/v1/camera/snap` | `?name=main` (single camera) |
+| GS004 / GS006 / GS007 / GS009 (F2 family), HJ003 (MetalFab) | `/v1/camera/snap` | `?name=main` or `?name=deep` (firmware `cameraMediaManager` exposes both — Studio bundles for some F2 models only invoke `main`, but the `deep` selector is accepted by the same code path) |
 | P2S | `/v1/camera/image` | body `{stream:"0"\|"1"}` |
 | P3 | `/v1/camera/image` | body `{stream:"near"\|"upside"}`, on `port:8329` (HTTP, not WS — V1 fallback) |
+| All of the above (V2) | `/v1/camera/snap` | `?name=fireRecord` — captures the buffered frame from the most recent flame-detection event (when supported by the firmware build). |
 | F1, M1 Ultra, DT001 | _no camera-snap route in bundle_ | n/a |
 
 #### Camera live video — `media_stream` channel + WebRTC signaling
@@ -1692,7 +1695,7 @@ and without `type:"response"`. Frame schema:
 | `/device/status` | `STATUS_CONTROLLER` | `WORK_PREPARED` | `framing` when `info=="framing"` else `processing_ready`. |
 | `/device/status` | `STATUS_CONTROLLER` | `WORK_STARTED` | `framing` or `processing`. |
 | `/device/status` | `STATUS_CONTROLLER` | `WORK_FINISHED` | `idle` (if a framing run finished) or `finished`. |
-| `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | Captures `info.timeUse`, `info.taskId`. |
+| `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | Captures `info.timeUse` (job duration in **seconds**, not milliseconds — verified against wall-clock on GS006), `info.taskId`. |
 | `/gap/status` | `GAP` | `OPEN`/`CLOSE` | Cover transitions. **Inverted naming:** firmware emits `OPEN` when the cover is closed and `CLOSE` when it is opened (matches the `state:"on"` / `state:"off"` polarity of the polled `gap` peripheral). |
 | `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | LOCK device class — `OPEN`=unlocked, `CLOSE`=locked. |
 
@@ -1788,7 +1791,7 @@ Action paths:
 | `/v1/device/configs` | PUT | `{kv:{<key>:<value>}}` | Set a single config key (toggles, timeouts, levels, gear). |
 | `/v1/peripheral/control` | PUT | `{type, action, …}` | Actuate a peripheral (turn on/off, set brightness, set speed, home, measure). |
 | `/v1/device/mode` | PUT | `{mode:"<P_*>"}` | Switch processing mode (`P_PAUSE` / `P_RESUME` / `P_IDLE` / …). |
-| `/v1/camera/snap?type=<overview\|closeup\|fireRecord>` | GET | — | Single JPEG snapshot (binary frame on the WS). |
+| `/v1/camera/snap?name=<camera-name>` | GET | — | Single JPEG snapshot. Returns `{filename:"<uuid>"}` over `instruction`; the JPEG arrives on the `file_stream` channel (`fileType:5`). `name` is firmware-specific (`main` / `deep` / `overview` / `closeup` / `fireRecord`). |
 
 #### Push events (full table)
 
@@ -1806,7 +1809,7 @@ emits these push frames (all without `transactionId`):
 | `/move/status` | `CONTROLLER` | `type:"AXIS_HOME_FINISHED"` — homing per axis (`info:"x"` / `"y"` / `"z"` / `"xy"`). |
 | `/laserhead/status` | `LASER_HEAD` | `type:"BUSY"` / `"IDLE"` — laser-head working flag. |
 | `/weld/alarm` | `WELD_DEVICE` | MetalFab welding accessory: `type:"AIR_PRESSURE"` (`info` is bar × 100), `"CONNECT"` (`info` = laser power in W), `"DISCONNECT"`. |
-| `/button/status` | `BUTTON` | Physical-button event from the device's front panel. Observed `type` strings: `SHORT_PRESS`, `LONG_PRESS`, `DOUBLE_PRESS`. **Watch out** — HJ003 firmware emits `SHOERT_PRESS` (sic) for short presses; consumers should normalise the typo. |
+| `/button/status` | `BUTTON` | Physical-button event from the device's front panel. Observed `type` strings: `SHORT_PRESS`, `LONG_PRESS`, `DOUBLE_PRESS`. **Watch out** — HJ003 and the F2 family (GS006 / GS007 / GS009) firmware emit `SHOERT_PRESS` (sic) for short presses; consumers should normalise the typo. |
 
 #### Field-presence guarantees
 
@@ -2013,19 +2016,44 @@ order.
 ### `/accessory/status` push (V2 only)
 
 The WS-V2 ``instruction`` channel emits an ``/accessory/status``
-push event whenever a paired accessory connects / disconnects.
-Wire shape is not yet decoded — payloads observed in the wild
-are needed to map fields onto the connect / disconnect /
-state-change semantics.
+push event whenever a paired accessory's gear, buzzer, or filter-
+wear state changes. Observed shape on F2 Ultra UV (GS006) with an
+IF2 2.0 paired:
+
+```
+{
+  "url": "/accessory/status",
+  "module": "DEVID_MCODE",
+  "type": "VALUE_CHANGE",
+  "info": { "mcode": "M9064 A1 B3 C4 D0 S0" }
+}
+```
+
+``info.mcode`` carries the full M-code body of the accessory's
+info reply (same shape Studio polls via the F0F7 tunnel — see
+"Per-accessory M-codes" below). Consumers route by the M-code
+opcode (e.g. ``M9064`` → DuctFan / DuctFanV3, ``M9039`` →
+Purifier family) and merge the parsed fields into the paired
+accessory's cached state without waiting on the next BT walk.
 
 ### `M9098` reply shape per family
 
+Two shapes are observed in the wild. Both ride the same F0F7
+tunnel and a parser has to auto-detect them per row:
+
 | Family | Carrier | Reply tokens |
 |---|---|---|
-| WS-V2 | `/v1/parts/control` (F0F7) | V2 `A<type> B<status> E:"<sn>"` tokens |
-| REST V1 | `/passthrough` port 8080 (F0F7) | V2 token shape (firmware mirrors REST and V2) |
+| WS-V2 (older firmware: F1 Ultra V2) | `/v1/parts/control` (F0F7) | V2 ``A<type> B<status> E:"<sn>"`` tokens |
+| WS-V2 (newer firmware: F2 Ultra UV, …) | `/v1/parts/control` (F0F7) | CSV variant ``num,mac,type_hex,status;`` per row (see [Discovery](#discovery--m9098-getalldangleconnectlist) above) |
+| REST V1 | `/passthrough` port 8080 (F0F7) | V2 token shape (firmware mirrors REST and V2); newer V1 builds may also emit the CSV variant |
 | D-series | `/passthrough` port 8080 (F0F7) | V2 token shape |
 | S1 | — | No usable `M9098`. AP2 derives from `M9039` push frames; USB/serial accessories from `M1098`. |
+
+The CSV row's ``type_hex`` is the first byte of the
+``Te.F0F7``-prefix array (the same enum used by the token
+shape — table below); the remaining hex chars are the rest of
+the prefix bytes (e.g. ``4E736300`` → ``0x4E`` = 78 =
+``DuctFanV3``, followed by ``Nsc\0``).
 
 ### `Te` enum (numeric type-id mapping)
 
