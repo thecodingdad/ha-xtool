@@ -17,8 +17,8 @@ This integration communicates directly with your xTool device over the local net
 - Job control buttons (pause, resume, cancel, ...)
 - Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
-- Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2, SafetyPro IF2, ...)
-- Camera support for P2 / P2S / F1 Ultra family / F2 Ultra family / P3 / MetalFab (overview + close-up + flame record)
+- Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, ...)
+- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab (overview + close-up or main + deep depending on model, plus flame record)
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
 - Automatic reconnect on network interruption
@@ -81,7 +81,7 @@ The available options are gated by the device's protocol family — only relevan
 
 | Option | Description |
 |--------|-------------|
-| Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off, the status shows "Off" and entities become unavailable. |
+| Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off the status sensor reports "Off" and **control entities** (buttons, switches, numbers, cameras) become unavailable. Read-only sensors keep their last-known value so dashboards stay populated. |
 | Polling interval | Main coordinator polling cadence in seconds (default 5). Lower = more responsive, higher network usage. |
 | Enable firmware updates | _(only when the model has a known firmware ID)._ Off by default — the firmware update entity only reports whether an update is available. Enabling this option arms the install action. |
 | Firmware-update check interval | _(only when firmware updates are supported.)_ How often the cloud is polled for new firmware (default 6 h). |
@@ -133,6 +133,7 @@ The available options are gated by the device's protocol family — only relevan
 | Active connections | Number of WebSocket clients currently connected to the laser (HA + XCS app + …). Useful to spot when the XCS app has kicked the integration |
 | Origin offset X / Y | Last set work-area origin offset |
 | Last distance | Last IR-distance measurement result |
+| Riser base | **S1 only.** Identifies which riser base is mounted (reads `M1098` slot, mapped through `RISER_BASE_NAMES`). |
 
 ### Binary Sensor
 
@@ -154,9 +155,9 @@ The available options are gated by the device's protocol family — only relevan
 | Gap check enabled | Cover-safety enforcement enabled |
 | Lock check enabled | Machine-lock safety enforcement enabled |
 | Alarm | Generic problem flag — on when device reports any active alarm |
-| Accessories | On when at least one accessory is currently connected. Attributes list firmware versions per slot. Individual accessories also surface as their own child devices — see [Connected accessories](#connected-accessories) |
-| Air cleaner running / Air cleaner connected | AP2 module state (requires AP2 air cleaner) |
 | XCS compatibility mode | On when the XCS desktop app holds the WebSocket and writes are routed via HTTP `/cmd` |
+
+Connected BT accessories surface as their own **child devices** hanging off the laser (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) and carry their own sensor / binary-sensor / switch / number / select set — gear, running flag, filter wear, connection status, post-run timeout, buzzer toggle, and so on. See the laser device page under **Devices** to navigate into the linked accessories.
 
 ### Switch
 
@@ -242,7 +243,7 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |---|---|
-| Firmware | Installed + latest firmware version via the xTool cloud (re-checked on reconnect and every 6 h). Release notes from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it |
+| Firmware | Installed + latest firmware version via the xTool cloud (re-checked on reconnect and every 6 h. Release notes from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it. |
 
 ### Event
 
@@ -252,8 +253,8 @@ Transient-event entities — fire once on edge transitions (rather than holding 
 |---|---|---|
 | Button | `short_press`, `long_press`, `double_press` | Physical front-panel button press. Source: WS-V2 push (`/button/status`) or REST poll diff. Includes a `raw_type` attribute so unrecognised firmware labels are still inspectable |
 | Job | `started`, `paused`, `resumed`, `cancelled`, `finished`, `framing_started`, `framing_finished` | Job-lifecycle transitions derived from Status sensor edges. `task_id` and (where available) job `duration` are exposed as event attributes |
-| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop` | Error-state transitions. `tilt` / `moving` are D-series only; `emergency_stop` is V2 only (driven by `/emergency/status` push) |
-| Fire warning | `triggered`, `cleared` | Flame-detector edge — separate entity so safety automations can target it directly. Source: `M340` push (S1), `ERROR_FIRE_WARNING` status edge (REST + D-series), or `state.alarm_present` / `/v1/device/alarms` (WS-V2) |
+| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop`, `temperature`, `gyro`, `laser_head_fault`, `z_axis_fault`, `u_axis_fault`, `conveyor_fault`, `board_fault`, `camera_fault`, `dongle_fault`, `udisk_fault`, `machine_lock_md_fault` | Error-state transitions. `tilt` / `moving` are D-series only; `emergency_stop` plus the `*_fault` and hardware-alarm types are V2 only (driven by per-subsystem `/.../alarm` pushes — `/emergency/status` on MetalFab and `/emergency_stop/status` on the F-series are both routed to `emergency_stop`) |
+| Fire warning | `triggered`, `cleared` | Flame-detector edge — separate entity so safety automations can target it directly. Source: `M340` push (S1), `ERROR_FIRE_WARNING` status edge (REST + D-series), or `state.alarm_present` / `/v1/device/alarms` / `/fire/alarm` push (WS-V2) |
 
 ## Device Information
 
