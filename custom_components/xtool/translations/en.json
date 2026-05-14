@@ -702,7 +702,18 @@
               "laser_module": "Laser module",
               "tilt": "Tilt",
               "moving": "Movement",
-              "emergency_stop": "Emergency stop"
+              "emergency_stop": "Emergency stop",
+              "temperature": "Temperature alarm",
+              "gyro": "Gyro tilt alarm",
+              "laser_head_fault": "Laser head fault",
+              "z_axis_fault": "Z-axis fault",
+              "u_axis_fault": "U-axis fault",
+              "conveyor_fault": "Conveyor fault",
+              "board_fault": "Board fault",
+              "camera_fault": "Camera fault",
+              "dongle_fault": "Bluetooth dongle fault",
+              "udisk_fault": "USB disk fault",
+              "machine_lock_md_fault": "Machine lock fault"
             }
           }
         }

@@ -939,6 +939,17 @@ WSV2_ERROR_EVENT_TYPES: tuple[str, ...] = (
     "tilt",
     "moving",
     "emergency_stop",
+    "temperature",
+    "gyro",
+    "laser_head_fault",
+    "z_axis_fault",
+    "u_axis_fault",
+    "conveyor_fault",
+    "board_fault",
+    "camera_fault",
+    "dongle_fault",
+    "udisk_fault",
+    "machine_lock_md_fault",
 )
 
 WSV2_FIRE_WARNING_EVENT_TYPES: tuple[str, ...] = (

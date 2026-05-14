@@ -698,6 +698,17 @@
           "event_type": {
             "state": {
               "limit": "Endschalter",
+              "temperature": "Übertemperatur",
+              "gyro": "Neigungsalarm",
+              "laser_head_fault": "Laserkopf-Fehler",
+              "z_axis_fault": "Z-Achsen-Fehler",
+              "u_axis_fault": "U-Achsen-Fehler",
+              "conveyor_fault": "Förderband-Fehler",
+              "board_fault": "Platinen-Fehler",
+              "camera_fault": "Kamera-Fehler",
+              "dongle_fault": "Bluetooth-Dongle-Fehler",
+              "udisk_fault": "USB-Stick-Fehler",
+              "machine_lock_md_fault": "Verriegelungs-Fehler",
               "laser_control": "Lasersteuerung",
               "laser_module": "Lasermodul",
               "tilt": "Neigung",

@@ -1186,17 +1186,106 @@ class WSV2Protocol(XtoolProtocol):
             elif typ == "CLOSE":
                 self._latest["machine_lock"] = True
 
-        elif url == "/emergency/status" and module == "EMERGENCY_STOP":
-            # MetalFab fires VOLTAGE_TRIGGER when the e-stop button
-            # is pressed and RESUME when the operator releases it.
+        elif (
+            url in ("/emergency/status", "/emergency_stop/status")
+            and module == "EMERGENCY_STOP"
+        ):
+            # Two URL spellings exist in the wild: HJ003 (MetalFab)
+            # emits ``/emergency/status``; the F-series (GS002/003/
+            # 005/006/007/009) firmware emits ``/emergency_stop/
+            # status``. Payload is identical — ``VOLTAGE_TRIGGER``
+            # when the e-stop button is pressed, ``RESUME`` when
+            # released.
             if typ in ("VOLTAGE_TRIGGER", "TRIGGER"):
                 self._latest["status"] = XtoolStatus.ERROR_LIMIT
                 self._latest["alarm_present"] = True
                 self._pending_events.append(
-                    ("error", "emergency_stop", {"raw_type": str(typ)}),
+                    ("error", "emergency_stop",
+                     {"raw_type": str(typ), "url": url}),
                 )
             elif typ == "RESUME":
                 self._latest["alarm_present"] = False
+
+        elif url == "/fire/alarm" and module == "FIRE_RECOGNITION":
+            # Vision-based flame detection — separate channel from
+            # the polled ``state.alarm_present`` (which only catches
+            # the IR sensor) and from ``/emergency_stop/status``.
+            # Trigger the dedicated fire-warning event entity.
+            self._latest["alarm_present"] = True
+            self._pending_events.append(
+                ("fire_warning", "triggered",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/temperature/alarm":
+            self._pending_events.append(
+                ("error", "temperature",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/gyro/alarm":
+            self._pending_events.append(
+                ("error", "gyro",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/laser_head/alarm":
+            # Distinct from the ``/laserhead/status BUSY/IDLE`` push
+            # (which is just a state flag) — this is a fault.
+            self._pending_events.append(
+                ("error", "laser_head_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/z_axis/alarm":
+            self._pending_events.append(
+                ("error", "z_axis_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/u_axis/alarm":
+            self._pending_events.append(
+                ("error", "u_axis_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/conveyor/alarm":
+            self._pending_events.append(
+                ("error", "conveyor_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/boards/alarm":
+            # Aggregate board-side fault — distinct from
+            # ``/board/link CONNECT`` (the accessory-attached push).
+            self._pending_events.append(
+                ("error", "board_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/camera/alarm":
+            self._pending_events.append(
+                ("error", "camera_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/bluetooth_dongle/alarm":
+            self._pending_events.append(
+                ("error", "dongle_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/udisk/alarm":
+            self._pending_events.append(
+                ("error", "udisk_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
+
+        elif url == "/machine_lock_for_md/alarm":
+            self._pending_events.append(
+                ("error", "machine_lock_md_fault",
+                 {"raw_type": str(typ), "info": info}),
+            )
 
         elif url == "/device/info" and module == "MACHINE_INFO" and typ == "INFO":
             # MetalFab returns an empty body from GET
