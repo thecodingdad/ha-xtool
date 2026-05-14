@@ -215,8 +215,11 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |---|---|
-| Overview camera | Wide-angle workspace camera (snapshot on V2 firmware) |
-| Close-up camera | Detail camera (snapshot on V2 firmware) |
+| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2) |
+| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware) |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware) |
+| Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
+| Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Flame record | Snapshot of the most recent flame-detection event |
 
 ### Button
