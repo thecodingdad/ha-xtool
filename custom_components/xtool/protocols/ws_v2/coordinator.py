@@ -215,7 +215,13 @@ class WSV2Coordinator(XtoolCoordinator):
                 continue
             wanted_types = owners.get(head)
             if not wanted_types:
+                _LOGGER.debug(
+                    "WS-V2 /accessory/status push: no owner mapping for "
+                    "M-code %s — dropping fields=%r",
+                    head, fields,
+                )
                 continue
+            matched: list[str] = []
             for acc in state.connected_accessories.values():
                 if acc.type_id not in wanted_types:
                     continue
@@ -223,6 +229,20 @@ class WSV2Coordinator(XtoolCoordinator):
                     if v is None:
                         continue
                     acc.fields[k] = v
+                matched.append(f"{acc.type_id}:{acc.sn}")
+            if matched:
+                _LOGGER.debug(
+                    "WS-V2 /accessory/status push: merged %s into %s — "
+                    "fields=%r",
+                    head, ", ".join(matched), fields,
+                )
+            else:
+                _LOGGER.debug(
+                    "WS-V2 /accessory/status push: %s landed but no "
+                    "paired accessory of type(s) %s — fields dropped "
+                    "(fields=%r)",
+                    head, wanted_types, fields,
+                )
 
     async def _fetch_device_info(self) -> None:
         try:
