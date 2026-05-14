@@ -83,6 +83,10 @@ class WSV2Coordinator(XtoolCoordinator):
                 if self.serial_number or self.firmware_version:
                     self._device_info_fetched = True
 
+            if not getattr(self, "_operate_log_probed", False):
+                await self._probe_operate_log()
+                self._operate_log_probed = True
+
             prev_status = self.data.status if self.data else None
             prev_alarm = self.data.alarm_present if self.data else False
 
@@ -248,6 +252,31 @@ class WSV2Coordinator(XtoolCoordinator):
                     "(fields=%r)",
                     head, wanted_types, fields,
                 )
+
+    async def _probe_operate_log(self) -> None:
+        """One-shot diagnostic probe of ``/v1/device/operate-log``.
+
+        Response shape is not fully decoded — firmware string
+        ``/dev/operateRecord`` suggests this returns a persistent
+        device-event history. Logging the raw payload once on
+        startup lets us decide whether it's worth surfacing as a
+        sensor or event source in a follow-up release.
+        """
+        try:
+            reply = await self.protocol.request(
+                "/v1/device/operate-log", "GET", timeout=5.0,
+            )
+        except Exception as err:
+            _LOGGER.info(
+                "WS-V2 operate-log probe failed (%s) — endpoint may be "
+                "model-specific or rejected by this firmware build",
+                err,
+            )
+            return
+        _LOGGER.info(
+            "WS-V2 operate-log probe — raw reply: %r",
+            reply,
+        )
 
     async def _fetch_device_info(self) -> None:
         try:
