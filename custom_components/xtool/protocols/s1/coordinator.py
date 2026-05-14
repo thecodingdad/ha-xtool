@@ -156,7 +156,70 @@ class S1Coordinator(XtoolCoordinator):
                 type_id=type_id, sn=f"slot{idx}", fields=fields,
             )
 
+        # M9033 (Purifier info) / M9082 (DuctFan / AirPump info)
+        # raw-WS poll — gap-fill for accessories whose M1098 slot
+        # only carries a firmware-version string. Studio's S1 bundle
+        # sends both M-codes over the WS, so the firmware does
+        # accept them on raw WS (previous "passthrough only"
+        # assumption was wrong). AirPump still wins via the laser-
+        # host M15 path because the M9082 reply only carries
+        # ``A0`` for the air pump.
+        await self._poll_s1_accessory_info(new_state)
+
         state.connected_accessories = new_state
+
+    async def _poll_s1_accessory_info(
+        self, accessories: dict[str, "AccessoryState"],
+    ) -> None:
+        """Send ``M9082`` / ``M9033`` over raw WS to refresh paired
+        DuctFan / Purifier accessories' state fields.
+
+        Best-effort — failures are logged at DEBUG and the
+        accessory keeps whatever fields it already has.
+        """
+        from .. import accessories as _acc_module
+        proto = self.protocol
+        for key, acc in accessories.items():
+            definition = _acc_module.get_definition(acc.type_id)
+            if definition is None or not definition.info_mcode:
+                continue
+            if definition.parse_info is None:
+                continue
+            # AirPump info comes from the laser-host M15 / M1099
+            # path on S1 (filled above) — skip the redundant M9082
+            # round-trip.
+            if acc.type_id in ("AirPump", "AirPumpV2"):
+                continue
+            try:
+                reply = await proto.send_command(
+                    definition.info_mcode, timeout=3.0,
+                )
+            except Exception as err:
+                _LOGGER.debug(
+                    "S1 %s info poll failed (%s): %s",
+                    acc.type_id, definition.info_mcode, err,
+                )
+                continue
+            if not reply:
+                continue
+            try:
+                parsed = definition.parse_info(reply)
+            except Exception as err:
+                _LOGGER.debug(
+                    "S1 %s info parse failed (raw=%r): %s",
+                    acc.type_id, reply, err,
+                )
+                continue
+            if not parsed:
+                continue
+            _LOGGER.debug(
+                "S1 %s info refreshed via %s: %r",
+                acc.type_id, definition.info_mcode, parsed,
+            )
+            for k, v in parsed.items():
+                if v is None:
+                    continue
+                acc.fields[k] = v
 
     async def send_command(self, command: str) -> str:
         """Send an M-code command to the S1 protocol with safe error logging."""
