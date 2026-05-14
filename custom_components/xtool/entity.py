@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
+from decimal import Decimal
 
+from homeassistant.components.sensor import RestoreSensor
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -92,4 +98,86 @@ class XtoolReadOnlyEntity(XtoolEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.data is not None
+        if self.coordinator.data is not None:
+            return True
+        # Pre-first-poll: stay available if a restored state is
+        # cached so HA renders that instead of "unavailable". Plain
+        # ``XtoolReadOnlyEntity`` doesn't carry restore state on its
+        # own; the restoring mixins below override ``_has_restored_value``.
+        return self._has_restored_value()
+
+    def _has_restored_value(self) -> bool:
+        return False
+
+
+class _RestoreMixin:
+    """Shared bookkeeping for the two restoring base classes below."""
+
+    _seen_live_data: bool = False
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        # First poll after HA start that actually carries a populated
+        # state — switch to the live value and stop returning the
+        # restored cache.
+        if (
+            not self._seen_live_data
+            and self.coordinator.data is not None
+            and getattr(self.coordinator.data, "available", False)
+        ):
+            self._seen_live_data = True
+        super()._handle_coordinator_update()
+
+
+class XtoolRestoringSensor(_RestoreMixin, XtoolReadOnlyEntity, RestoreSensor):
+    """Sensor base — replays the last persisted ``native_value`` on
+    HA restart until the coordinator gets its first successful poll.
+
+    Subclasses compute the live value as usual and call
+    :meth:`_value_or_restored` instead of returning it directly.
+    """
+
+    _restored_native_value: StateType | date | datetime | Decimal | None = None
+    _restored_native_unit: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None:
+            self._restored_native_value = last.native_value
+            self._restored_native_unit = last.native_unit_of_measurement
+
+    def _has_restored_value(self) -> bool:
+        return self._restored_native_value is not None
+
+    def _value_or_restored(
+        self,
+        live: StateType | date | datetime | Decimal | None,
+    ) -> StateType | date | datetime | Decimal | None:
+        if self._seen_live_data:
+            return live
+        if live is not None:
+            return live
+        return self._restored_native_value
+
+
+class XtoolRestoringBinarySensor(_RestoreMixin, XtoolReadOnlyEntity, RestoreEntity):
+    """Binary-sensor base — replays last ``on`` / ``off`` on HA restart."""
+
+    _restored_is_on: bool | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("on", "off"):
+            self._restored_is_on = last.state == "on"
+
+    def _has_restored_value(self) -> bool:
+        return self._restored_is_on is not None
+
+    def _is_on_or_restored(self, live: bool | None) -> bool | None:
+        if self._seen_live_data:
+            return live
+        if live is not None:
+            return live
+        return self._restored_is_on

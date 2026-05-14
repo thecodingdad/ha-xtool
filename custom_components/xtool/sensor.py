@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import XtoolConfigEntry
 from .const import XtoolStatus
 from .coordinator import XtoolCoordinator
-from .entity import XtoolReadOnlyEntity
+from .entity import XtoolReadOnlyEntity, XtoolRestoringSensor
 from .protocols import XtoolDeviceState
 
 
@@ -27,7 +27,7 @@ class XtoolSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[XtoolDeviceState, XtoolCoordinator], str | int | float | None]
 
 
-class XtoolSensor(XtoolReadOnlyEntity, SensorEntity):
+class XtoolSensor(XtoolRestoringSensor, SensorEntity):
     """Description-driven sensor. Used by family entity factories."""
 
     entity_description: XtoolSensorEntityDescription
@@ -43,9 +43,14 @@ class XtoolSensor(XtoolReadOnlyEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | int | float | None:
+        live: str | int | float | None
         if self.coordinator.data is None:
-            return None
-        return self.entity_description.value_fn(self.coordinator.data, self.coordinator)
+            live = None
+        else:
+            live = self.entity_description.value_fn(
+                self.coordinator.data, self.coordinator,
+            )
+        return self._value_or_restored(live)
 
 
 class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):

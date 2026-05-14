@@ -15,7 +15,7 @@ from homeassistant.const import EntityCategory, UnitOfLength, UnitOfTime
 
 from ...const import FlameAlarmSensitivity
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity, XtoolReadOnlyEntity
+from ...entity import XtoolEntity, XtoolRestoringSensor
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -292,7 +292,7 @@ class XtoolRedCrossMode(XtoolEntity, SelectEntity):
 # --- Diagnostic sensors -----------------------------------------------------
 
 
-class _DSeriesOriginOffset(XtoolReadOnlyEntity, SensorEntity):
+class _DSeriesOriginOffset(XtoolRestoringSensor, SensorEntity):
     """Origin offset (D-series)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -309,9 +309,12 @@ class _DSeriesOriginOffset(XtoolReadOnlyEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         d = self.coordinator.data
+        live: float | None
         if d is None:
-            return None
-        return d.origin_offset_x if self._axis == "x" else d.origin_offset_y
+            live = None
+        else:
+            live = d.origin_offset_x if self._axis == "x" else d.origin_offset_y
+        return self._value_or_restored(live)
 
 
 # --- D-series sensor descriptions ------------------------------------------

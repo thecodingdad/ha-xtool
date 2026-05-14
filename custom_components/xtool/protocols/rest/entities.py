@@ -39,7 +39,12 @@ from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity, XtoolReadOnlyEntity
+from ...entity import (
+    XtoolEntity,
+    XtoolReadOnlyEntity,
+    XtoolRestoringBinarySensor,
+    XtoolRestoringSensor,
+)
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -363,7 +368,7 @@ class XtoolFireRecordCamera(XtoolEntity, Camera):
 # --- Sensor (REST diagnostic) ----------------------------------------------
 
 
-class XtoolLastDistance(XtoolReadOnlyEntity, SensorEntity):
+class XtoolLastDistance(XtoolRestoringSensor, SensorEntity):
     """Last IR distance measurement (P2/P2S)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -379,7 +384,8 @@ class XtoolLastDistance(XtoolReadOnlyEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         d = self.coordinator.data
-        return d.last_distance_mm if d else None
+        live = d.last_distance_mm if d else None
+        return self._value_or_restored(live)
 
 
 # --- REST sensor descriptions ----------------------------------------------
@@ -567,7 +573,7 @@ def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
 # --- Binary sensors --------------------------------------------------------
 
 
-class XtoolAirAssistConnected(XtoolReadOnlyEntity, BinarySensorEntity):
+class XtoolAirAssistConnected(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Air-Assist V2 (M1 Ultra accessory) connect state."""
 
     _attr_translation_key = "air_assist_connected"
@@ -581,9 +587,12 @@ class XtoolAirAssistConnected(XtoolReadOnlyEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
+        live: bool | None
         if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.air_assist_connected
+            live = None
+        else:
+            live = self.coordinator.data.air_assist_connected
+        return self._is_on_or_restored(live)
 
 
 def build_rest_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorEntity]:
@@ -810,7 +819,7 @@ class XtoolReboot(XtoolEntity, ButtonEntity):
 # --- Generic REST diagnostic sensors ---------------------------------------
 
 
-class _RestStateSensor(XtoolReadOnlyEntity, SensorEntity):
+class _RestStateSensor(XtoolRestoringSensor, SensorEntity):
     """Sensor that reads ``state.<attr>`` on the coordinator."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -832,12 +841,16 @@ class _RestStateSensor(XtoolReadOnlyEntity, SensorEntity):
     @property
     def native_value(self) -> str | int | float | None:
         d = self.coordinator.data
+        live: str | int | float | None
         if d is None:
-            return None
-        v = getattr(d, self._attr)
-        if isinstance(v, str):
-            return v or None
-        return v
+            live = None
+        else:
+            v = getattr(d, self._attr)
+            if isinstance(v, str):
+                live = v or None
+            else:
+                live = v
+        return self._value_or_restored(live)
 
 
 class _RestTempSensor(_RestStateSensor):
@@ -870,7 +883,7 @@ class _RestNumericSensor(_RestStateSensor):
             self._attr_suggested_display_precision = precision
 
 
-class _RestPushBinary(XtoolReadOnlyEntity, BinarySensorEntity):
+class _RestPushBinary(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Generic ``state.<attr>`` binary sensor (None = unavailable)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -896,13 +909,18 @@ class _RestPushBinary(XtoolReadOnlyEntity, BinarySensorEntity):
     def available(self) -> bool:
         if not super().available:
             return False
+        # Live data present and field populated → available.
         d = self.coordinator.data
-        return bool(d and getattr(d, self._state_attr) is not None)
+        if d is not None and getattr(d, self._state_attr) is not None:
+            return True
+        # No live value yet — fall back on a restored state if any.
+        return self._restored_is_on is not None and not self._seen_live_data
 
     @property
     def is_on(self) -> bool | None:
         d = self.coordinator.data
-        return getattr(d, self._state_attr) if d else None
+        live = getattr(d, self._state_attr) if d else None
+        return self._is_on_or_restored(live)
 
 
 class XtoolDisplayBrightness(XtoolEntity, NumberEntity):

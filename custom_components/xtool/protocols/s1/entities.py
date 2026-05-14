@@ -34,7 +34,12 @@ from ...const import (
     FlameAlarmSensitivity,
 )
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity, XtoolReadOnlyEntity
+from ...entity import (
+    XtoolEntity,
+    XtoolReadOnlyEntity,
+    XtoolRestoringBinarySensor,
+    XtoolRestoringSensor,
+)
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -470,7 +475,7 @@ class XtoolFillLight(XtoolEntity, LightEntity):
 # ``XtoolAccessoriesSensor`` was removed in v2.5.0.
 
 
-class XtoolRiserBaseSensor(XtoolReadOnlyEntity, SensorEntity):
+class XtoolRiserBaseSensor(XtoolRestoringSensor, SensorEntity):
     """Riser base type — diagnostic sensor for the S1's removable base.
 
     Reads ``state.riser_base`` (populated by the M1098 poll) and
@@ -490,12 +495,15 @@ class XtoolRiserBaseSensor(XtoolReadOnlyEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         d = self.coordinator.data
+        live: str | None
         if d is None or not d.riser_base:
-            return None
-        return RISER_BASE_NAMES.get(d.riser_base, RISER_BASE_NAMES[1])
+            live = None
+        else:
+            live = RISER_BASE_NAMES.get(d.riser_base, RISER_BASE_NAMES[1])
+        return self._value_or_restored(live)
 
 
-class XtoolAlarmSensor(XtoolReadOnlyEntity, BinarySensorEntity):
+class XtoolAlarmSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Generic alarm flag — true when device reports any active alarm (M340)."""
 
     _attr_translation_key = "alarm"
@@ -509,12 +517,15 @@ class XtoolAlarmSensor(XtoolReadOnlyEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
+        live: bool | None
         if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.alarm_present
+            live = None
+        else:
+            live = self.coordinator.data.alarm_present
+        return self._is_on_or_restored(live)
 
 
-class XtoolXcsCompatMode(XtoolReadOnlyEntity, BinarySensorEntity):
+class XtoolXcsCompatMode(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Diagnostic flag — true when XCS Compatibility Mode is active.
 
     Set by the S1 protocol when it detects ≥3 WebSocket disconnects within
@@ -533,7 +544,8 @@ class XtoolXcsCompatMode(XtoolReadOnlyEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        return getattr(self.coordinator, "xcs_compatibility_mode", False)
+        live = getattr(self.coordinator, "xcs_compatibility_mode", False)
+        return self._is_on_or_restored(live)
 
 
 # AP2 entities now created by the generic accessory framework

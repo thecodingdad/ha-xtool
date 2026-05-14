@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import XtoolConfigEntry
 from .coordinator import XtoolCoordinator
-from .entity import XtoolReadOnlyEntity
+from .entity import XtoolRestoringBinarySensor
 
 
 async def async_setup_entry(
@@ -34,7 +34,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class XtoolCoverSensor(XtoolReadOnlyEntity, BinarySensorEntity):
+class XtoolCoverSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Cover/lid open sensor (F1 V2 push + REST cover models like P2/P2S)."""
 
     _attr_translation_key = "cover_open"
@@ -47,6 +47,9 @@ class XtoolCoverSensor(XtoolReadOnlyEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
+        live: bool | None
         if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.cover_open
+            live = None
+        else:
+            live = self.coordinator.data.cover_open
+        return self._is_on_or_restored(live)

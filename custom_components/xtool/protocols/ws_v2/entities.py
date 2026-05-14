@@ -58,7 +58,7 @@ from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity, XtoolReadOnlyEntity
+from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringBinarySensor
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -303,7 +303,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
 # --- Binary sensors ----------------------------------------------------
 
 
-class _WSV2BoolSensor(XtoolReadOnlyEntity, BinarySensorEntity):
+class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Generic V2 binary sensor — reads a boolean from ``state.<attr>``."""
 
     _state_attr: str = ""
@@ -325,9 +325,12 @@ class _WSV2BoolSensor(XtoolReadOnlyEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
+        live: bool | None
         if self.coordinator.data is None:
-            return None
-        return getattr(self.coordinator.data, self._state_attr, None)
+            live = None
+        else:
+            live = getattr(self.coordinator.data, self._state_attr, None)
+        return self._is_on_or_restored(live)
 
 
 def _bool_sensor_factory(
