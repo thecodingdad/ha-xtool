@@ -83,6 +83,12 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda state, _: state.task_id or None,
     ),
+    # ``task_name`` / loaded-G-code filename entity intentionally
+    # absent — F1V2 firmware decompile shows ``fileName`` string
+    # in laserservice but no V2 endpoint or push surfaces it. The
+    # only thing ``/v1/processing/progress`` returns is
+    # ``{"progress": "%f"}`` (percent only). Restore once a future
+    # firmware / log capture confirms a real wire-source.
     XtoolSensorEntityDescription(
         key="working_mode",
         translation_key="working_mode",
@@ -797,13 +803,13 @@ class _WSV2Camera(XtoolEntity, Camera):
     serves a poll-driven MJPEG stream on the same wire path.
     """
 
-    _camera_type: str = ""
+    _camera_name: str = ""
 
     def __init__(
         self,
         coordinator: XtoolCoordinator,
         key: str,
-        camera_type: str,
+        camera_name: str,
         icon: str | None = None,
         translation_key: str | None = None,
     ) -> None:
@@ -811,7 +817,7 @@ class _WSV2Camera(XtoolEntity, Camera):
         Camera.__init__(self)
         self._set_unique_id(f"{key}")
         self._attr_translation_key = translation_key or key
-        self._camera_type = camera_type
+        self._camera_name = camera_name
         if icon is not None:
             self._attr_icon = icon
         self._last_snapshot: bytes | None = None
@@ -829,9 +835,9 @@ class _WSV2Camera(XtoolEntity, Camera):
         ):
             return self._last_snapshot
         try:
-            image = await self.coordinator.protocol.camera_snap(self._camera_type)
+            image = await self.coordinator.protocol.camera_snap(self._camera_name)
         except Exception as err:
-            _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_type, err)
+            _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
             return self._last_snapshot
         if image:
             self._last_snapshot = image
@@ -872,12 +878,12 @@ class _WSV2LiveCamera(_WSV2Camera):
             while True:
                 try:
                     jpeg = await self.coordinator.protocol.camera_snap(
-                        self._camera_type,
+                        self._camera_name,
                     )
                 except Exception as err:
                     _LOGGER.debug(
                         "V2 live MJPEG %s: snap failed: %s",
-                        self._camera_type, err,
+                        self._camera_name, err,
                     )
                     jpeg = None
                 if jpeg:
@@ -1144,18 +1150,21 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         ))
 
     if model.has_ir_led:
-        entities.extend([
+        # Studio's ``controlRedLed`` peripheral defines two indices
+        # (``closeup`` + ``global``), but the F1V2 firmware decompile
+        # shows no branching on the ``index`` parameter — both
+        # values drive the same physical LED on V2 hardware (the
+        # ``global_ir.json`` calibration file confirms a single LED
+        # array). Keeping just the ``global`` index avoids surfacing
+        # a redundant duplicate entity; if a future model genuinely
+        # exposes two LEDs the ``closeup`` variant can be added back.
+        entities.append(
             _WSV2PeripheralSwitch(
-                coordinator, "ir_led_close", "ir_led",
-                "ir_led_close", "mdi:led-on", SwitchDeviceClass.SWITCH,
-                extra={"index": "closeup"},
-            ),
-            _WSV2PeripheralSwitch(
-                coordinator, "ir_led_global", "ir_led",
+                coordinator, "ir_led", "ir_led",
                 "ir_led_global", "mdi:led-on", SwitchDeviceClass.SWITCH,
                 extra={"index": "global"},
-            ),
-        ])
+            )
+        )
     if model.has_digital_lock:
         entities.append(
             _WSV2PeripheralSwitch(
@@ -1167,23 +1176,18 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
 
 
 def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
+    # ``air_assist_close_delay`` migrated to the AirPump accessory
+    # child device. See ``protocols/accessories/air_pump.py``.
+    # ``sleep_timeout`` + ``sleep_timeout_open_gap`` removed —
+    # firmware-string audit (F1V2 decompile) shows no
+    # ``sleepTimeout`` / ``sleepTimeoutOpenGap`` config-key handler
+    # on V2 hardware. Studio displays them but the device no-ops
+    # the writes, so the entities surfaced Unknown forever.
     entities: list[NumberEntity] = [
-        # ``air_assist_close_delay`` migrated to the AirPump accessory
-        # child device. See ``protocols/accessories/air_pump.py``.
         _WSV2ConfigNumber(
             coordinator, "smoking_fan_duration", "smokingFanDelay",
             "smoking_fan_duration", 1, 600, 1,
             UnitOfTime.SECONDS, "mdi:fan-clock",
-        ),
-        _WSV2ConfigNumber(
-            coordinator, "sleep_timeout", "sleepTimeout",
-            "sleep_timeout", 0, 3600, 30,
-            UnitOfTime.SECONDS, "mdi:timer-sand",
-        ),
-        _WSV2ConfigNumber(
-            coordinator, "sleep_timeout_open_gap", "sleepTimeoutOpenGap",
-            "sleep_timeout_open_gap", 0, 3600, 30,
-            UnitOfTime.SECONDS, "mdi:timer-sand",
         ),
         _WSV2ConfigNumber(
             coordinator, "fire_level", "fireLevel",
@@ -1204,29 +1208,33 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
                 UnitOfTime.SECONDS, "mdi:lightbulb-off",
             )
         )
-    if model.has_ir_led:
-        entities.append(
-            _WSV2ConfigNumber(
-                coordinator, "ir_light_auto_off", "irLightAutoOff",
-                "ir_light_auto_off", 0, 3600, 30,
-                UnitOfTime.SECONDS, "mdi:led-off",
-            )
-        )
+    # ``ir_light_auto_off`` config-number removed — the
+    # ``irLightAutoOff`` config key is absent from the F1V2
+    # firmware decompile; Studio displays it but the V2 device
+    # ignores writes.
     # ``purifier_timeout`` migrated to the Purifier accessory child
     # device. The laser-host config value is merged into the AP2
     # accessory's ``fields["purifier_timeout"]`` via
     # ``WSV2Coordinator._poll_accessories``.
     if model.has_camera_exposure:
-        entities.extend([
-            _WSV2ConfigNumber(
-                coordinator, "camera_exposure_overview", "exposureOverview",
-                "camera_exposure_overview", 0, 255, 1, None, "mdi:camera-iris",
-            ),
-            _WSV2ConfigNumber(
-                coordinator, "camera_exposure_closeup", "exposureCloseup",
-                "camera_exposure_closeup", 0, 255, 1, None, "mdi:camera-iris",
-            ),
-        ])
+        # P-family kept the legacy dual exposure config keys
+        # (``exposureOverview`` / ``exposureCloseup``). Single-camera
+        # V2 firmware doesn't expose these — the exposure is set via
+        # ``POST /v1/camera`` directly with no persistent config key.
+        # Build the dual entities only when the model is genuinely
+        # dual-camera; the single-camera case stays unbuilt until a
+        # firmware sample confirms an alternative wire shape.
+        if model.camera_names == ("overview", "closeup"):
+            entities.extend([
+                _WSV2ConfigNumber(
+                    coordinator, "camera_exposure_overview", "exposureOverview",
+                    "camera_exposure_overview", 0, 255, 1, None, "mdi:camera-iris",
+                ),
+                _WSV2ConfigNumber(
+                    coordinator, "camera_exposure_closeup", "exposureCloseup",
+                    "camera_exposure_closeup", 0, 255, 1, None, "mdi:camera-iris",
+                ),
+            ])
     if model.has_display_screen:
         entities.append(WSV2DisplayBrightness(coordinator))
     return entities
@@ -1274,20 +1282,42 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
 
 
 def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
+    """Build camera entities per ``model.camera_names``.
+
+    Each entry yields two entities: a still-snap entity and a live-
+    MJPEG entity. Skipping when ``camera_names`` is empty avoids
+    creating entities whose wire-shape we haven't audited (which
+    would only error out on every snap).
+    """
     if not coordinator.model.has_camera:
         return []
-    cameras: list[Camera] = [
-        _WSV2Camera(coordinator, "camera_overview", "overview", "mdi:camera"),
-        _WSV2Camera(coordinator, "camera_closeup", "closeup", "mdi:camera-burst"),
-        _WSV2LiveCamera(
-            coordinator, "camera_overview_live", "overview",
-            "mdi:cctv", translation_key="camera_overview",
-        ),
-        _WSV2LiveCamera(
-            coordinator, "camera_closeup_live", "closeup",
-            "mdi:cctv", translation_key="camera_closeup",
-        ),
-    ]
+    names = coordinator.model.camera_names
+    if not names:
+        return []
+
+    # When the model exposes a single camera the entity-id keys stay
+    # generic ("camera" / "camera_live") and the translated label is
+    # just "Camera". Multi-camera models keep the per-name suffix
+    # ("camera_main", "camera_deep") so HA shows them distinctly.
+    is_single = len(names) == 1
+    cameras: list[Camera] = []
+    icons = ("mdi:camera", "mdi:camera-burst")
+    for idx, name in enumerate(names):
+        suffix = "" if is_single else f"_{name}"
+        snap_key = f"camera{suffix}"
+        live_key = f"camera{suffix}_live"
+        cameras.append(
+            _WSV2Camera(
+                coordinator, snap_key, name,
+                icons[min(idx, len(icons) - 1)],
+            )
+        )
+        cameras.append(
+            _WSV2LiveCamera(
+                coordinator, live_key, name,
+                "mdi:cctv", translation_key=snap_key,
+            )
+        )
     if coordinator.model.has_fire_record:
         cameras.append(
             _WSV2Camera(coordinator, "camera_fire_record", "fireRecord",

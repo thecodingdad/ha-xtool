@@ -340,6 +340,12 @@
       "camera_closeup": {
         "name": "Close-up camera"
       },
+      "camera_main": {
+        "name": "Main camera"
+      },
+      "camera_deep": {
+        "name": "Deep camera"
+      },
       "camera_fire_record": {
         "name": "Flame record"
       }

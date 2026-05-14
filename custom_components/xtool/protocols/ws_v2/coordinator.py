@@ -124,6 +124,18 @@ class WSV2Coordinator(XtoolCoordinator):
         wire surface.
         """
         await super()._poll_accessories(state)
+        # Drain any `/accessory/status` push updates queued by the
+        # protocol since the last poll. Each entry carries the
+        # leading M-code + a dict of parsed fields; we look up the
+        # matching accessory in ``connected_accessories`` (keyed by
+        # the M-code's owning AccessoryDefinition) and merge fields
+        # in. The push lands ahead of the next BT-walk so entity
+        # state refreshes between the (slower) 60 s passthrough
+        # polls.
+        pending = getattr(self.protocol, "_pending_accessory_updates", None)
+        if pending:
+            updates, self.protocol._pending_accessory_updates = pending, []
+            self._merge_accessory_push_updates(state, updates)
         accs = state.connected_accessories or {}
         model = self.model
         for acc in accs.values():
@@ -161,6 +173,56 @@ class WSV2Coordinator(XtoolCoordinator):
                         state.purifier_continue
                     )
                 acc.fields["purifier_timeout"] = state.purifier_timeout
+
+    def _merge_accessory_push_updates(
+        self,
+        state: XtoolDeviceState,
+        updates: list[tuple[str, dict[str, Any]]],
+    ) -> None:
+        """Apply pending `/accessory/status` push updates into
+        ``state.connected_accessories`` by matching each M-code head
+        to the accessory type it belongs to.
+
+        Mapping is conservative — gear-set acks (``M9064``,
+        ``M9039``) only update accessory state when an instance of
+        the owning type is already paired (we don't synthesise a
+        connection from a single push without a prior M9098 walk).
+        """
+        if not state.connected_accessories:
+            return
+        # Map M-code head → tuple of type_ids that own it. Mirrors
+        # the per-accessory ``info_mcode`` / writer wiring in
+        # ``protocols/accessories/*``.
+        from ..accessories.base import (
+            MCODE_FAN_INFO,
+            MCODE_FAN_SET_GEAR,
+            MCODE_PURIFIER_INFO,
+            MCODE_PURIFIER_SET_GEAR,
+        )
+        owners: dict[str, tuple[str, ...]] = {
+            MCODE_FAN_INFO: ("DuctFan", "DuctFanV3", "AirPump", "AirPumpV2"),
+            MCODE_FAN_SET_GEAR: ("DuctFan", "DuctFanV3"),
+            MCODE_PURIFIER_INFO: (
+                "Purifier", "LargePurifier", "LargePurifierV3",
+                "BackpackPurifier",
+            ),
+            MCODE_PURIFIER_SET_GEAR: (
+                "Purifier", "LargePurifier", "LargePurifierV3",
+            ),
+        }
+        for head, fields in updates:
+            if not fields:
+                continue
+            wanted_types = owners.get(head)
+            if not wanted_types:
+                continue
+            for acc in state.connected_accessories.values():
+                if acc.type_id not in wanted_types:
+                    continue
+                for k, v in fields.items():
+                    if v is None:
+                        continue
+                    acc.fields[k] = v
 
     async def _fetch_device_info(self) -> None:
         try:

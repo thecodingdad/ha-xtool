@@ -288,6 +288,54 @@ def _normalise_button_event(raw: object) -> str | None:
     return _BUTTON_EVENT_TYPE_MAP.get(str(raw).upper())
 
 
+# ``/accessory/status`` push parsers, keyed by the leading M-code
+# head. The push payload mirrors the per-accessory ``info_mcode``
+# poll reply (minus the M-code prefix), so each parser delegates
+# to the existing ``parse_info`` in the matching accessory
+# definition. Returned dict drops into the accessory's ``fields``
+# in the V2 coordinator's accessory-merge step.
+def _parse_accessory_push(head: str, body: str) -> dict[str, Any]:
+    """Decode an `/accessory/status` push body for the given M-code.
+
+    ``head`` is the leading M-code (e.g. ``M9064``); ``body`` is
+    the trailing token string (everything after the first space in
+    the push's ``mcode`` field).
+    """
+    # Lazy import — accessories package depends on this module's
+    # F0F7 helpers, so we can't pull definitions at module load.
+    from ..accessories import ACCESSORY_DEFINITIONS
+    from ..accessories.base import (
+        MCODE_FAN_INFO,
+        MCODE_FAN_SET_GEAR,
+        MCODE_PURIFIER_INFO,
+        MCODE_PURIFIER_SET_GEAR,
+    )
+
+    # The push frames carry the *output* of an action, not the
+    # info-poll reply, so the wire shape differs per M-code.
+    # ``M9064 A<n> B<n> C<n> D<n> S<n>`` (gear-set ack from
+    # DuctFan/DuctFanV3 — same parser as the ``M9082`` info reply
+    # because the field tokens overlap).
+    if head == MCODE_FAN_SET_GEAR:
+        # Reuse DuctFan's parser — it picks ``A``, ``C``, ``Z``,
+        # and ``E:`` tokens out of arbitrary M-code bodies.
+        try:
+            return ACCESSORY_DEFINITIONS["DuctFan"].parse_info(body)
+        except Exception:
+            return {}
+    if head == MCODE_FAN_INFO:
+        try:
+            return ACCESSORY_DEFINITIONS["DuctFan"].parse_info(body)
+        except Exception:
+            return {}
+    if head in (MCODE_PURIFIER_INFO, MCODE_PURIFIER_SET_GEAR):
+        try:
+            return ACCESSORY_DEFINITIONS["Purifier"].parse_info(body)
+        except Exception:
+            return {}
+    return {}
+
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -419,6 +467,12 @@ class WSV2Protocol(XtoolProtocol):
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
         # everything to HA's dispatcher under the event-loop thread.
         self._pending_events: list[tuple[str, str, dict[str, Any] | None]] = []
+        # `/accessory/status` push lands here as
+        # ``(mcode_head, {field: value, …})`` tuples — the WS-V2
+        # coordinator drains the list in ``_poll_accessories`` and
+        # merges parsed values into the matching paired-accessory
+        # state so the entity layer refreshes between BT polls.
+        self._pending_accessory_updates: list[tuple[str, dict[str, Any]]] = []
         # Aggregator for partial BINARY frames — V2 firmware sometimes
         # splits a single CRC-wrapped envelope across multiple WS
         # messages, so we always feed bytes through ``_decode_frames``
@@ -785,14 +839,18 @@ class WSV2Protocol(XtoolProtocol):
         )
         return decoded
 
-    async def camera_snap(self, camera_type: str = "overview") -> bytes | None:
+    async def camera_snap(self, camera_name: str = "main") -> bytes | None:
         """Capture a JPEG snapshot from one of the device's cameras.
 
         V2 camera capture is a three-step flow per the Studio bundle's
         ``captureGlobalImage`` definition:
 
-        1. ``GET /v1/camera/snap?type=<overview|closeup|fireRecord>``
-           returns ``{filename:"<uuid>"}``.
+        1. ``GET /v1/camera/snap?name=<camera-name>`` returns
+           ``{filename:"<uuid>"}``. Firmware-canonical names: the
+           F2 family (GS004/006/007/009) + HJ003 (MetalFab) expose
+           ``main`` + ``deep``; F1 Ultra V2 (GS003) is single
+           ``main``; the P-family carries the legacy
+           ``overview`` / ``closeup`` names through.
         2. ``PUT /v1/filetransfer/download`` with
            ``{filename, fileType:5}`` initiates the blob transfer.
         3. The JPEG bytes arrive over a fresh ``function=file_stream``
@@ -805,11 +863,11 @@ class WSV2Protocol(XtoolProtocol):
             snap = await self.request(
                 "/v1/camera/snap",
                 "GET",
-                params={"type": camera_type},
+                params={"name": camera_name},
                 timeout=15.0,
             )
         except Exception as err:
-            _LOGGER.debug("V2 camera_snap %s failed: %s", camera_type, err)
+            _LOGGER.debug("V2 camera_snap %s failed: %s", camera_name, err)
             return None
         if not isinstance(snap, dict):
             return None
@@ -817,7 +875,7 @@ class WSV2Protocol(XtoolProtocol):
         if not isinstance(filename, str) or not filename:
             _LOGGER.debug(
                 "V2 camera_snap %s: no filename in response %s",
-                camera_type, snap,
+                camera_name, snap,
             )
             return None
 
@@ -830,7 +888,7 @@ class WSV2Protocol(XtoolProtocol):
         except Exception as err:
             _LOGGER.debug(
                 "V2 camera_snap %s: filetransfer/download init failed: %s",
-                camera_type, err,
+                camera_name, err,
             )
             return None
 
@@ -839,7 +897,7 @@ class WSV2Protocol(XtoolProtocol):
         except Exception as err:
             _LOGGER.debug(
                 "V2 camera_snap %s: file_stream download failed: %s",
-                camera_type, err,
+                camera_name, err,
             )
             return None
 
@@ -1096,7 +1154,12 @@ class WSV2Protocol(XtoolProtocol):
             if isinstance(info, dict):
                 if info.get("timeUse") is not None:
                     try:
-                        secs = int(info["timeUse"]) // 1000
+                        # ``timeUse`` arrives in **seconds**, not
+                        # milliseconds — verified against an F2UV
+                        # 1h57m job that ran 12:59:45 → 14:57:28
+                        # and reported ``timeUse: 7028`` ≈ 7063 s
+                        # wall-clock.
+                        secs = int(info["timeUse"])
                         self._latest["task_time"] = secs
                         self._latest["last_job_time_seconds"] = secs
                     except (TypeError, ValueError):
@@ -1157,6 +1220,28 @@ class WSV2Protocol(XtoolProtocol):
                     )
                     if pkg:
                         self._latest["firmware_version"] = pkg
+
+        elif url == "/accessory/status" and module == "DEVID_MCODE":
+            # Stream of M-code-payload updates from paired BT
+            # accessories. ``info`` carries ``{devId, mcode}`` —
+            # ``mcode`` is the same shape Studio's ``triggerReport``
+            # / per-accessory info-poll handlers return, e.g.
+            # ``"M9064 A1 B3 C4 D0 S0"`` for a DuctFanV3 gear push.
+            # We hand off to a per-M-code parser and queue the
+            # resulting fields for the coordinator's accessory
+            # state-merge step.
+            if isinstance(info, dict):
+                mcode = info.get("mcode") or ""
+                if isinstance(mcode, str) and mcode.strip():
+                    head, _, body = mcode.strip().partition(" ")
+                    parsed = _parse_accessory_push(head, body)
+                    if parsed:
+                        self._pending_accessory_updates.append((head, parsed))
+                    else:
+                        _LOGGER.debug(
+                            "V2 /accessory/status: no parser for %s — "
+                            "raw=%r", head, mcode,
+                        )
 
         elif url == "/button/status" and module == "BUTTON":
             normalised = _normalise_button_event(typ)

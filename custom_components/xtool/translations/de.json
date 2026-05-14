@@ -340,6 +340,12 @@
       "camera_closeup": {
         "name": "Nahaufnahme-Kamera"
       },
+      "camera_main": {
+        "name": "Hauptkamera"
+      },
+      "camera_deep": {
+        "name": "Tiefenkamera"
+      },
       "camera_fire_record": {
         "name": "Flammen-Aufnahme"
       }

@@ -127,6 +127,17 @@ class XtoolDeviceModel:
     has_drawer: bool = False
     has_cover_sensor: bool = False
     has_camera: bool = False
+    # Per-camera labels the V2 firmware accepts as the ``name``
+    # query parameter of ``GET /v1/camera/snap``. Each entry yields
+    # one camera entity (snap + live MJPEG). When ``has_camera`` is
+    # set but this tuple is empty, the build skips camera entities.
+    # - GS003 / F1Ultra              → ``("main",)``
+    # - GS004 / GS006 / GS007 /
+    #   GS009 / HJ003 (F2 family +
+    #   MetalFab)                    → ``("main", "deep")``
+    # - P2 / P2S / P3                → ``("overview", "closeup")``
+    #   (V1 legacy naming carried through to their V2 variant).
+    camera_names: tuple[str, ...] = ()
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False
