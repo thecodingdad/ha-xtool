@@ -102,8 +102,10 @@ def parse_fan_v3_info(text: str) -> dict[str, object]:
 _ENTITIES = (
     AccessoryEntitySpec("sensor", "version", field="version",
                         icon="mdi:numeric", entity_category="diagnostic"),
-    AccessoryEntitySpec("sensor", "sn", field="sn",
-                        icon="mdi:identifier", entity_category="diagnostic"),
+    # SN diagnostic sensor removed in v2.5.4 — the firmware-reported
+    # product serial now appears directly as the accessory device's
+    # ``serial_number`` on its HA device page, so a standalone
+    # sensor entity is redundant.
     # ``current_speed`` reads the live ``B`` token of the M9082 reply
     # (the actual motor speed, identical to the gear value in Manual
     # mode and an empirical 0-100 PWM-like value in Auto modes).
