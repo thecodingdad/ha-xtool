@@ -254,18 +254,34 @@ def _migrate_entity_registry(
         key = unique_id[len(sid_prefix):]
         platform = ent.entity_id.split(".", 1)[0]
         desired = f"{platform}.xtool_{model_slug}_{sid.lower()}_{key}"
-        if ent.entity_id != desired:
-            try:
-                registry.async_update_entity(ent.entity_id, new_entity_id=desired)
-                _LOGGER.debug(
-                    "xtool registry migrate: %s → %s",
-                    ent.entity_id, desired,
-                )
-            except (KeyError, ValueError) as err:
-                _LOGGER.debug(
-                    "xtool registry migrate: %s → %s failed: %s",
-                    ent.entity_id, desired, err,
-                )
+        if ent.entity_id == desired:
+            continue
+        # Idempotency guard: if the desired ID is already registered
+        # (orphan from a prior cycle where HA regenerated friendly-name
+        # slugs alongside our explicit one), skip the rename and let
+        # the orphan get collected by the next "remove unused entities"
+        # pass. Without this guard the registry kept toggling
+        # entity-ids back and forth on every reload — the user reported
+        # the friendly-name form re-appearing after each device reload.
+        existing = registry.async_get(desired)
+        if existing is not None and existing.unique_id != ent.unique_id:
+            _LOGGER.debug(
+                "xtool registry migrate: %s → %s skipped — target "
+                "already owned by unique_id %r",
+                ent.entity_id, desired, existing.unique_id,
+            )
+            continue
+        try:
+            registry.async_update_entity(ent.entity_id, new_entity_id=desired)
+            _LOGGER.debug(
+                "xtool registry migrate: %s → %s",
+                ent.entity_id, desired,
+            )
+        except (KeyError, ValueError) as err:
+            _LOGGER.debug(
+                "xtool registry migrate: %s → %s failed: %s",
+                ent.entity_id, desired, err,
+            )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> bool:
