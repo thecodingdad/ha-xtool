@@ -702,6 +702,13 @@ class WSV2Protocol(XtoolProtocol):
         coerced: Any = value
         if isinstance(value, bool) and key not in self._config_keys_bool:
             coerced = 1 if value else 0
+        elif (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and key in self._config_keys_bool
+        ):
+            # Key cached as bool on this connection — coerce int back to bool.
+            coerced = bool(value)
         try:
             return await self.request(
                 "/v1/device/configs",
@@ -710,10 +717,16 @@ class WSV2Protocol(XtoolProtocol):
                       "kv": {key: coerced}},
             )
         except RuntimeError as err:
+            err_str = str(err)
+            # F2UV firmware ``40.130.021.00.ht2`` raises this error string
+            # when an int is passed for a key the firmware schema types as
+            # bool. Retry once as bool, regardless of whether the caller
+            # passed a bool or an int.
+            type_error = "type must be boolean" in err_str
             if (
-                isinstance(value, bool)
+                type_error
                 and key not in self._config_keys_bool
-                and "type must be boolean" in str(err)
+                and isinstance(value, (bool, int))
             ):
                 _LOGGER.debug(
                     "V2 set_config key=%s typed boolean by firmware "
@@ -725,7 +738,7 @@ class WSV2Protocol(XtoolProtocol):
                     "/v1/device/configs",
                     "PUT",
                     data={"alias": "config", "type": "user",
-                          "kv": {key: value}},
+                          "kv": {key: bool(value)}},
                 )
             raise
 
