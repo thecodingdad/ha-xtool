@@ -1089,31 +1089,16 @@ def build_wsv2_binary_sensors(
         )
 
     # Always-on binary sensors (V2 baseline)
-    entities.extend([
+    entities.append(
         _bool_sensor_factory(
             "alarm_present", "alarm",
             BinarySensorDeviceClass.PROBLEM,
-        )(coordinator),
-        _bool_sensor_factory(
-            "beep_enabled_v2", "beep_enabled",
-            None,
-            EntityCategory.DIAGNOSTIC,
-        )(coordinator),
-        _bool_sensor_factory(
-            "gap_check_enabled", "gap_check_enabled",
-            None,
-            EntityCategory.DIAGNOSTIC,
-        )(coordinator),
-    ])
-
-    if model.has_machine_lock:
-        entities.append(
-            _bool_sensor_factory(
-                "machine_lock_check_enabled", "machine_lock_check_enabled",
-                None,
-                EntityCategory.DIAGNOSTIC,
-            )(coordinator)
-        )
+        )(coordinator)
+    )
+    # ``beep_enabled`` / ``gap_check_enabled`` / ``machine_lock_check_enabled``
+    # diagnostic binary-sensors removed in v2.5.4 — the writable config
+    # switches ("Beep", "Cover check", "Stops when moved") already
+    # expose this state, the diagnostic mirrors were pure duplication.
     if model.has_uv_fire:
         entities.append(
             _bool_sensor_factory(
