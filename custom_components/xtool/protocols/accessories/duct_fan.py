@@ -15,6 +15,7 @@ from __future__ import annotations
 from .base import (
     MCODE_FAN_BUZZER,
     MCODE_FAN_INFO,
+    MCODE_FAN_RUN_DURATION,
     MCODE_FAN_SET_GEAR,
     AccessoryDefinition,
     AccessoryEntitySpec,
@@ -189,6 +190,18 @@ _ENTITIES_V3 = (
                         icon="mdi:bell-ring",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
                         entity_category="config"),
+    # Inline-fan post-run timer (``M9085 T<seconds>``). Studio's
+    # ``setFanV3RunDuration`` route writes the same M-code. Value is
+    # mirrored from the laser-host ``smokingFanDelay`` push, which the
+    # coordinator merges into ``fields['post_run_seconds']`` for the
+    # paired IF2 2.0 accessory.
+    AccessoryEntitySpec(
+        "number", "post_run", field="post_run_seconds",
+        icon="mdi:fan-clock", unit="s",
+        min_value=0, max_value=300, step=5,
+        write_mcode=lambda v: f"{MCODE_FAN_RUN_DURATION} T{int(v)}",
+        entity_category="config",
+    ),
 )
 
 

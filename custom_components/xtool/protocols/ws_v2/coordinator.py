@@ -182,6 +182,18 @@ class WSV2Coordinator(XtoolCoordinator):
                         state.purifier_continue
                     )
                 acc.fields["purifier_timeout"] = state.purifier_timeout
+            elif acc.type_id in ("DuctFan", "DuctFanV3"):
+                # Inline-fan post-run timer: laser-host
+                # ``smokingFanDelay`` config drives the same value
+                # Studio surfaces as "Time the inline fan continues
+                # to work" on the IF2 accessory panel. Mirror it so
+                # the per-accessory ``post_run`` Number reads (and
+                # writes via ``M9085 T<seconds>`` — same key on the
+                # laser-host wire path).
+                if state.smoking_fan_duration is not None:
+                    acc.fields["post_run_seconds"] = int(
+                        state.smoking_fan_duration
+                    )
 
     def _merge_accessory_push_updates(
         self,

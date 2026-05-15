@@ -51,6 +51,7 @@ MCODE_FAN_INFO = "M9082"                 # gear / sn / buzzer state
 MCODE_FAN_SET_GEAR = "M9064"             # ``M9064 A<gear>``
 MCODE_FAN_BUZZER = "M9079"               # ``M9079 S<0|1>``
 MCODE_FAN_DUTY_CYCLE = "M9085"           # fan PWM duty
+MCODE_FAN_RUN_DURATION = "M9085"         # ``M9085 T<seconds>`` — V3 post-run timer
 
 # Purifier (cabinet / AP2-class)
 MCODE_PURIFIER_INFO = "M9033"            # gear + 5-filter wear state

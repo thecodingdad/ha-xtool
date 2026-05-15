@@ -466,6 +466,12 @@
       "accessory_ductfanv3_manual_gear": {
         "name": "Manuelle Stufe"
       },
+      "accessory_ductfanv3_post_run": {
+        "name": "Inline-Lüfter Nachlauf"
+      },
+      "accessory_ductfan_post_run": {
+        "name": "Inline-Lüfter Nachlauf"
+      },
       "air_assist_close_delay": {
         "name": "Air-Assist-Nachlauf"
       },

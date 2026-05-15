@@ -469,6 +469,12 @@
       "accessory_ductfanv3_manual_gear": {
         "name": "Manual gear"
       },
+      "accessory_ductfanv3_post_run": {
+        "name": "Inline-fan post-run"
+      },
+      "accessory_ductfan_post_run": {
+        "name": "Inline-fan post-run"
+      },
       "smoking_fan_duration": {
         "name": "Exhaust post-run"
       },
