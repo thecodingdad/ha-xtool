@@ -177,6 +177,12 @@
       "accessory_purifier_gear": {
         "name": "Purifier speed"
       },
+      "accessory_ductfan_current_speed": {
+        "name": "Current speed"
+      },
+      "accessory_ductfanv3_current_speed": {
+        "name": "Current speed"
+      },
       "accessory_purifier_filter_pre": {
         "name": "Pre-filter remaining"
       },
@@ -365,6 +371,12 @@
       "buzzer": {
         "name": "Buzzer"
       },
+      "accessory_ductfan_buzzer": {
+        "name": "Buzzer"
+      },
+      "accessory_ductfanv3_buzzer": {
+        "name": "Buzzer"
+      },
       "move_stop": {
         "name": "Move stop"
       },
@@ -444,6 +456,12 @@
     "number": {
       "air_assist_close_delay": {
         "name": "Air-assist post-run"
+      },
+      "accessory_ductfan_manual_gear": {
+        "name": "Manual gear"
+      },
+      "accessory_ductfanv3_manual_gear": {
+        "name": "Manual gear"
       },
       "smoking_fan_duration": {
         "name": "Exhaust post-run"

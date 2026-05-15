@@ -177,6 +177,12 @@
       "accessory_purifier_gear": {
         "name": "Reiniger-Stufe"
       },
+      "accessory_ductfan_current_speed": {
+        "name": "Aktuelle Drehzahl"
+      },
+      "accessory_ductfanv3_current_speed": {
+        "name": "Aktuelle Drehzahl"
+      },
       "accessory_purifier_filter_pre": {
         "name": "Vorfilter Restkapazität"
       },
@@ -365,6 +371,12 @@
       "buzzer": {
         "name": "Signalton"
       },
+      "accessory_ductfan_buzzer": {
+        "name": "Signalton"
+      },
+      "accessory_ductfanv3_buzzer": {
+        "name": "Signalton"
+      },
       "move_stop": {
         "name": "Bewegungsstopp"
       },
@@ -442,6 +454,12 @@
       }
     },
     "number": {
+      "accessory_ductfan_manual_gear": {
+        "name": "Manuelle Stufe"
+      },
+      "accessory_ductfanv3_manual_gear": {
+        "name": "Manuelle Stufe"
+      },
       "air_assist_close_delay": {
         "name": "Air-Assist-Nachlauf"
       },

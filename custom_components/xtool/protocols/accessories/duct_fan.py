@@ -16,7 +16,6 @@ from .base import (
     MCODE_FAN_BUZZER,
     MCODE_FAN_INFO,
     MCODE_FAN_SET_GEAR,
-    MCODE_PURIFIER_RESET_FILTER,
     AccessoryDefinition,
     AccessoryEntitySpec,
     num,
@@ -105,21 +104,26 @@ _ENTITIES = (
                         icon="mdi:numeric", entity_category="diagnostic"),
     AccessoryEntitySpec("sensor", "sn", field="sn",
                         icon="mdi:identifier", entity_category="diagnostic"),
-    AccessoryEntitySpec("sensor", "gear", field="gear",
+    # ``current_speed`` reads the live ``B`` token of the M9082 reply
+    # (the actual motor speed, identical to the gear value in Manual
+    # mode and an empirical 0-100 PWM-like value in Auto modes).
+    AccessoryEntitySpec("sensor", "current_speed", field="current_gear",
                         icon="mdi:fan-speed-1"),
-    AccessoryEntitySpec("binary_sensor", "buzzer_enable",
-                        field="buzzer_enable",
-                        icon="mdi:volume-high",
-                        entity_category="diagnostic"),
-    AccessoryEntitySpec("select", "gear_select", field="gear",
-                        icon="mdi:fan", options=("0", "1", "2", "3"),
-                        write_mcode=lambda gear: f"{MCODE_FAN_SET_GEAR} A{gear}"),
+    # ``manual_gear`` writes via ``M9064 A<n>``. 0 = off, 1-4 = manual
+    # gears. Matches Studio's "Manual / OFF / 1 / 2 / 3 / 4" gear
+    # picker. The legacy ``gear_select`` (single-select 0-3) and the
+    # ``reset_filter`` button were removed in v2.5.4 — the gear
+    # range is wider (0-4) on the V3 protocol and the filter-reset
+    # action does not surface a button in Studio for the IF2 family.
+    AccessoryEntitySpec("number", "manual_gear", field="current_gear",
+                        icon="mdi:fan", unit=None,
+                        min_value=0, max_value=4, step=1,
+                        write_mcode=lambda gear: f"{MCODE_FAN_SET_GEAR} A{int(gear)}",
+                        entity_category="config"),
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
                         icon="mdi:bell-ring",
-                        write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}"),
-    AccessoryEntitySpec("button", "reset_filter",
-                        icon="mdi:filter-remove",
-                        write_mcode=f"{MCODE_PURIFIER_RESET_FILTER} A0"),
+                        write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
+                        entity_category="config"),
 )
 
 
