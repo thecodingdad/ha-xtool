@@ -89,13 +89,12 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     # only thing ``/v1/processing/progress`` returns is
     # ``{"progress": "%f"}`` (percent only). Restore once a future
     # firmware / log capture confirms a real wire-source.
-    XtoolSensorEntityDescription(
-        key="working_mode",
-        translation_key="working_mode",
-        icon="mdi:cog-outline",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda state, _: state.working_mode or None,
-    ),
+    # ``working_mode`` diagnostic sensor removed in v2.5.4 — the
+    # firmware ``workingMode`` field on F-series V2 carries the
+    # ``"HANDLE"`` / ``"NORMAL"`` enum that mirrors the Stops-when-
+    # moved switch, which already surfaces the bool. Showing the
+    # raw enum string was confusing. REST / D-series still use
+    # ``state.working_mode`` for genuine job-mode tracking.
     XtoolSensorEntityDescription(
         key="task_time",
         translation_key="task_time",
