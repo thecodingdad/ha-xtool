@@ -1385,6 +1385,13 @@ class WSV2Protocol(XtoolProtocol):
                 for src, dst in _config_keys:
                     if src in info:
                         self._latest[dst] = info[src]
+                # ``workingMode`` is an enum string on F-series V2
+                # firmware (``HANDLE`` = Stops-when-moved on, ``NORMAL``
+                # = off). Surface it as a bool mirror so the
+                # ``stops_when_moved`` switch can render its toggle.
+                if "workingMode" in info:
+                    wm = str(info["workingMode"] or "").upper()
+                    self._latest["stops_when_moved"] = wm == "HANDLE"
 
         elif url.startswith("/peripheral/"):
             ptype = url.removeprefix("/peripheral/")
@@ -1911,6 +1918,10 @@ class WSV2Protocol(XtoolProtocol):
         for src, dst in _config_keys:
             if src in kv:
                 self._latest[dst] = kv[src]
+        # ``workingMode`` enum → ``stops_when_moved`` bool mirror.
+        if "workingMode" in kv:
+            wm = str(kv["workingMode"] or "").upper()
+            self._latest["stops_when_moved"] = wm == "HANDLE"
 
         # Surface unknown keys at debug level so we can extend the map
         # when new firmware revisions add new persistent settings.

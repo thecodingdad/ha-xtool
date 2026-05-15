@@ -168,7 +168,8 @@
       "flame_alarm_v2": { "name": "Flame alarm" },
       "beep_v2": { "name": "Beep" },
       "gap_check": { "name": "Cover check" },
-      "machine_lock_check": { "name": "Lock check" }
+      "machine_lock_check": { "name": "Lock check" },
+      "stops_when_moved": { "name": "Stops when moved" }
     },
     "number": {
       "air_assist_close_delay": { "name": "Air assist delay" },

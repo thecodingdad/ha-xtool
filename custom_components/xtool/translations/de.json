@@ -395,6 +395,9 @@
       "machine_lock_check": {
         "name": "Verriegelungsüberwachung"
       },
+      "stops_when_moved": {
+        "name": "Stopp bei Bewegung"
+      },
       "beep_enable": {
         "name": "Signalton"
       },

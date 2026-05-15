@@ -395,6 +395,9 @@
       "machine_lock_check": {
         "name": "Lock check"
       },
+      "stops_when_moved": {
+        "name": "Stops when moved"
+      },
       "beep_enable": {
         "name": "Beep"
       },

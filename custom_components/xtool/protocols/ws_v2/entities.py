@@ -401,6 +401,64 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
+class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
+    """Switch backed by a string-valued config key on ``/v1/device/configs``.
+
+    Maps a binary on/off UI to two firmware enum tokens (e.g.
+    ``workingMode`` ↔ ``"HANDLE"`` / ``"NORMAL"`` on F2 Ultra UV's
+    Stops-when-moved toggle).
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _config_key: str = ""
+    _state_attr: str = ""
+    _on_value: str = ""
+    _off_value: str = ""
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        key: str,
+        config_key: str,
+        state_attr: str,
+        on_value: str,
+        off_value: str,
+        icon: str | None = None,
+    ) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id(f"{key}")
+        self._attr_translation_key = key
+        self._config_key = config_key
+        self._state_attr = state_attr
+        self._on_value = on_value
+        self._off_value = off_value
+        if icon is not None:
+            self._attr_icon = icon
+
+    @property
+    def is_on(self) -> bool | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        return getattr(d, self._state_attr, None)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.protocol.set_config(
+            self._config_key, self._on_value,
+        )
+        if self.coordinator.data is not None:
+            setattr(self.coordinator.data, self._state_attr, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.protocol.set_config(
+            self._config_key, self._off_value,
+        )
+        if self.coordinator.data is not None:
+            setattr(self.coordinator.data, self._state_attr, False)
+        self.async_write_ha_state()
+
+
 class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
     """Switch backed by ``/v1/peripheral/control`` PUT (action on/off)."""
 
@@ -1114,10 +1172,17 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # ``WSV2Coordinator._poll_accessories``).
     ])
     if model.has_machine_lock:
+        # F2 Ultra UV (and the rest of the F-series V2 firmware) types
+        # the Stops-when-moved enforcement field as the ``workingMode``
+        # *enum* — ``"HANDLE"`` = enforcement on, ``"NORMAL"`` = off.
+        # The previous ``machineLockCheck`` boolean key is silently
+        # ignored by this firmware.
         entities.append(
-            _WSV2ConfigSwitch(
-                coordinator, "machine_lock_check", "machineLockCheck",
-                "machine_lock_check_enabled", "mdi:lock-alert",
+            _WSV2EnumConfigSwitch(
+                coordinator, "stops_when_moved", "workingMode",
+                "stops_when_moved",
+                on_value="HANDLE", off_value="NORMAL",
+                icon="mdi:vibrate",
             )
         )
     if model.has_drawer:

@@ -334,7 +334,8 @@ class XtoolDeviceState:
     flame_alarm_v2_enabled: bool = False
     beep_enabled_v2: bool = False
     gap_check_enabled: bool = False
-    machine_lock_check_enabled: bool = False
+    machine_lock_check_enabled: bool = False  # legacy — kept for state-restore compatibility
+    stops_when_moved: bool = False  # mirrors workingMode enum: HANDLE=True, NORMAL=False
     purifier_timeout: int = 0
     working_mode: str = ""
     last_button_event: str = ""
