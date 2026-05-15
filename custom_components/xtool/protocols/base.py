@@ -122,6 +122,7 @@ class XtoolDeviceModel:
     has_smoking_fan: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
+    has_device_sleep: bool = False  # ``autoSleepEnable`` config bool
     has_move_stop: bool = False
     has_beeper: bool = False
     has_z_axis: bool = False

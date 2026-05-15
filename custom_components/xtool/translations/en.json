@@ -419,6 +419,9 @@
       "stops_when_moved": {
         "name": "Stops when moved"
       },
+      "device_sleep": {
+        "name": "Device sleep"
+      },
       "beep_enable": {
         "name": "Beep"
       },

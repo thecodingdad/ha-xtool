@@ -172,7 +172,8 @@
       "beep_v2": { "name": "Buzzer reminders" },
       "gap_check": { "name": "Stops when enclosure opened" },
       "machine_lock_check": { "name": "Lock check" },
-      "stops_when_moved": { "name": "Stops when moved" }
+      "stops_when_moved": { "name": "Stops when moved" },
+      "device_sleep": { "name": "Device sleep" }
     },
     "number": {
       "air_assist_close_delay": { "name": "Air assist delay" },

@@ -1236,6 +1236,13 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
                 "mdi:archive-check",
             )
         )
+    if model.has_device_sleep:
+        entities.append(
+            _WSV2ConfigSwitch(
+                coordinator, "device_sleep", "autoSleepEnable",
+                "auto_sleep_enable", "mdi:power-sleep",
+            )
+        )
 
     # Peripheral-control toggles
     if model.has_cooling_fan:

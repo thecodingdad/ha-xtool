@@ -419,6 +419,9 @@
       "stops_when_moved": {
         "name": "Stopp bei Bewegung"
       },
+      "device_sleep": {
+        "name": "Geräte-Schlafmodus"
+      },
       "beep_enable": {
         "name": "Signalton"
       },
