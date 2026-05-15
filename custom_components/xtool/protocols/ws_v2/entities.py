@@ -704,7 +704,7 @@ class WSV2FillLight(_WSV2FillLightBase):
     """
 
     _attr_translation_key = "fill_light"
-    _attr_icon = "mdi:lightbulb"
+    _attr_icon = "mdi:dome-light"
     _channel = "front"
     _state_attr = "fill_light_a"
     _other_state_attr = "fill_light_b"
@@ -742,7 +742,7 @@ class WSV2FillLightFront(_WSV2FillLightBase):
     """Front fill-light channel — F-family V2 firmware."""
 
     _attr_translation_key = "fill_light_front"
-    _attr_icon = "mdi:car-light-high"
+    _attr_icon = "mdi:dome-light"
     _channel = "front"
     _state_attr = "fill_light_a"
     _other_state_attr = "fill_light_b"
@@ -757,7 +757,7 @@ class WSV2FillLightBack(_WSV2FillLightBase):
     """Back fill-light channel — F-family V2 firmware."""
 
     _attr_translation_key = "fill_light_back"
-    _attr_icon = "mdi:car-light-fog"
+    _attr_icon = "mdi:dome-light"
     _channel = "back"
     _state_attr = "fill_light_b"
     _other_state_attr = "fill_light_a"
