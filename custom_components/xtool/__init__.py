@@ -257,19 +257,28 @@ def _migrate_entity_registry(
         if ent.entity_id == desired:
             continue
         # Idempotency guard: if the desired ID is already registered
-        # (orphan from a prior cycle where HA regenerated friendly-name
-        # slugs alongside our explicit one), skip the rename and let
-        # the orphan get collected by the next "remove unused entities"
-        # pass. Without this guard the registry kept toggling
-        # entity-ids back and forth on every reload — the user reported
-        # the friendly-name form re-appearing after each device reload.
+        # under a *different* unique_id, a separate physical entity
+        # owns the slot — leave both alone. If the same unique_id
+        # owns it (legacy + new co-exist from a prior cycle where HA
+        # auto-generated the new form alongside the legacy one), drop
+        # the legacy sibling so the recorder can rebind history to
+        # the canonical slot without the "new entity_id already in
+        # use" warning.
         existing = registry.async_get(desired)
-        if existing is not None and existing.unique_id != ent.unique_id:
+        if existing is not None:
+            if existing.unique_id != ent.unique_id:
+                _LOGGER.debug(
+                    "xtool registry migrate: %s → %s skipped — target "
+                    "already owned by unique_id %r",
+                    ent.entity_id, desired, existing.unique_id,
+                )
+                continue
             _LOGGER.debug(
-                "xtool registry migrate: %s → %s skipped — target "
-                "already owned by unique_id %r",
-                ent.entity_id, desired, existing.unique_id,
+                "xtool registry cleanup: removed orphaned legacy "
+                "entry %s (unique_id=%r already owns canonical %s)",
+                ent.entity_id, ent.unique_id, desired,
             )
+            registry.async_remove(ent.entity_id)
             continue
         try:
             registry.async_update_entity(ent.entity_id, new_entity_id=desired)
