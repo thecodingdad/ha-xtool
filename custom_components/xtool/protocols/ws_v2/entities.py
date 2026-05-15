@@ -892,14 +892,23 @@ class WSV2SyncTime(_WSV2Button):
 
 
 class _WSV2Camera(XtoolEntity, Camera):
-    """Camera backed by ``/v1/camera/snap?type=<type>``.
+    """V2 camera — single entity per physical lens.
 
-    Snapshots are cached for ``MIN_SNAPSHOT_INTERVAL`` to keep the device
-    CPU + WS bandwidth low. The companion ``_WSV2LiveCamera`` entity
-    serves a poll-driven MJPEG stream on the same wire path.
+    Serves both the still-snapshot flow (``async_camera_image``) and
+    the live MJPEG preview (``handle_async_mjpeg_stream``) over the
+    same ``/v1/camera/snap?name=<n>`` wire path. HA's picture-card
+    auto-subscribes to the streaming method when
+    ``_attr_is_streaming`` is ``True``, while the
+    ``camera.snapshot`` service still consumes the
+    snapshot-cached path.
+
+    Previously split into separate ``_WSV2Camera`` +
+    ``_WSV2LiveCamera`` entities; dual-camera models then surfaced
+    four entries on the device page. Merged in v2.5.4.
     """
 
     _camera_name: str = ""
+    _attr_is_streaming = True
 
     def __init__(
         self,
@@ -940,24 +949,16 @@ class _WSV2Camera(XtoolEntity, Camera):
             self._last_snapshot_time = now
         return self._last_snapshot
 
-
-class _WSV2LiveCamera(_WSV2Camera):
-    """Live MJPEG camera — repeated ``/v1/camera/snap`` polled at
-    ``LIVE_FRAME_INTERVAL``.
-
-    HA serves the multipart stream returned by
-    :meth:`async_handle_async_mjpeg_stream` as
-    ``multipart/x-mixed-replace`` directly to the browser, so HA's
-    Lovelace ``picture`` card renders the snaps as a continuous video
-    feed at ~1 Hz. Substitute for the unimplemented WebRTC
-    ``media_stream`` path (see PROTOCOL.md).
-    """
-
-    _attr_is_streaming = True
-
     async def handle_async_mjpeg_stream(
         self, request: web.Request,
     ) -> web.StreamResponse | None:
+        """Multipart-MJPEG live preview at ``LIVE_FRAME_INTERVAL``.
+
+        Substitute for the unimplemented WebRTC ``media_stream``
+        path (see PROTOCOL.md). HA's Lovelace picture-card renders
+        the resulting ``multipart/x-mixed-replace`` stream as a
+        continuous video feed.
+        """
         boundary = "--xtoolframe"
         response = web.StreamResponse(
             status=200,
@@ -1391,12 +1392,14 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
 
 
 def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
-    """Build camera entities per ``model.camera_names``.
+    """Build one camera entity per ``model.camera_names`` entry.
 
-    Each entry yields two entities: a still-snap entity and a live-
-    MJPEG entity. Skipping when ``camera_names`` is empty avoids
-    creating entities whose wire-shape we haven't audited (which
-    would only error out on every snap).
+    Each entity serves both ``async_camera_image`` (still
+    snapshot, cached) and ``handle_async_mjpeg_stream`` (live
+    preview). The earlier split into snapshot + live entities
+    surfaced four entries on dual-camera devices; collapsed in
+    v2.5.4. Skipping when ``camera_names`` is empty avoids
+    creating entities whose wire-shape we haven't audited.
     """
     if not coordinator.model.has_camera:
         return []
@@ -1404,27 +1407,20 @@ def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
     if not names:
         return []
 
-    # When the model exposes a single camera the entity-id keys stay
-    # generic ("camera" / "camera_live") and the translated label is
-    # just "Camera". Multi-camera models keep the per-name suffix
+    # When the model exposes a single camera the entity-id key stays
+    # generic ("camera") and the translated label is just "Camera".
+    # Multi-camera models keep the per-name suffix
     # ("camera_main", "camera_deep") so HA shows them distinctly.
     is_single = len(names) == 1
     cameras: list[Camera] = []
     icons = ("mdi:camera", "mdi:camera-burst")
     for idx, name in enumerate(names):
         suffix = "" if is_single else f"_{name}"
-        snap_key = f"camera{suffix}"
-        live_key = f"camera{suffix}_live"
+        key = f"camera{suffix}"
         cameras.append(
             _WSV2Camera(
-                coordinator, snap_key, name,
+                coordinator, key, name,
                 icons[min(idx, len(icons) - 1)],
-            )
-        )
-        cameras.append(
-            _WSV2LiveCamera(
-                coordinator, live_key, name,
-                "mdi:cctv", translation_key=snap_key,
             )
         )
     if coordinator.model.has_fire_record:
