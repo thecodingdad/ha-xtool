@@ -897,6 +897,13 @@ class WSV2Protocol(XtoolProtocol):
             )
             return None
 
+        # ``PUT /v1/filetransfer/download`` is the legacy V2 negotiation
+        # step. Studio's GS006 bundle marks the file-fetch step with
+        # ``isFileTransfer:true`` and never issues this PUT — it opens
+        # the ``file_stream`` channel directly. F2 Ultra UV firmware
+        # ``40.130.021.00.ht2`` rejects the PUT with ``code -99: error
+        # parameters``. Treat the PUT as best-effort: send it, log on
+        # failure, and proceed to the file-stream download anyway.
         try:
             await self.request(
                 "/v1/filetransfer/download",
@@ -905,10 +912,10 @@ class WSV2Protocol(XtoolProtocol):
             )
         except Exception as err:
             _LOGGER.debug(
-                "V2 camera_snap %s: filetransfer/download init failed: %s",
+                "V2 camera_snap %s: filetransfer/download init "
+                "rejected (%s) — proceeding to file_stream anyway",
                 camera_name, err,
             )
-            return None
 
         try:
             blob = await self._download_file_stream(filename, file_type=5)
