@@ -247,6 +247,7 @@ XTOOL_M1_ULTRA_WSV2 = XtoolDeviceModel(
     has_uv_fire=True,
     has_workhead_id=True,
     has_z_temp=True,
+    has_machine_lock=True,   # M1Ultra bundle exposes workingMode HANDLE/NORMAL
     has_runtime_stats=True,  # M1Ultra bundle exposes standbyTime + printToolType
     has_button_event=True,   # M1Ultra bundle defines LONG_PRESS push handler
     firmware_content_id="xTool-m1-ultra-firmware",
