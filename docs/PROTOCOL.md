@@ -1584,7 +1584,7 @@ The V2 API consolidates all peripheral queries onto one path with a
 |---|---|
 | `ext_purifier` | External purifier status — `{current, exist, power, state}` |
 | `gap` | Cover state — `{state: "on"/"off"}` (`on` = closed) |
-| `machine_lock` | USB-key / safety-lock state — `{state: "on"/"off"}` |
+| `machine_lock` | USB safety-key presence — `{state: "on"/"off"}` (`on` = key inserted / armed, `off` = key removed / lockout). Studio reads this as `UsbKeyLockStatus`. Not a lid lock. |
 | `airassistV2` | Air-Assist V2 BLE accessory state |
 | `motion_control` | Low-level motion override |
 | `ext_purifier`, `gap`, `machine_lock` are pre-fanned out as the `addonStatus` aggregate api |
@@ -1666,8 +1666,8 @@ raw JPEG.
 | Step | Channel | Method | Path | Body | Purpose |
 |---|---|---|---|---|---|
 | 1 | `instruction` | GET | `/v1/camera/snap?name=<camera-name>` (or `/v1/camera/image` with `data:{stream:"0"\|"1"\|"near"\|"upside"}` on P2S/P3) | — | Capture frame on device → returns `{filename:"<uuid>"}`. `name` is firmware-specific (`main` / `deep` / `overview` / `closeup` / `fireRecord`); see the per-model table below. |
-| 2 | `instruction` | PUT | `/v1/filetransfer/download` | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). |
-| 3 | `file_stream` | n/a | (open fresh WS, send descriptor `{fileType:5, fileName:"<uuid>"}`) | binary frames | Receive raw JPEG bytes; terminate on `{"transferFinish":true}` TEXT or WS close. |
+| 2 | `instruction` | PUT | `/v1/filetransfer/download` | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). **F2 Ultra UV firmware 40.130.021 rejects this step with `code -99: error parameters`** — proceed to step 3 anyway; the `file_stream` descriptor still works without the PUT (Studio itself skips step 2 on this firmware). |
+| 3 | `file_stream` | n/a | (open fresh WS, send descriptor `{fileType:5, fileName:"<uuid>"}`) | binary frames | Receive raw JPEG bytes; terminate on `{"transferFinish":true}` TEXT or WS close. The same descriptor + the firmware's native MJPEG continuation also drives the live-stream path — one entity per physical lens can serve both still-snap and live MJPEG without separate wire setups. |
 | 4 | `instruction` | PUT | `/v1/filetransfer/finish` | `{filename}` | Best-effort end-of-transfer ack — some firmware skips this and closes the WS instead. |
 
 Studio uses this on demand only — there is no Studio-driven
@@ -1811,7 +1811,7 @@ and without `type:"response"`. Frame schema:
 | `/device/status` | `STATUS_CONTROLLER` | `WORK_FINISHED` | `idle` (if a framing run finished) or `finished`. |
 | `/work/result` | `WORK_RESULT` | `WORK_FINISHED` | Captures `info.timeUse` (job duration in **seconds**, not milliseconds — verified against wall-clock on GS006), `info.taskId`. |
 | `/gap/status` | `GAP` | `OPEN`/`CLOSE` | Cover transitions. **Inverted naming:** firmware emits `OPEN` when the cover is closed and `CLOSE` when it is opened (matches the `state:"on"` / `state:"off"` polarity of the polled `gap` peripheral). |
-| `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | LOCK device class — `OPEN`=unlocked, `CLOSE`=locked. |
+| `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | USB safety-key edge — `OPEN` = key removed (lockout active), `CLOSE` = key inserted (system armed). Matches the `/peripheral/machine_lock` polarity. |
 
 ### `P_*` mode enum (V2 work-state)
 
@@ -1881,7 +1881,7 @@ device model exposes the peripheral):
 | `type` | Reads |
 |---|---|
 | `gap` | Cover state. `state:"on"` = **closed**, `state:"off"` = **open** (V1 REST convention; V2 keeps the same polarity per live MetalFab + F1 Ultra captures). |
-| `machine_lock` | Safety-lock state. `state:"on"` = locked. |
+| `machine_lock` | USB safety-key presence. `state:"on"` = key inserted (system armed), `state:"off"` = key removed (lockout). Studio's bundle reads this as `UsbKeyLockStatus`. |
 | `drawer` | Drawer state. Same polarity as `gap`: `state:"on"` = closed (drawer in slot), `state:"off"` = open / pulled out. |
 | `airassistV2` | Air-Assist BLE connect state. **Not exposed on V2 firmware** — HJ003 / GS003 reject the GET with `code -3: error action type !`. |
 | `cooling_fan` | Cooling-fan run state. **Not exposed on HJ003** — same `code -3`. |
@@ -1905,7 +1905,7 @@ Action paths:
 | `/v1/device/configs` | PUT | `{kv:{<key>:<value>}}` | Set a single config key (toggles, timeouts, levels, gear). |
 | `/v1/device/configs/backup` | GET / PUT | — | Export the full config blob (GET) or apply a previously-exported one (PUT). |
 | `/v1/device/configs/restore` | PUT | — | Reset device configs to factory defaults. |
-| `/v1/device/operate-log` | GET | — | Recent device-event history (backed by `/dev/operateRecord`). Response shape not fully audited; observed as an array of action records keyed by timestamp. |
+| `/v1/device/operate-log` | GET | — | Documented in Studio's route table (backed by the `/dev/operateRecord` firmware path) but **returns `code -2: invalid request` on F2 Ultra UV firmware 40.130.021** — not exposed on every model. Use with caution. |
 | `/v1/device/connect` | PUT | `{action}` | Explicit transport-level connect/disconnect verb. Studio uses it during handover. |
 | `/v1/peripheral/control` | PUT | `{type, action, …}` | Actuate a peripheral (turn on/off, set brightness, set speed, home, measure). |
 | `/v1/peripherals` | GET | — | List of peripherals currently advertised by the controller. |
@@ -1919,7 +1919,7 @@ Action paths:
 | `/v1/platform/camera/snap` | POST | — | `/v1/platform/*` equivalent of `/v1/camera/snap`. |
 | `/v1/laser-head/control` | PUT | `{action, …}` | Laser-head verbs (move, jog, calibrate). |
 | `/v1/laser-head/parameter` | GET / PUT | — | Laser-head-wide tuning parameters (power curve, focus offsets, …). |
-| `/v1/laser-head/focus/control` | PUT | `{action:"start"\|"stop"}` | Autofocus run. |
+| `/v1/laser-head/focus/control` | PUT | `{action:"start"\|"stop"\|"goTo"}` | Autofocus run or explicit Z move. Studio's z-axis-homing button sends `{action:"goTo", autoHome:1, stopFirst:1, F:300, Z:0}` to home the Z axis on F2 Ultra UV. |
 | `/v1/laser-head/focus/parameter` | GET / PUT | — | Autofocus configuration (search range, step size, dwell). |
 | `/v1/motion_control/paramter` | GET / PUT | — | Motion-controller-wide tuning (acceleration, max speed). **Note**: the spelling `paramter` is firmware-canonical (typo in the route table — verified across GS003/GS005/GS006/GS007/HJ003). |
 | `/v1/extender/control` | PUT | `{action, …}` | Extender-attachment control (conveyor / rotary table). Paired with the `/conveyor/alarm` push. |
@@ -1952,7 +1952,7 @@ emits these push frames (all without `transactionId`):
 
 | `url` | `module` | Notes |
 |---|---|---|
-| `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). |
+| `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). Keys observed in the wild: `flameAlarm`, `beepEnable`, `gapCheck`, `gapCheckWithKey`, `machineLockCheck`, `autoSleepEnable`, `fillLightBrightFront`, `fillLightBrightBack`, `purifierTimeout`, `purifierSpeed`, `workingMode` (HANDLE / NORMAL enum), `airAssistDelay`, `smokingFanDelay`, `airassistCut`, `airassistGrave`, `sleepTimeout`, `sleepTimeoutOpenGap`, `printToolType`, `fireLevel`, `globalOffsetZ`, `innerZOffset`, `secondOffsetFlag`, `zPositionCompensateSmall`, `ConveyorAngleCompensate`, `ConveyorURate`. |
 | `/device/info` | `MACHINE_INFO` | `type:"INFO"` — full machine identity blob (`deviceName`, `sn`, `mac`, `firmware.package_version`, `laserPower[]`, `hardware{}`). MetalFab returns an empty body for the `GET /v1/device/machineInfo`; the same payload arrives via this push a few hundred ms after the WS opens. Consumers should fall back to it when the GET is empty. |
 | `/peripheral/<type>` | varies | Per-peripheral push. Observed types: `drawer`, `water_pump`, `water_line`, `cooling_fan`, `smoking_fan`, `cpu_fan`, `uv_fire_sensor`, `ir_led`, `fill_light`, `digital_screen`, `ext_purifier`, `gyro`, `laser_head`, `ir_measure_distance`. |
 | `/drawer/status` | `DRAWER` | Drawer transitions. **Note:** the `type` strings invert the obvious meaning — firmware emits `type:"OPEN"` when the drawer is pushed back into the slot, `type:"CLOSE"` when it is pulled out (matches the `state:"on"` / `state:"off"` polarity of the polled `drawer` peripheral). |
@@ -2168,7 +2168,7 @@ filter reset) ride the same transport with a different M-code.
 
 | Accessory type | Info M-code | Reply tokens | Writers |
 |---|---|---|---|
-| `DuctFan` / `DuctFanV3` | `M9082` | ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"`` | `M9064 A<gear>` (gear), `M9079 S<0\|1>` (buzzer), `M9258 A0` (reset filter) |
+| `DuctFan` / `DuctFanV3` | `M9082` | DuctFan: ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"``. DuctFanV3 (IF2 2.0, observed on F2 Ultra UV firmware 40.130.021): ``A<firmware-version-string> B<gear> C<mode> D<target-gear> E:"<sn>" S<buzzer> Z<connected>`` — `A` carries the full dotted version (parse positionally, not via `num()`), `C` is `0` (Manual) or `≥1` (Auto), `B` is 0–4 in Manual mode but reports an empirical PWM-like 0–100 reading in Auto modes. | `M9064 <mode><gear>` (gear; mode = `A` Manual / `B` Auto), `M9079 S<0\|1>` (buzzer), `M9085 T<seconds>` (post-run timer), `M9258 A0` (reset filter) |
 | `Purifier` / `BigPurifierV3` / `LargePurifier` | `M9033` | ``<v1> <v2> <gear> H<H> I<I> J<J> K<K> L<L> E:"<sn>"`` (H/I/J/K/L = pre / medium / carbon / dense_carbon / hepa filter % per AP2 datasheet) | `M9039 <gear>` (gear), `M9258 0` (reset filter) |
 | `BackpackPurifier` | `M9033` | `<vA> H<H> I<I> L<L> E:"<sn>"` (3-filter variant) | `M9258 <filterType>0` (reset filter) |
 | `AirPump` / `AirPumpV2` | `M9082` | reuses the DuctFan parser (sn + gear) | — |

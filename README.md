@@ -18,7 +18,7 @@ This integration communicates directly with your xTool device over the local net
 - Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
 - Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, ...)
-- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab (overview + close-up or main + deep depending on model, plus flame record)
+- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab (overview + close-up or main + deep depending on model, plus flame record).
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
 - Automatic reconnect on network interruption
@@ -100,9 +100,9 @@ The available options are gated by the device's protocol family — only relevan
 |---|---|
 | Status | Off / Idle / Processing / Paused / Finished / Error / … Always available — shows "Off" when device is unreachable |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
-| Task time | Current job elapsed time (seconds) |
+| Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
 | Last job time | Last completed job duration |
-| Working mode | Current working mode (cut / engrave / knife / inkjet / …) |
+| Working mode | Current working mode (cut / engrave / knife / inkjet / …). REST V1 + D-series only — V2 firmware uses this field as a `HANDLE`/`NORMAL` enum surfaced through the *Stops when moved* switch instead |
 | Working time | Lifetime working hours |
 | Session count | Lifetime job-start count |
 | Standby time | Lifetime standby hours |
@@ -141,7 +141,7 @@ The available options are gated by the device's protocol family — only relevan
 |---|---|
 | Cover | Cover / lid open detection |
 | Drawer | Front-drawer position |
-| Machine lock | Machine-lock state (LOCK device class — `on` = unlocked) |
+| Safety key | USB safety-key presence (PLUG device class — `on` = plugged in / armed, `off` = unplugged / lockout). Sourced from `/peripheral/machine_lock` and the `/machine_lock/status` push |
 | Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |
 | Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
 | Cooling fan | Cooling fan currently running |
@@ -164,19 +164,19 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Entity | Description |
 |---|---|
 | Power | Linked smart plug (only when configured in integration options) |
-| Beep / Buzzer | Audio feedback enable |
+| Buzzer reminders / Beep | Audio feedback enable |
 | Move stop | Emergency-movement-stop toggle |
 | Exhaust fan | Manual smoke-extraction fan toggle |
 | Cooling fan | Manual cooling-fan toggle |
-| Filter check / Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
+| Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
 | Purifier auto-continue | Keep purifier running after job ends |
-| IR LED close-up / IR LED global | Cover and global IR illumination |
+| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
-| Flame alarm (config) | Flame-alarm config toggle |
-| Beep (config) | Beep config toggle |
-| Gap check | Cover-safety enforcement |
-| Lock check | Machine-lock safety enforcement |
+| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select) |
+| Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
+| Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
+| Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle |
 
 ### Number
 
@@ -186,13 +186,11 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Exhaust post-run | Time exhaust fan stays on after a job ends (1-600 s) |
 | Sleep timeout | Idle sleep timeout (0-3600 s) |
 | Sleep timeout (cover open) | Idle sleep timeout while cover is open (0-3600 s) |
-| Fill-light auto-off | Built-in fill light auto-off (0-3600 s) |
 | IR-light auto-off | IR illumination auto-off (0-3600 s) |
 | Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
 | Camera exposure (overview / close-up) | Camera exposure values (0-255) |
 | Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
-| Fire detection level | Flame-detector threshold (0-255) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
 | Work area limit (left / right / up / down) | M311 work-area limits (mm) |
 
@@ -200,8 +198,6 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 | Entity | Description |
 |---|---|
-| Flame alarm sensitivity | High / Low / Off — flame-detector level. "Off" disables the alarm |
-| Flame level | High / Low — flame-level threshold |
 | Purifier speed | Off / Low / Medium / High — AP2 / external purifier speed |
 | Flame alarm mode | Mode 1-4 — flame-detection mode preset |
 | Red-cross mode | Cross-laser pointer / Low-light mode |
@@ -210,15 +206,16 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 | Entity | Description |
 |---|---|
-| Fill light | Dimmable work light (0-100 %) |
+| Fill light | Dimmable work light (0-100 %). Single entity on most models |
+| Fill light front / Fill light back | F2 family (dual-LED enclosure) — separate front/back channels driven by `fillLightBrightFront` / `fillLightBrightBack` |
 
 ### Camera
 
 | Entity | Description |
 |---|---|
-| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2) |
-| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware) |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware) |
+| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Streams live MJPEG with snapshot fallback |
+| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Flame record | Snapshot of the most recent flame-detection event |
@@ -234,6 +231,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Home XY | Move laser head to XY home |
 | Home Z | Move laser head to Z home |
 | Home laser head | Move laser head back to (0, 0) |
+| Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
 | Reboot | Soft reboot |
 | Sync time | Push HA local time to device |
