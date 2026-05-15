@@ -396,7 +396,10 @@
         "name": "IR-LED (Nahaufnahme)"
       },
       "ir_led_global": {
-        "name": "IR-LED (Übersicht)"
+        "name": "Roter Punkt"
+      },
+      "ir_led": {
+        "name": "Roter Punkt"
       },
       "digital_lock": {
         "name": "Deckelverriegelung"
@@ -405,10 +408,10 @@
         "name": "Feueralarm"
       },
       "beep_v2": {
-        "name": "Signalton"
+        "name": "Signalton-Erinnerungen"
       },
       "gap_check": {
-        "name": "Deckelüberwachung"
+        "name": "Stopp bei geöffnetem Deckel"
       },
       "machine_lock_check": {
         "name": "Verriegelungsüberwachung"

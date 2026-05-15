@@ -396,7 +396,10 @@
         "name": "IR LED (close-up)"
       },
       "ir_led_global": {
-        "name": "IR LED (overview)"
+        "name": "Red dot"
+      },
+      "ir_led": {
+        "name": "Red dot"
       },
       "digital_lock": {
         "name": "Cover lock"
@@ -405,10 +408,10 @@
         "name": "Flame alarm"
       },
       "beep_v2": {
-        "name": "Beep"
+        "name": "Buzzer reminders"
       },
       "gap_check": {
-        "name": "Cover check"
+        "name": "Stops when enclosure opened"
       },
       "machine_lock_check": {
         "name": "Lock check"

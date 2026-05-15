@@ -1284,10 +1284,13 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # array). Keeping just the ``global`` index avoids surfacing
         # a redundant duplicate entity; if a future model genuinely
         # exposes two LEDs the ``closeup`` variant can be added back.
+        # User-facing label is "Red dot" (matches Studio's wording);
+        # icon is the laser-pointer crosshair Studio uses too.
         entities.append(
             _WSV2PeripheralSwitch(
                 coordinator, "ir_led", "ir_led",
-                "ir_led_global", "mdi:led-on", SwitchDeviceClass.SWITCH,
+                "ir_led_global", "mdi:laser-pointer",
+                SwitchDeviceClass.SWITCH,
                 extra={"index": "global"},
             )
         )
