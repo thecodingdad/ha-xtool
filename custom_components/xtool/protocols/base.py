@@ -216,6 +216,11 @@ class XtoolDeviceState:
     position_z: float = 0.0
 
     # Settings
+    # ``flame_alarm`` carries the legacy 3-state sensitivity int
+    # used by S1 (M340) / REST V1 / D-series — those firmwares
+    # genuinely expose sensitivity levels. V2 firmware (F-family,
+    # P-family, MetalFab) types ``flameAlarm`` strictly as boolean
+    # and is served by the ``flame_alarm_v2`` switch instead.
     flame_alarm: int = 0
     fire_level: int = 0
     beeper_enabled: bool = False
