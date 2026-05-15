@@ -337,6 +337,7 @@ class XtoolDeviceState:
     gap_check_enabled: bool = False
     machine_lock_check_enabled: bool = False  # legacy — kept for state-restore compatibility
     stops_when_moved: bool = False  # mirrors workingMode enum: HANDLE=True, NORMAL=False
+    auto_sleep_enable: bool = True  # mirrors autoSleepEnable config bool
     purifier_timeout: int = 0
     working_mode: str = ""
     last_button_event: str = ""

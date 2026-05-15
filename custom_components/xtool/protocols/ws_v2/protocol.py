@@ -1410,6 +1410,9 @@ class WSV2Protocol(XtoolProtocol):
                     ("beepEnable",          "beep_enabled_v2"),
                     ("gapCheck",            "gap_check_enabled"),
                     ("machineLockCheck",    "machine_lock_check_enabled"),
+                    ("autoSleepEnable",     "auto_sleep_enable"),
+                    ("fillLightBrightFront","fill_light_a"),
+                    ("fillLightBrightBack", "fill_light_b"),
                     ("purifierTimeout",     "purifier_timeout"),
                     ("workingMode",         "working_mode"),
                     ("airAssistDelay",      "air_assist_close_delay"),
@@ -1418,10 +1421,7 @@ class WSV2Protocol(XtoolProtocol):
                     ("airassistGrave",      "air_assist_gear_grave"),
                     ("sleepTimeout",        "sleep_timeout"),
                     ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
-                    ("fillLightAutoOff",    "fill_light_auto_off"),
-                    ("irLightAutoOff",      "ir_light_auto_off"),
                     ("printToolType",       "print_tool_type"),
-                    ("flameLevelHLSelect",  "flame_level_hl"),
                     ("fireLevel",           "fire_level"),
                 )
                 for src, dst in _config_keys:
@@ -1534,10 +1534,20 @@ class WSV2Protocol(XtoolProtocol):
                 if isinstance(v, (int, float)):
                     self._latest["last_distance_mm"] = float(v)
             elif ptype == "fill_light":
-                v = info.get("brightness") or info.get("value")
-                if isinstance(v, (int, float)):
-                    self._latest["fill_light_a"] = int(v)
-                    self._latest["fill_light_b"] = int(v)
+                # Dual-channel push: ``{front: N, back: N}`` on F2
+                # family. Legacy single-channel models still send
+                # ``{brightness: N}`` (mirror onto both channels).
+                front = info.get("front")
+                back = info.get("back")
+                if isinstance(front, (int, float)):
+                    self._latest["fill_light_a"] = int(front)
+                if isinstance(back, (int, float)):
+                    self._latest["fill_light_b"] = int(back)
+                if front is None and back is None:
+                    v = info.get("brightness") or info.get("value")
+                    if isinstance(v, (int, float)):
+                        self._latest["fill_light_a"] = int(v)
+                        self._latest["fill_light_b"] = int(v)
             else:
                 _LOGGER.debug(
                     "V2 unhandled peripheral push type=%r info=%r — please "
@@ -1929,10 +1939,19 @@ class WSV2Protocol(XtoolProtocol):
             if isinstance(v, (int, float)):
                 state.display_brightness = int(v)
         elif ptype == "fill_light":
-            v = p.get("brightness") or p.get("value")
-            if isinstance(v, (int, float)):
-                state.fill_light_a = int(v)
-                state.fill_light_b = int(v)
+            # F-family V2 firmware returns ``{back, front}``; legacy
+            # single-channel models still return ``{brightness}``.
+            front = p.get("front")
+            back = p.get("back")
+            if isinstance(front, (int, float)):
+                state.fill_light_a = int(front)
+            if isinstance(back, (int, float)):
+                state.fill_light_b = int(back)
+            if front is None and back is None:
+                v = p.get("brightness") or p.get("value")
+                if isinstance(v, (int, float)):
+                    state.fill_light_a = int(v)
+                    state.fill_light_b = int(v)
         elif ptype == "ext_purifier":
             v = p.get("speed") or p.get("value")
             if isinstance(v, (int, float)):
@@ -1965,6 +1984,9 @@ class WSV2Protocol(XtoolProtocol):
             ("beepEnable",          "beep_enabled_v2"),
             ("gapCheck",            "gap_check_enabled"),
             ("machineLockCheck",    "machine_lock_check_enabled"),
+            ("autoSleepEnable",     "auto_sleep_enable"),
+            ("fillLightBrightFront","fill_light_a"),
+            ("fillLightBrightBack", "fill_light_b"),
             ("purifierTimeout",     "purifier_timeout"),
             ("workingMode",         "working_mode"),
             ("airAssistDelay",      "air_assist_close_delay"),
@@ -1973,10 +1995,7 @@ class WSV2Protocol(XtoolProtocol):
             ("airassistGrave",      "air_assist_gear_grave"),
             ("sleepTimeout",        "sleep_timeout"),
             ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
-            ("fillLightAutoOff",    "fill_light_auto_off"),
-            ("irLightAutoOff",      "ir_light_auto_off"),
             ("printToolType",       "print_tool_type"),
-            ("flameLevelHLSelect",  "flame_level_hl"),
             ("fireLevel",           "fire_level"),
         )
         for src, dst in _config_keys:
