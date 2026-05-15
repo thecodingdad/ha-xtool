@@ -353,6 +353,12 @@
     "light": {
       "fill_light": {
         "name": "Arbeitslicht"
+      },
+      "fill_light_front": {
+        "name": "Arbeitslicht vorne"
+      },
+      "fill_light_back": {
+        "name": "Arbeitslicht hinten"
       }
     },
     "switch": {

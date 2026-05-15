@@ -650,47 +650,102 @@ class WSV2FlameAlarmSelect(XtoolEntity, SelectEntity):
 # --- Light --------------------------------------------------------------
 
 
-class WSV2FillLight(XtoolEntity, LightEntity):
-    """Fill-light dimmable via ``/v1/peripheral/control?type=fill_light``."""
+class _WSV2FillLightBase(XtoolEntity, LightEntity):
+    """Base for fill-light entities on V2 firmware.
 
-    _attr_translation_key = "fill_light"
-    _attr_icon = "mdi:lightbulb"
+    F-family V2 firmware exposes ``front`` and ``back`` channels
+    independently (``fillLightBrightFront`` / ``fillLightBrightBack``
+    in the ``/device/config`` push). Single-channel models keep one
+    light; dual-channel models surface one entity per channel and
+    each PUT preserves the other channel's previous value.
+    """
+
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id("fill_light")
+    # Subclasses set these.
+    _channel: str = ""          # "front" or "back"
+    _state_attr: str = ""       # "fill_light_a" / "fill_light_b"
+    _other_state_attr: str = "" # "fill_light_b" / "fill_light_a"
+    _other_channel: str = ""    # "back" / "front"
 
     @property
     def is_on(self) -> bool | None:
         d = self.coordinator.data
         if d is None:
             return None
-        return (d.fill_light_a or 0) > 0
+        return (getattr(d, self._state_attr) or 0) > 0
 
     @property
     def brightness(self) -> int | None:
         d = self.coordinator.data
         if d is None:
             return None
-        device_value = d.fill_light_a or 0
-        # Scale device 0..BRIGHTNESS_DEVICE_MAX to HA 0..255.
+        device_value = getattr(d, self._state_attr) or 0
         return int(
             device_value * BRIGHTNESS_HA_MAX / max(BRIGHTNESS_DEVICE_MAX, 1)
         )
+
+    def _other_value(self) -> int:
+        d = self.coordinator.data
+        if d is None:
+            return 0
+        return getattr(d, self._other_state_attr) or 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         ha_brightness = kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX)
         device_brightness = int(
             ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
         )
-        # F2 Ultra UV firmware ``40.130.021.00.ht2`` rejects the legacy
-        # ``set_brightness`` verb with ``code 1: action failed, not
-        # set_bri|get_bri``. Every WS-V2 Studio bundle (F1, GS003-009,
-        # HJ003, M1Ultra, P2/P3, DT001) sends ``action:"set_bri"`` with
-        # body ``{front, back}`` — dual fill-light banks; passing the
-        # same value to both mirrors Studio's single-slider UX.
+        body = {
+            self._channel: device_brightness,
+            self._other_channel: self._other_value(),
+        }
+        await self.coordinator.protocol.set_peripheral(
+            "fill_light", action="set_bri", **body,
+        )
+        if self.coordinator.data is not None:
+            setattr(
+                self.coordinator.data, self._state_attr, device_brightness,
+            )
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        body = {
+            self._channel: 0,
+            self._other_channel: self._other_value(),
+        }
+        await self.coordinator.protocol.set_peripheral(
+            "fill_light", action="set_bri", **body,
+        )
+        if self.coordinator.data is not None:
+            setattr(self.coordinator.data, self._state_attr, 0)
+        self.async_write_ha_state()
+
+
+class WSV2FillLight(_WSV2FillLightBase):
+    """Single fill-light entity — used when the model has only one
+    fill-light channel (or where surfacing two entities would be UX
+    noise). PUT writes both channels to the same value, mirroring
+    Studio's single-slider UX for legacy V2 firmware.
+    """
+
+    _attr_translation_key = "fill_light"
+    _attr_icon = "mdi:lightbulb"
+    _channel = "front"
+    _state_attr = "fill_light_a"
+    _other_state_attr = "fill_light_b"
+    _other_channel = "back"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("fill_light")
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        ha_brightness = kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX)
+        device_brightness = int(
+            ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
+        )
         await self.coordinator.protocol.set_peripheral(
             "fill_light", action="set_bri",
             front=device_brightness, back=device_brightness,
@@ -708,6 +763,36 @@ class WSV2FillLight(XtoolEntity, LightEntity):
             self.coordinator.data.fill_light_a = 0
             self.coordinator.data.fill_light_b = 0
         self.async_write_ha_state()
+
+
+class WSV2FillLightFront(_WSV2FillLightBase):
+    """Front fill-light channel — F-family V2 firmware."""
+
+    _attr_translation_key = "fill_light_front"
+    _attr_icon = "mdi:car-light-high"
+    _channel = "front"
+    _state_attr = "fill_light_a"
+    _other_state_attr = "fill_light_b"
+    _other_channel = "back"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("fill_light_front")
+
+
+class WSV2FillLightBack(_WSV2FillLightBase):
+    """Back fill-light channel — F-family V2 firmware."""
+
+    _attr_translation_key = "fill_light_back"
+    _attr_icon = "mdi:car-light-fog"
+    _channel = "back"
+    _state_attr = "fill_light_b"
+    _other_state_attr = "fill_light_a"
+    _other_channel = "front"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("fill_light_back")
 
 
 # --- Buttons ------------------------------------------------------------
@@ -1292,7 +1377,13 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 
 def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
-    if coordinator.model.has_fill_light:
+    model = coordinator.model
+    if model.has_fill_light_dual:
+        return [
+            WSV2FillLightFront(coordinator),
+            WSV2FillLightBack(coordinator),
+        ]
+    if model.has_fill_light:
         return [WSV2FillLight(coordinator)]
     return []
 

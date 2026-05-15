@@ -152,7 +152,9 @@
       "camera_fire_record": { "name": "Flame record" }
     },
     "light": {
-      "fill_light": { "name": "Fill light" }
+      "fill_light": { "name": "Fill light" },
+      "fill_light_front": { "name": "Fill light front" },
+      "fill_light_back": { "name": "Fill light back" }
     },
     "switch": {
       "flame_alarm": { "name": "Flame alarm" },
