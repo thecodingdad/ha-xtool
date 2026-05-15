@@ -1205,10 +1205,11 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
             coordinator, "gap_check", "gapCheck", "gap_check_enabled",
             "mdi:window-shutter-alert",
         ),
-        _WSV2ConfigSwitch(
-            coordinator, "filter_check", "filterCheck", "filter_check",
-            "mdi:air-filter",
-        ),
+        # ``filter_check`` (config key ``filterCheck``) removed in
+        # v2.5.4 — confirmed absent from every xTool Studio bundle
+        # and rejected by F2 Ultra UV firmware. Filter-check
+        # enforcement is implicit in the Purifier accessory's
+        # presence.
         # ``purifier_check`` + ``purifier_continue`` migrated to the
         # Purifier accessory child device; the entity layer surfaces
         # them on the AP2 / AP2-Large / AP2-Max accessory whenever
@@ -1310,14 +1311,11 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     # to the AirPump accessory child device (the per-job-mode default
     # gear is conceptually an AirPump setting even though the wire
     # path is the laser's ``/v1/device/configs`` API).
-    if model.has_fill_light:
-        entities.append(
-            _WSV2ConfigNumber(
-                coordinator, "fill_light_auto_off", "fillLightAutoOff",
-                "fill_light_auto_off", 0, 3600, 30,
-                UnitOfTime.SECONDS, "mdi:lightbulb-off",
-            )
-        )
+    # ``fill_light_auto_off`` Number removed in v2.5.4 — confirmed
+    # absent from every xTool Studio bundle (search for
+    # ``fillLightAutoOff`` returns zero hits) and the V2 device
+    # ignores writes. Fill-light brightness goes back to 0 manually
+    # if needed; no firmware-managed auto-off exists.
     # ``ir_light_auto_off`` config-number removed — the
     # ``irLightAutoOff`` config key is absent from the F1V2
     # firmware decompile; Studio displays it but the V2 device
