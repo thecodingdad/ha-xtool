@@ -1896,7 +1896,9 @@ class WSV2Protocol(XtoolProtocol):
         if ptype == "gap":
             state.cover_open = is_on
         elif ptype == "machine_lock":
-            state.machine_lock = is_off  # off = unlocked → True (LOCK device class)
+            # USB safety-key presence (Studio's UsbKeyLockStatus).
+            # state="on" = key inserted → True (plugged in).
+            state.machine_lock = is_on
         elif ptype == "airassistV2":
             state.air_assist_connected = is_on
         elif ptype == "drawer":

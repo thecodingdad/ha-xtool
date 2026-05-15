@@ -1120,10 +1120,20 @@ def build_wsv2_binary_sensors(
             )(coordinator)
         )
     if model.has_machine_lock:
+        # ``/peripheral/machine_lock`` reports the USB safety-key
+        # presence, *not* a lid lock — Studio's transformResult is
+        # ``{state:s} => ({UsbKeyLockStatus: s === "on"})``. Render
+        # as a PLUG sensor so HA shows "Plugged in" (key present) /
+        # "Unplugged" (key removed). The legacy LOCK device class
+        # inverted the polarity and made the entity show "Locked"
+        # while the laser was idle with the lid open. The
+        # translation key stays ``machine_lock`` so the registered
+        # unique_id / entity_id stay stable; the display label is
+        # updated to "Safety key" in strings + translations.
         entities.append(
             _bool_sensor_factory(
                 "machine_lock", "machine_lock",
-                BinarySensorDeviceClass.LOCK,
+                BinarySensorDeviceClass.PLUG,
             )(coordinator)
         )
     # ``air_assist_connected`` migrated to the AirPump / AirPumpV2

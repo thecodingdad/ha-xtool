@@ -135,7 +135,7 @@
     "binary_sensor": {
       "accessories": { "name": "Accessories" },
       "cover_open": { "name": "Cover" },
-      "machine_lock": { "name": "Machine lock" },
+      "machine_lock": { "name": "Safety key" },
       "alarm": { "name": "Alarm" },
       "purifier_running": { "name": "Air cleaner running" },
       "purifier_connected": { "name": "Air cleaner connected" },

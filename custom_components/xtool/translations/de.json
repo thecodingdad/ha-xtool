@@ -279,7 +279,7 @@
         "name": "Deckel"
       },
       "machine_lock": {
-        "name": "Geräteverriegelung"
+        "name": "Sicherheitsschlüssel"
       },
       "alarm": {
         "name": "Alarm"
