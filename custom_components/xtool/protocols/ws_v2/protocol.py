@@ -1423,6 +1423,12 @@ class WSV2Protocol(XtoolProtocol):
                     ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
                     ("printToolType",       "print_tool_type"),
                     ("fireLevel",           "fire_level"),
+                    # TODO v2.5.5 — entity scaffolding deferred:
+                    # ("gapCheckWithKey",            "gap_check_with_key"),
+                    # ("globalOffsetZ",              "global_offset_z"),
+                    # ("innerZOffset",               "inner_z_offset"),
+                    # ("secondOffsetFlag",           "second_offset_flag"),
+                    # ("zPositionCompensateSmall",   "z_position_compensate_small"),
                 )
                 for src, dst in _config_keys:
                     if src in info:
@@ -1999,6 +2005,12 @@ class WSV2Protocol(XtoolProtocol):
             ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
             ("printToolType",       "print_tool_type"),
             ("fireLevel",           "fire_level"),
+            # TODO v2.5.5 — entity scaffolding deferred:
+            # ("gapCheckWithKey",            "gap_check_with_key"),
+            # ("globalOffsetZ",              "global_offset_z"),
+            # ("innerZOffset",               "inner_z_offset"),
+            # ("secondOffsetFlag",           "second_offset_flag"),
+            # ("zPositionCompensateSmall",   "z_position_compensate_small"),
         )
         for src, dst in _config_keys:
             if src in kv:
