@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import aiohttp
@@ -21,6 +23,14 @@ from ..base import (
 
 
 # --- REST-owned ports -------------------------------------------------------
+
+# When the device drops off the network (cable yanked, smart plug
+# off), a single poll cycle would otherwise spam ~40 DEBUG lines as
+# every endpoint times out independently. After the first connect-
+# class failure within a cycle, suppress further calls until this
+# back-off elapses; ``poll_state`` clears the flag at the top of
+# each cycle so the device picks up immediately once it's back.
+_REST_OFFLINE_BACKOFF_SECONDS = 30.0
 
 REST_HTTP_PORT = 8080  # main HTTP API
 REST_FIRMWARE_PORT = 8087  # /upgrade_version + /package handshake/upload
@@ -139,6 +149,7 @@ class RestProtocol(XtoolProtocol):
         super().__init__(host)
         self._port = port
         self._base_url = f"http://{host}:{port}"
+        self._offline_until: float = 0.0
 
     @property
     def connected(self) -> bool:
@@ -193,6 +204,9 @@ class RestProtocol(XtoolProtocol):
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
         """Poll all device state values and populate the state object."""
+        # Each cycle gets one fresh attempt to reach the device; if
+        # it's still offline the first call will re-arm the back-off.
+        self._offline_until = 0.0
         # Get status from /cnc/status or /device/runningStatus.
         # /cnc/status exists on M1, P1; the rest of the REST family
         # exposes /device/runningStatus instead (P2/P2S/P3, F1*, F2*,
@@ -640,18 +654,38 @@ class RestProtocol(XtoolProtocol):
 
     # --- HTTP Helpers ---
 
+    def _is_offline(self) -> bool:
+        return self._offline_until > 0.0 and time.monotonic() < self._offline_until
+
+    def _mark_offline(self, url: str, err: Exception) -> None:
+        # First miss in a back-off window: log once. Subsequent calls
+        # this cycle are silently suppressed.
+        if not self._offline_until:
+            _LOGGER.debug(
+                "REST device offline (%s on %s) — suppressing further "
+                "calls until next poll cycle", err, url,
+            )
+        self._offline_until = time.monotonic() + _REST_OFFLINE_BACKOFF_SECONDS
+
     async def _get(self, path: str, timeout: float = 5.0) -> str | None:
+        if self._is_offline():
+            return None
         url = f"{self._base_url}{path}"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                     if resp.status == 200:
                         return await resp.text()
+            self._offline_until = 0.0
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            self._mark_offline(url, err)
         except Exception as err:
             _LOGGER.debug("REST GET %s failed: %s", url, err)
         return None
 
     async def _get_json(self, path: str, timeout: float = 5.0) -> dict | None:
+        if self._is_offline():
+            return None
         url = f"{self._base_url}{path}"
         try:
             async with aiohttp.ClientSession() as session:
@@ -659,14 +693,20 @@ class RestProtocol(XtoolProtocol):
                     if resp.status == 200:
                         data = await resp.json(content_type=None)
                         # Some endpoints wrap in {"code": 0, "data": {...}}
+                        self._offline_until = 0.0
                         if isinstance(data, dict) and "data" in data:
                             return data["data"]
                         return data
+            self._offline_until = 0.0
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            self._mark_offline(url, err)
         except Exception as err:
             _LOGGER.debug("REST GET JSON %s failed: %s", url, err)
         return None
 
     async def _post(self, path: str, data: Any = None, timeout: float = 5.0) -> str | None:
+        if self._is_offline():
+            return None
         url = f"{self._base_url}{path}"
         try:
             async with aiohttp.ClientSession() as session:
@@ -677,11 +717,16 @@ class RestProtocol(XtoolProtocol):
                 ) as resp:
                     if resp.status == 200:
                         return await resp.text()
+            self._offline_until = 0.0
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            self._mark_offline(url, err)
         except Exception as err:
             _LOGGER.debug("REST POST %s failed: %s", url, err)
         return None
 
     async def _post_json(self, path: str, data: Any = None, timeout: float = 5.0) -> dict | None:
+        if self._is_offline():
+            return None
         url = f"{self._base_url}{path}"
         try:
             async with aiohttp.ClientSession() as session:
@@ -692,9 +737,13 @@ class RestProtocol(XtoolProtocol):
                 ) as resp:
                     if resp.status == 200:
                         result = await resp.json(content_type=None)
+                        self._offline_until = 0.0
                         if isinstance(result, dict) and "data" in result:
                             return result["data"]
                         return result
+            self._offline_until = 0.0
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            self._mark_offline(url, err)
         except Exception as err:
             _LOGGER.debug("REST POST JSON %s failed: %s", url, err)
         return None
