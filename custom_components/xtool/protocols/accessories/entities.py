@@ -126,14 +126,26 @@ class _AccessoryEntity(XtoolEntity):
         is_synthetic_sn = (
             not self._sn or self._sn.startswith("slot")
         )
+        # Prefer the firmware-reported product serial (from the
+        # M9082 / M9033 / M9097 info-reply's ``E:"<sn>"`` token)
+        # over the M9098 dongle-walk key, which is the BT MAC for
+        # most accessories. Falls back to the dongle-walk key
+        # when the info reply hasn't filled the ``sn`` field yet.
+        state = self._state
+        product_sn: str | None = None
+        if state is not None:
+            raw = state.fields.get("sn") if state.fields else None
+            if isinstance(raw, str) and raw:
+                product_sn = raw
         if is_synthetic_sn:
             device_name = self._definition.friendly_name
-            serial_for_info: str | None = None
+            serial_for_info: str | None = product_sn
         else:
+            display = product_sn or self._sn
             device_name = (
-                f"{self._definition.friendly_name} ({self._sn})"
+                f"{self._definition.friendly_name} ({display})"
             )
-            serial_for_info = self._sn
+            serial_for_info = product_sn or self._sn
         return DeviceInfo(
             identifiers={(DOMAIN, f"{laser_sid}:{self._accessory_key}")},
             via_device=(DOMAIN, laser_sid),
@@ -354,12 +366,19 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
     def device_info(self) -> DeviceInfo:
         laser_sid = self.coordinator.serial_number
         is_synthetic_sn = not self._sn or self._sn.startswith("slot")
+        state = self._state
+        product_sn: str | None = None
+        if state is not None:
+            raw = state.fields.get("sn") if state.fields else None
+            if isinstance(raw, str) and raw:
+                product_sn = raw
         if is_synthetic_sn:
             device_name = self._definition.friendly_name
-            serial_for_info: str | None = None
+            serial_for_info: str | None = product_sn
         else:
-            device_name = f"{self._definition.friendly_name} ({self._sn})"
-            serial_for_info = self._sn
+            display = product_sn or self._sn
+            device_name = f"{self._definition.friendly_name} ({display})"
+            serial_for_info = product_sn or self._sn
         return DeviceInfo(
             identifiers={(DOMAIN, f"{laser_sid}:{self._accessory_key}")},
             via_device=(DOMAIN, laser_sid),
