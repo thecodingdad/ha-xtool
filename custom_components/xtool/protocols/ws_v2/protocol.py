@@ -467,6 +467,11 @@ class WSV2Protocol(XtoolProtocol):
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
         # everything to HA's dispatcher under the event-loop thread.
         self._pending_events: list[tuple[str, str, dict[str, Any] | None]] = []
+        # Track the most recently push-emitted job event so the
+        # coordinator's poll-cycle transition detector doesn't
+        # re-fire the same event when the next poll arrives. Tuple
+        # is ``(task_id_or_empty, event_kind)``.
+        self._last_push_job_event: tuple[str, str] | None = None
         # `/accessory/status` push lands here as
         # ``(mcode_head, {field: value, …})`` tuples — the WS-V2
         # coordinator drains the list in ``_poll_accessories`` and
@@ -1146,24 +1151,48 @@ class WSV2Protocol(XtoolProtocol):
 
         elif url == "/device/status" and module == "STATUS_CONTROLLER":
             info_str = str(info).lower() if info is not None else ""
+            task_id = str(self._latest.get("task_id") or "")
             if typ == "WORK_PREPARED":
                 self._latest["status"] = (
                     XtoolStatus.FRAMING if info_str == "framing"
                     else XtoolStatus.PROCESSING_READY
                 )
             elif typ == "WORK_STARTED":
+                is_framing = info_str == "framing"
                 self._latest["status"] = (
-                    XtoolStatus.FRAMING if info_str == "framing"
+                    XtoolStatus.FRAMING if is_framing
                     else XtoolStatus.PROCESSING
                 )
+                # Emit the job lifecycle event directly here rather
+                # than waiting for the coordinator's poll-cycle
+                # transition detector — fast jobs (a few seconds)
+                # complete entirely between two poll cycles and the
+                # coordinator's snapshot misses the IDLE→PROCESSING
+                # edge, so the Job event entity would stay Unknown.
+                if not is_framing:
+                    self._maybe_emit_job_event(
+                        "started", task_id,
+                        {"task_id": task_id} if task_id else None,
+                    )
+                else:
+                    self._maybe_emit_job_event(
+                        "framing_started", task_id, None,
+                    )
             elif typ == "WORK_FINISHED":
+                is_framing = info_str == "framing"
                 self._latest["status"] = (
-                    XtoolStatus.IDLE if info_str == "framing"
+                    XtoolStatus.IDLE if is_framing
                     else XtoolStatus.FINISHED
                 )
+                if is_framing:
+                    self._maybe_emit_job_event(
+                        "framing_finished", task_id, None,
+                    )
 
         elif url == "/work/result" and module == "WORK_RESULT" and typ == "WORK_FINISHED":
             self._latest["status"] = XtoolStatus.FINISHED
+            task_id = str(self._latest.get("task_id") or "")
+            duration: int | None = None
             if isinstance(info, dict):
                 if info.get("timeUse") is not None:
                     try:
@@ -1175,10 +1204,16 @@ class WSV2Protocol(XtoolProtocol):
                         secs = int(info["timeUse"])
                         self._latest["task_time"] = secs
                         self._latest["last_job_time_seconds"] = secs
+                        duration = secs
                     except (TypeError, ValueError):
                         pass
                 if info.get("taskId") is not None:
                     self._latest["task_id"] = info["taskId"]
+                    task_id = str(info["taskId"])
+            self._maybe_emit_job_event(
+                "finished", task_id,
+                {"task_id": task_id, "duration": duration},
+            )
 
         elif url == "/gap/status" and module == "GAP":
             if typ == "OPEN":
@@ -1399,6 +1434,28 @@ class WSV2Protocol(XtoolProtocol):
 
         else:
             _LOGGER.debug("V2 unhandled push event: %s", event)
+
+    def _maybe_emit_job_event(
+        self,
+        event_kind: str,
+        task_id: str,
+        attrs: dict[str, Any] | None,
+    ) -> None:
+        """Emit a Job lifecycle event from the push handler, deduping
+        against repeat firings for the same task within one job cycle.
+
+        The coordinator's poll-cycle transition detector still handles
+        ``paused`` / ``resumed`` / ``cancelled`` (those are slow user
+        actions that survive a 5-s poll gap). Push-driven
+        ``started`` / ``finished`` / ``framing_*`` lives here so fast
+        jobs that complete within a single poll cycle still surface a
+        Job event.
+        """
+        key = (task_id, event_kind)
+        if self._last_push_job_event == key:
+            return
+        self._last_push_job_event = key
+        self._pending_events.append(("job", event_kind, attrs))
 
     def _apply_peripheral_push(
         self,

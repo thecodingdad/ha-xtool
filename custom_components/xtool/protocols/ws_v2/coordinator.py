@@ -373,8 +373,24 @@ class WSV2Coordinator(XtoolCoordinator):
             XtoolStatus.ERROR_MOVING:        "moving",
         }
 
-        # Job lifecycle
-        if prev_status in idle_like and new_status in running:
+        # Job lifecycle. ``started`` / ``finished`` / ``framing_*``
+        # are emitted directly from the protocol push handler
+        # (``WSV2Protocol._maybe_emit_job_event``) so fast jobs that
+        # complete within a single poll cycle still surface an event.
+        # Track that via ``protocol._last_push_job_event`` so the
+        # poll-cycle detector here skips a duplicate emit for the
+        # same event-kind/task pair.
+        push_emit = getattr(self.protocol, "_last_push_job_event", None)
+        task_key = state.task_id or ""
+
+        def _push_already_fired(kind: str) -> bool:
+            return push_emit == (task_key, kind)
+
+        if (
+            prev_status in idle_like
+            and new_status in running
+            and not _push_already_fired("started")
+        ):
             self._emit_event(
                 "job", "started",
                 {"task_id": state.task_id} if state.task_id else None,
@@ -386,6 +402,7 @@ class WSV2Coordinator(XtoolCoordinator):
         elif (
             prev_status in (running | {XtoolStatus.PAUSED})
             and new_status == XtoolStatus.FINISHED
+            and not _push_already_fired("finished")
         ):
             self._emit_event(
                 "job", "finished",
@@ -397,10 +414,21 @@ class WSV2Coordinator(XtoolCoordinator):
         elif new_status == XtoolStatus.CANCELLING:
             self._emit_event("job", "cancelled", {"task_id": state.task_id})
 
-        # Framing — orthogonal to job lifecycle
-        if prev_status not in framing and new_status in framing:
+        # Framing — orthogonal to job lifecycle. Push handler fires
+        # ``framing_started`` / ``framing_finished`` directly; this
+        # block stays as a fallback for transitions the push didn't
+        # catch (deduped by ``_push_already_fired``).
+        if (
+            prev_status not in framing
+            and new_status in framing
+            and not _push_already_fired("framing_started")
+        ):
             self._emit_event("job", "framing_started", None)
-        if prev_status in framing and new_status not in framing:
+        if (
+            prev_status in framing
+            and new_status not in framing
+            and not _push_already_fired("framing_finished")
+        ):
             self._emit_event("job", "framing_finished", None)
 
         # Errors — fire on every entry into an ERROR_* state. The
