@@ -43,6 +43,54 @@ def parse_fan_info(text: str) -> dict[str, object]:
     }
 
 
+# Studio bundle's airflow-adjustment picker collapses three modes
+# and the manual gear ladder into one UI element. Mirror the same
+# flat option list as a single HA Select entity. Wire mapping per
+# Studio's setFanGear({ctr, gear}) → ``M9064 ${ctr}${gear}``:
+#
+# - Manual: ctr="A", gear 0/1/2/3/4
+# - Auto Regular: ctr="B", gear 3 (Studio's auto-regular preset)
+# - Auto Quiet:   ctr="B", gear 1 (Studio's auto-quiet preset)
+FANV3_MODE_OPTIONS: tuple[str, ...] = (
+    "Auto Regular", "Auto Quiet", "Off", "1", "2", "3", "4",
+)
+
+_FANV3_OPTION_WIRE: dict[str, str] = {
+    "Auto Regular": "B3",
+    "Auto Quiet":   "B1",
+    "Off":          "A0",
+    "1":            "A1",
+    "2":            "A2",
+    "3":            "A3",
+    "4":            "A4",
+}
+
+
+def _fanv3_option_from_state(
+    control_mode: int | None, current_gear: int | None,
+) -> str | None:
+    """Derive the Select option from the M9082 ``C`` + ``B`` tokens.
+
+    - ``C=0`` (Manual): ``Off`` (B=0) or ``str(B)`` (B=1-4)
+    - ``C≥1`` (Auto): map B=3 → Auto Regular, B=1 → Auto Quiet;
+      anything else falls back to ``Auto Regular`` as a safe default.
+    """
+    if control_mode is None:
+        return None
+    if control_mode == 0:
+        if current_gear is None:
+            return None
+        if current_gear == 0:
+            return "Off"
+        if 1 <= current_gear <= 4:
+            return str(current_gear)
+        return None
+    # Auto modes
+    if current_gear == 1:
+        return "Auto Quiet"
+    return "Auto Regular"
+
+
 def parse_fan_v3_info(text: str) -> dict[str, object]:
     """Decode ``DuctFanV3`` (IF2 2.0) ``M9082`` reply.
 
@@ -59,8 +107,7 @@ def parse_fan_v3_info(text: str) -> dict[str, object]:
       ``B02`` substring inside the version).
     - ``B`` is the current motor speed (0-4 in Manual mode, an
       empirical 0-100 PWM-like reading in Auto modes).
-    - ``C`` is the control mode (0 = Manual, 1 = Auto-Regular,
-      2 = Auto-Quiet — inferred from Studio bundle behaviour).
+    - ``C`` is the control mode (0 = Manual, ≥ 1 = Auto).
     - ``D`` is the most recently selected manual gear / preset
       anchor.
     - ``S`` is the buzzer flag, ``Z`` the online flag.
@@ -92,36 +139,52 @@ def parse_fan_v3_info(text: str) -> dict[str, object]:
         "buzzer_enable": bool(buzzer) if buzzer is not None else None,
         "connected": bool(connected) if connected is not None else None,
         "sn": quoted(text, "E:"),
-        # Back-compat alias for the legacy ``gear`` field still
-        # referenced by the shared entity spec until the v2.5.4 IF2
-        # entity-layout refactor lands.
-        "gear": str(current_gear) if current_gear is not None else None,
+        # Combined mode + gear picker for the single-Select entity.
+        "mode_speed": _fanv3_option_from_state(control_mode, current_gear),
     }
 
 
-_ENTITIES = (
+def _fanv3_mode_speed_mcode(option: str) -> str | None:
+    """Map a Select option to the matching ``M9064 <ctr><gear>``."""
+    wire = _FANV3_OPTION_WIRE.get(option)
+    if wire is None:
+        return None
+    return f"{MCODE_FAN_SET_GEAR} {wire}"
+
+
+# Legacy IF2 v1 (``DuctFan``) entity spec. Kept narrow — the V1
+# wire shape only carries gear (str) + buzzer; no mode / current-
+# speed separation.
+_ENTITIES_V1 = (
     AccessoryEntitySpec("sensor", "version", field="version",
                         icon="mdi:numeric", entity_category="diagnostic"),
-    # SN diagnostic sensor removed in v2.5.4 — the firmware-reported
-    # product serial now appears directly as the accessory device's
-    # ``serial_number`` on its HA device page, so a standalone
-    # sensor entity is redundant.
-    # ``current_speed`` reads the live ``B`` token of the M9082 reply
-    # (the actual motor speed, identical to the gear value in Manual
-    # mode and an empirical 0-100 PWM-like value in Auto modes).
+    AccessoryEntitySpec("sensor", "gear", field="gear",
+                        icon="mdi:fan-speed-1"),
+    AccessoryEntitySpec("select", "gear_select", field="gear",
+                        icon="mdi:fan", options=("0", "1", "2", "3"),
+                        write_mcode=lambda gear: f"{MCODE_FAN_SET_GEAR} A{gear}"),
+    AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
+                        icon="mdi:bell-ring",
+                        write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
+                        entity_category="config"),
+)
+
+
+# IF2 2.0 (``DuctFanV3``) entity spec. Studio's UI collapses the
+# Mode + Manual-gear pickers into a single flat option list; mirror
+# that here.
+_ENTITIES_V3 = (
+    AccessoryEntitySpec("sensor", "version", field="version",
+                        icon="mdi:numeric", entity_category="diagnostic"),
     AccessoryEntitySpec("sensor", "current_speed", field="current_gear",
                         icon="mdi:fan-speed-1"),
-    # ``manual_gear`` writes via ``M9064 A<n>``. 0 = off, 1-4 = manual
-    # gears. Matches Studio's "Manual / OFF / 1 / 2 / 3 / 4" gear
-    # picker. The legacy ``gear_select`` (single-select 0-3) and the
-    # ``reset_filter`` button were removed in v2.5.4 — the gear
-    # range is wider (0-4) on the V3 protocol and the filter-reset
-    # action does not surface a button in Studio for the IF2 family.
-    AccessoryEntitySpec("number", "manual_gear", field="current_gear",
-                        icon="mdi:fan", unit=None,
-                        min_value=0, max_value=4, step=1,
-                        write_mcode=lambda gear: f"{MCODE_FAN_SET_GEAR} A{int(gear)}",
-                        entity_category="config"),
+    AccessoryEntitySpec(
+        "select", "mode_speed", field="mode_speed",
+        icon="mdi:fan",
+        options=FANV3_MODE_OPTIONS,
+        write_mcode=_fanv3_mode_speed_mcode,
+        entity_category="config",
+    ),
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
                         icon="mdi:bell-ring",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
@@ -136,7 +199,7 @@ DUCT_FAN = AccessoryDefinition(
     firmware_content_id="xTool-ductFan-firmware",
     info_mcode=MCODE_FAN_INFO,
     parse_info=parse_fan_info,
-    entities=_ENTITIES,
+    entities=_ENTITIES_V1,
 )
 
 
@@ -147,5 +210,5 @@ DUCT_FAN_V3 = AccessoryDefinition(
     firmware_content_id="xTool-ductFan2.0-firmware",
     info_mcode=MCODE_FAN_INFO,
     parse_info=parse_fan_v3_info,
-    entities=_ENTITIES,
+    entities=_ENTITIES_V3,
 )

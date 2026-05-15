@@ -578,6 +578,9 @@
           "high": "High"
         }
       },
+      "accessory_ductfanv3_mode_speed": {
+        "name": "Fan"
+      },
       "accessory_purifier_gear_select": {
         "name": "Set purifier speed"
       },

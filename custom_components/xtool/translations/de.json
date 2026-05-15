@@ -578,6 +578,9 @@
           "high": "Hoch"
         }
       },
+      "accessory_ductfanv3_mode_speed": {
+        "name": "Lüfter"
+      },
       "accessory_purifier_gear_select": {
         "name": "Reiniger-Stufe einstellen"
       },
