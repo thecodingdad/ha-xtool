@@ -575,35 +575,12 @@ class WSV2FlameAlarmSelect(XtoolEntity, SelectEntity):
         self.async_write_ha_state()
 
 
-class WSV2FlameLevelSelect(XtoolEntity, SelectEntity):
-    """Flame level threshold (high/low)."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_translation_key = "flame_level_hl"
-    _attr_icon = "mdi:fire"
-    _attr_options = ["high", "low"]
-    _LABEL_TO_INT = {"high": 1, "low": 2}
-    _INT_TO_LABEL = {v: k for k, v in _LABEL_TO_INT.items()}
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id("flame_level")
-
-    @property
-    def current_option(self) -> str | None:
-        d = self.coordinator.data
-        if d is None or d.flame_level_hl is None:
-            return None
-        return self._INT_TO_LABEL.get(int(d.flame_level_hl))
-
-    async def async_select_option(self, option: str) -> None:
-        raw = self._LABEL_TO_INT.get(option)
-        if raw is None:
-            return
-        await self.coordinator.protocol.set_config("flameLevelHLSelect", raw)
-        if self.coordinator.data is not None:
-            self.coordinator.data.flame_level_hl = raw
-        self.async_write_ha_state()
+# ``WSV2FlameLevelSelect`` removed in v2.5.4 — the ``flameLevelHLSelect``
+# config key is rejected by F2 Ultra UV firmware ``40.130.021.00.ht2``
+# with ``code 1: failed``. No V2-firmware build observed so far accepts
+# it, so the entity is dropped entirely rather than gated. The
+# ``flame_level_hl`` field on ``XtoolDeviceState`` is kept in case
+# future firmware exposes it via a config GET.
 
 
 # ``WSV2PurifierSpeedSelect`` migrated to the Purifier accessory
@@ -1257,10 +1234,10 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
 def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
     return [
         WSV2FlameAlarmSelect(coordinator),
-        WSV2FlameLevelSelect(coordinator),
-        # ``WSV2PurifierSpeedSelect`` migrated to the Purifier
-        # accessory child device — the entity surfaces only when an
-        # AP2 / AP2-Large / AP2-Max is currently paired.
+        # ``WSV2FlameLevelSelect`` removed in v2.5.4 (firmware rejects
+        # ``flameLevelHLSelect``). ``WSV2PurifierSpeedSelect`` migrated
+        # to the Purifier accessory child device — the entity surfaces
+        # only when an AP2 / AP2-Large / AP2-Max is currently paired.
     ]
 
 
