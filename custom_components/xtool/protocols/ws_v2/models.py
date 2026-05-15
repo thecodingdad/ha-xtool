@@ -214,6 +214,7 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     has_fill_light=True,
     has_fill_light_dual=True,  # GS006 bundle ships front + back channels
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push (live capture)
+    has_z_axis_homing=True,  # GS006 bundle ships ``zAxisReset`` button
     has_ir_led=True,  # F2UV bundle queries `/v1/peripheral/param?type=ir_led`
     has_button_event=True,  # GS006 bundle defines /button/status push handler
     # Air-pump V2 + UV fire sensor are BT-paired accessories on F2UV

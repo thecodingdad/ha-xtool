@@ -869,6 +869,30 @@ class WSV2MeasureDistance(_WSV2Button):
         )
 
 
+class WSV2ZAxisHoming(_WSV2Button):
+    """Z-axis homing for F2 Ultra UV (Studio's ``zAxisReset``)."""
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "z_axis_homing", "mdi:axis-z-arrow-lock")
+
+    async def _action(self) -> None:
+        # Studio's ``focusControl`` route triggers Z-homing with
+        # ``autoHome:1`` plus a safe pre-stop and a 300 mm/min feed.
+        # Z value is unused when ``autoHome`` is set but the body
+        # field is required.
+        await self.coordinator.protocol.request(
+            "/v1/laser-head/focus/control",
+            "PUT",
+            data={
+                "action": "goTo",
+                "autoHome": 1,
+                "stopFirst": 1,
+                "F": 300,
+                "Z": 0,
+            },
+        )
+
+
 class WSV2Reboot(_WSV2Button):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "reboot", "mdi:restart")
@@ -1402,6 +1426,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
+    if coordinator.model.has_z_axis_homing:
+        entities.append(WSV2ZAxisHoming(coordinator))
     return entities
 
 

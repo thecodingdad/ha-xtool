@@ -695,6 +695,9 @@
       "measure_distance": {
         "name": "Distanz messen"
       },
+      "z_axis_homing": {
+        "name": "Z-Achsen-Homing"
+      },
       "quit_lightburn": {
         "name": "LightBurn-Modus verlassen"
       },

@@ -695,6 +695,9 @@
       "measure_distance": {
         "name": "Measure distance"
       },
+      "z_axis_homing": {
+        "name": "Z-axis homing"
+      },
       "quit_lightburn": {
         "name": "Quit LightBurn mode"
       },
