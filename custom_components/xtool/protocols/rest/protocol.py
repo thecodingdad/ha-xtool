@@ -142,7 +142,27 @@ def _check_rest_result(body: str, endpoint: str) -> None:
 
 
 class RestProtocol(XtoolProtocol):
-    """REST API protocol used by F1, F1Ultra, P2, P2S, M1, M1Ultra, P1, GS models."""
+    """Default V1 REST dialect — P2 family + M1 Ultra + MetalFab.
+
+    Three dialects coexist across V1 firmware. Subclasses override
+    the ``PATH_*`` class constants (or the method directly) where
+    their firmware speaks a different wire shape:
+
+    - ``RestProtocolF1V1`` — F-family + DT001 — only the device-
+      info bootstrap path differs (``/v1/device/machineInfo``).
+    - ``RestProtocolM1Legacy`` — M1 + P1 — entire route table
+      differs (``/cnc/status``, ``/cnc/data?action=*``, custom
+      fill-light + sleep verbs).
+
+    P2 / P2S / P3 / M1 Ultra / MetalFab use this default class.
+    """
+
+    # --- Dialect endpoint table -----------------------------------
+    # Default = P2-family wire shape. Subclasses override.
+    PATH_DEVICE_INFO: str | None = "/device/machineInfo"
+    PATH_JOB_PAUSE: str = "/processing/pause"
+    PATH_JOB_RESUME: str = "/processing/resume"
+    PATH_JOB_STOP: str = "/processing/stop"
 
     def __init__(self, host: str, port: int = REST_HTTP_PORT) -> None:
         """Initialize the protocol."""
@@ -172,26 +192,21 @@ class RestProtocol(XtoolProtocol):
         return None
 
     async def get_device_info(self) -> DeviceInfo:
-        """Get full device info — cascade across V1 firmware shapes.
+        """Fetch device identity. Path picked per dialect.
 
-        Three endpoints handle every V1 variant audited from
-        Studio's bundle:
-
-        - ``/device/machineInfo`` — P2 / P2S
-        - ``/v1/device/machineInfo`` — F1 / F2 family / DT001
-        - stitched ``/system?action=*`` + ``/getmachinetype`` — M1
-          (which doesn't implement either ``machineInfo`` path)
+        Subclasses with a fully different bootstrap (e.g. M1)
+        override the method directly; the F-family variant only
+        flips ``PATH_DEVICE_INFO`` to ``/v1/device/machineInfo``.
         """
-        data = await self._get_json("/device/machineInfo")
-        _LOGGER.debug("REST /device/machineInfo raw response: %s", data)
+        if not self.PATH_DEVICE_INFO:
+            return DeviceInfo()
+        data = await self._get_json(self.PATH_DEVICE_INFO)
+        _LOGGER.debug(
+            "REST %s raw response: %s", self.PATH_DEVICE_INFO, data,
+        )
         if not data:
-            data = await self._get_json("/v1/device/machineInfo")
-            _LOGGER.debug(
-                "REST /v1/device/machineInfo raw response: %s", data,
-            )
-        if data:
-            return self._parse_machine_info_payload(data)
-        return await self._stitch_device_info_legacy()
+            return DeviceInfo()
+        return self._parse_machine_info_payload(data)
 
     def _parse_machine_info_payload(self, data: dict) -> DeviceInfo:
         """Parse the ``/device/machineInfo`` (or v1 sibling) body."""
@@ -215,38 +230,6 @@ class RestProtocol(XtoolProtocol):
             laser=LaserInfo(power_watts=power),
             main_firmware=firmware_str,
             mac_address=str(data.get("mac", "") or ""),
-        )
-
-    async def _stitch_device_info_legacy(self) -> DeviceInfo:
-        """M1-shape identity stitch — Studio's M1 bundle composes the
-        deviceInfo dump from ``/system?action=*`` + ``/getmachinetype``
-        + ``/getlaserpowertype``. Field names are best-effort from
-        bundle inspection; tighten as live captures land.
-        """
-        name_q = await self._get_json("/system?action=get_dev_name")
-        version_q = await self._get_json("/system?action=version_v2")
-        mtype_q = await self._get_json("/getmachinetype")
-        _LOGGER.debug(
-            "REST legacy stitch: name=%s version=%s machineType=%s",
-            name_q, version_q, mtype_q,
-        )
-        if not any([name_q, version_q, mtype_q]):
-            return DeviceInfo()
-
-        def _pluck(d: dict | None, *keys: str) -> str:
-            if not d:
-                return ""
-            for k in keys:
-                v = d.get(k)
-                if v:
-                    return str(v)
-            return ""
-
-        return DeviceInfo(
-            serial_number=_pluck(mtype_q, "sn", "serialNumber"),
-            device_name=_pluck(name_q, "name", "deviceName", "data"),
-            main_firmware=_pluck(version_q, "version", "firmware", "data"),
-            mac_address="",
         )
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
@@ -689,15 +672,15 @@ class RestProtocol(XtoolProtocol):
 
     async def pause_job(self) -> None:
         """Pause the current job."""
-        await self._get("/processing/pause")
+        await self._get(self.PATH_JOB_PAUSE)
 
     async def resume_job(self) -> None:
         """Resume the current job."""
-        await self._get("/processing/resume")
+        await self._get(self.PATH_JOB_RESUME)
 
     async def cancel_job(self) -> None:
         """Cancel the current job."""
-        await self._get("/processing/stop")
+        await self._get(self.PATH_JOB_STOP)
 
     # --- HTTP Helpers ---
 
@@ -1039,6 +1022,94 @@ class RestProtocol(XtoolProtocol):
             filename=filename,
             progress_cb=progress_cb,
         )
+
+
+class RestProtocolF1V1(RestProtocol):
+    """F-family + DT001 dialect — only the device-info bootstrap path
+    differs from the P2 default.
+
+    Models bound: F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005),
+    F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, Apparel Printer (DT001).
+    """
+
+    PATH_DEVICE_INFO = "/v1/device/machineInfo"
+
+
+class RestProtocolM1Legacy(RestProtocol):
+    """M1 / P1 legacy dialect — distinct V1 REST wire shape.
+
+    Studio bundle audit (Issue #5): M1 firmware 40.18.x doesn't
+    expose ``/device/machineInfo`` or ``/processing/*``. Instead:
+
+    - Identity stitched from ``/system?action=get_dev_name`` +
+      ``/system?action=version_v2`` + ``/getmachinetype``.
+    - Job control via ``/cnc/data?action=start|pause|stop``.
+    - Direct M-code via ``/cnc/cmd?cmd=<M-code>`` for homing,
+      laser-head lock, light, clear-progress.
+    - Fill light read/write as ``GET /getfilllight`` /
+      ``GET /setfilllight?bright=<n>``.
+
+    Status comes from ``/cnc/status`` (the base ``poll_state``
+    already tries that path first, so no override needed there).
+    """
+
+    PATH_DEVICE_INFO = None  # uses stitched fallback
+    PATH_JOB_PAUSE = "/cnc/data?action=pause"
+    PATH_JOB_RESUME = "/cnc/data?action=start"
+    PATH_JOB_STOP = "/cnc/data?action=stop"
+
+    async def get_device_info(self) -> DeviceInfo:
+        """M1-shape identity stitch — Studio's M1 bundle composes the
+        deviceInfo dump from ``/system?action=*`` + ``/getmachinetype``.
+        Field names are best-effort from bundle inspection; tighten as
+        live captures land.
+        """
+        name_q = await self._get_json("/system?action=get_dev_name")
+        version_q = await self._get_json("/system?action=version_v2")
+        mtype_q = await self._get_json("/getmachinetype")
+        _LOGGER.debug(
+            "REST M1 legacy stitch: name=%s version=%s machineType=%s",
+            name_q, version_q, mtype_q,
+        )
+        if not any([name_q, version_q, mtype_q]):
+            return DeviceInfo()
+
+        def _pluck(d: dict | None, *keys: str) -> str:
+            if not d:
+                return ""
+            for k in keys:
+                v = d.get(k)
+                if v:
+                    return str(v)
+            return ""
+
+        return DeviceInfo(
+            serial_number=_pluck(mtype_q, "sn", "serialNumber"),
+            device_name=_pluck(name_q, "name", "deviceName", "data"),
+            main_firmware=_pluck(version_q, "version", "firmware", "data"),
+            mac_address="",
+        )
+
+    async def set_fill_light(self, level: int) -> None:
+        """M1 dialect — GET with ``?bright=<n>`` query string."""
+        value = round(level * 255 / BRIGHTNESS_HA_MAX)
+        await self._get(f"/setfilllight?bright={int(value)}")
+
+    async def home_xy(self) -> None:
+        """Home X+Y axes via M-code passthrough."""
+        await self._post("/cnc/cmd?cmd=$H")
+
+    async def unlock_laser_head(self) -> None:
+        await self._post("/cnc/cmd?cmd=M110 S12")
+
+    async def lock_laser_head(self) -> None:
+        await self._post("/cnc/cmd?cmd=M110 S15")
+
+    async def clear_progress(self) -> None:
+        await self._post("/cnc/cmd?cmd=M88 S0")
+
+    async def wake_from_sleep(self) -> None:
+        await self._get("/sleepwakeup")
 
 
 async def _http_accessory_upload(
