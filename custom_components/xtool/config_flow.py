@@ -42,9 +42,19 @@ from .protocols import (
     ConnectionInfo,
     VALIDATION_ERROR_UDP_NO_REPLY,
     VALIDATION_ERROR_UNKNOWN_MODEL,
+    detect_models,
     manual_model_options,
     validate_connection,
     validate_with_model,
+)
+
+# Deep-link target so users landing on the manual model picker
+# without a matching entry can file a "model X / firmware Y not
+# supported" issue with the discovered identifiers baked in. The
+# ``new?template=…`` part jumps straight into the bug-report form
+# rather than the generic issue list.
+_ISSUE_TRACKER_URL = (
+    "https://github.com/thecodingdad/ha-xtool/issues/new?template=bug_report.yml"
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,6 +73,10 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         # Carries the host across an `udp_no_reply` / `unknown_model`
         # fallback into the manual model-picker step.
         self._fallback_host: str | None = None
+        # Cached discovery record for the fallback path so the manual
+        # picker can render the discovered name + firmware verbatim
+        # (helps the user file a complete bug report).
+        self._fallback_discovered: DiscoveredDevice | None = None
 
     @staticmethod
     @callback
@@ -136,11 +150,19 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             # No devices found — go directly to manual entry
             return await self.async_step_manual()
 
-        # Build selection list: discovered devices + manual option
-        options = {
-            device.ip: f"{device.name} ({device.ip})"
-            for device in self._discovered_devices
-        }
+        # Build selection list: discovered devices + manual option.
+        # Devices whose name doesn't match any registered model get a
+        # suffix so the user can spot them in the dropdown — selecting
+        # one routes through the existing ``unknown_model`` fallback,
+        # but at least the user gets a signal up front (and can paste
+        # the discovered name into a bug report).
+        options = {}
+        for device in self._discovered_devices:
+            base = f"{device.name} ({device.ip})"
+            if detect_models(device.name):
+                options[device.ip] = base
+            else:
+                options[device.ip] = f"{base} — unsupported, please open an issue"
         options["_manual_"] = "Enter IP address manually..."
 
         return self.async_show_form(
@@ -188,6 +210,23 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 VALIDATION_ERROR_UNKNOWN_MODEL,
             ):
                 self._fallback_host = host
+                self._fallback_discovered = next(
+                    (d for d in self._discovered_devices if d.ip == host),
+                    None,
+                )
+                if (
+                    reason == VALIDATION_ERROR_UNKNOWN_MODEL
+                    and self._fallback_discovered is not None
+                ):
+                    d = self._fallback_discovered
+                    _LOGGER.info(
+                        "xTool device at %s responded to discovery but its model "
+                        "is not recognised — name=%r firmware=%r protocol=%r "
+                        "serial=%r. Please open an issue at %s with these "
+                        "values so the model can be added.",
+                        host, d.name, d.version, d.protocol_version,
+                        d.serial_number, _ISSUE_TRACKER_URL,
+                    )
                 return await self.async_step_pick_model()
             if errors is not None:
                 errors["base"] = reason
@@ -248,6 +287,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = conn_info or "cannot_connect"
             self._fallback_host = host
 
+        discovered = self._fallback_discovered
         return self.async_show_form(
             step_id="pick_model",
             data_schema=vol.Schema(
@@ -256,6 +296,11 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required("model"): vol.In(manual_model_options()),
                 }
             ),
+            description_placeholders={
+                "name": discovered.name if discovered else "",
+                "firmware": discovered.version if discovered else "",
+                "issue_url": _ISSUE_TRACKER_URL,
+            },
             errors=errors,
         )
 

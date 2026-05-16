@@ -21,7 +21,7 @@
       },
       "pick_model": {
         "title": "Pick xTool model manually",
-        "description": "Auto-discovery could not identify the device. Pick the model and firmware line from the list — pick the V2 entry if your firmware is recent (40.x range with the new communication framework), V1 otherwise.",
+        "description": "Auto-discovery could not identify the device — discovered name `{name}`, firmware `{firmware}`.\n\nPick the model and firmware line from the list — pick the V2 entry if your firmware is recent (40.x range with the new communication framework), V1 otherwise.\n\nIf your model isn't listed, please [open an issue]({issue_url}) and include the discovered name and firmware so it can be added.",
         "data": {
           "host": "IP Address",
           "model": "Model"
