@@ -21,8 +21,10 @@ import json
 import logging
 import os
 import random
+import re
 import socket
 import struct
+import time
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives import padding
@@ -37,6 +39,13 @@ DISCOVERY_TIMEOUT = 5.0
 # --- V1 (legacy plain UDP) ----------------------------------------------
 
 V1_UDP_PORT = 20000
+# Studio's discover-worker sends the legacy V1 probe both as
+# broadcast (255.255.255.255) AND to this multicast group. Some
+# V1 firmware revisions (notably M1 on the 40.18.x line) only
+# listen on the multicast group — broadcast goes unanswered.
+V1_MULTICAST_GROUP = "224.0.1.77"
+
+_IP_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 
 # --- V2 (encrypted multicast) -------------------------------------------
 
@@ -158,16 +167,40 @@ def _v2_parse_response(
     )
 
 
-# --- V1 probe (unchanged behaviour) -------------------------------------
+# --- V1 probe ------------------------------------------------------------
+
+
+def _local_ip_for(target: str) -> str:
+    """Best-effort local source IP that routes to ``target``.
+
+    Mirrors what Studio's discover-worker embeds in its discovery
+    payload — strict firmware (M1 40.18.x) treats the missing
+    ``ip`` field as malformed and drops the request.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect((target if "." in target else "8.8.8.8", 1))
+        return sock.getsockname()[0]
+    except OSError:
+        return "0.0.0.0"
+    finally:
+        sock.close()
 
 
 async def _probe_v1(
-    target: str, timeout: float, broadcast: bool,
+    target: str, timeout: float, broadcast: bool, multicast: bool = False,
 ) -> list[DiscoveredDevice]:
-    """Send legacy plain-JSON UDP probe; collect replies until timeout."""
+    """Send legacy plain-JSON UDP probe; collect replies until timeout.
+
+    Studio's payload shape is ``{ip, port, requestId}`` (verified
+    against ``discover-worker.d0392b78.cjs``). Some V1 firmware
+    revisions accept the request-id-only short form ha-xtool used
+    to send, but M1 40.18.x firmware appears strict — it ignores
+    payloads without the ``ip`` + ``port`` fields. Mirroring
+    Studio's full shape is harmless for older firmware.
+    """
     devices: list[DiscoveredDevice] = []
-    request_id = random.randint(100000, 999999)
-    payload = json.dumps({"requestId": request_id}).encode()
+    request_id = int(time.time() * 1000)
 
     loop = asyncio.get_event_loop()
     transport = None
@@ -175,28 +208,61 @@ async def _probe_v1(
     class _Protocol(asyncio.DatagramProtocol):
         def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
             try:
-                response = json.loads(data.decode())
-                if response.get("requestId") == request_id and "ip" in response:
+                text = data.decode()
+            except UnicodeDecodeError:
+                return
+            try:
+                response = json.loads(text)
+            except json.JSONDecodeError:
+                # Studio's parser falls back to treating the body
+                # as a bare IP string. Some legacy firmware
+                # reportedly responds that way; mirror the
+                # fallback so we don't miss them.
+                stripped = text.strip()
+                if _IP_RE.match(stripped):
                     devices.append(
                         DiscoveredDevice(
-                            ip=response["ip"],
-                            name=response.get("name", DEFAULT_DEVICE_NAME),
-                            version=response.get("version", ""),
-                            protocol_version="V1",
+                            ip=stripped, name=DEFAULT_DEVICE_NAME,
+                            version="", protocol_version="V1",
                         )
                     )
                     _LOGGER.debug(
-                        "V1 discovered %s at %s",
-                        response.get("name"), response["ip"],
+                        "V1 discovered bare-IP reply from %s", stripped,
                     )
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                pass
+                return
+            if response.get("requestId") == request_id and "ip" in response:
+                devices.append(
+                    DiscoveredDevice(
+                        ip=response["ip"],
+                        name=response.get("name", DEFAULT_DEVICE_NAME),
+                        version=response.get("version", ""),
+                        protocol_version="V1",
+                    )
+                )
+                _LOGGER.debug(
+                    "V1 discovered %s at %s",
+                    response.get("name"), response["ip"],
+                )
 
     try:
         transport, _ = await loop.create_datagram_endpoint(
             _Protocol,
             local_addr=("0.0.0.0", 0),
             allow_broadcast=broadcast,
+        )
+        local_port = transport.get_extra_info("sockname")[1]
+        local_ip = _local_ip_for(target)
+        payload = json.dumps({
+            "ip": local_ip,
+            "port": local_port,
+            "requestId": request_id,
+        }).encode()
+        if multicast:
+            sock = transport.get_extra_info("socket")
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 4)
+        _LOGGER.debug(
+            "V1 probe target=%s broadcast=%s multicast=%s payload=%s",
+            target, broadcast, multicast, payload.decode(),
         )
         transport.sendto(payload, (target, V1_UDP_PORT))
         await asyncio.sleep(timeout)
@@ -386,11 +452,12 @@ async def discover_devices(
     timeout: float = DISCOVERY_TIMEOUT,
 ) -> list[DiscoveredDevice]:
     """Broadcast V1 + V2 discovery in parallel; collect every responder."""
-    v1, v2 = await asyncio.gather(
+    v1_bcast, v1_mcast, v2 = await asyncio.gather(
         _probe_v1("255.255.255.255", timeout, broadcast=True),
+        _probe_v1(V1_MULTICAST_GROUP, timeout, broadcast=False, multicast=True),
         _probe_v2("255.255.255.255", timeout, broadcast=True),
     )
-    return _dedupe(v1 + v2)
+    return _dedupe(v1_bcast + v1_mcast + v2)
 
 
 async def identify_host(
