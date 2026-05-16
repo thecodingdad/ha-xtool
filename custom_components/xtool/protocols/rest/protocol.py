@@ -172,14 +172,29 @@ class RestProtocol(XtoolProtocol):
         return None
 
     async def get_device_info(self) -> DeviceInfo:
-        """Get full device info via /device/machineInfo."""
+        """Get full device info — cascade across V1 firmware shapes.
+
+        Three endpoints handle every V1 variant audited from
+        Studio's bundle:
+
+        - ``/device/machineInfo`` — P2 / P2S
+        - ``/v1/device/machineInfo`` — F1 / F2 family / DT001
+        - stitched ``/system?action=*`` + ``/getmachinetype`` — M1
+          (which doesn't implement either ``machineInfo`` path)
+        """
         data = await self._get_json("/device/machineInfo")
         _LOGGER.debug("REST /device/machineInfo raw response: %s", data)
         if not data:
-            return DeviceInfo()
+            data = await self._get_json("/v1/device/machineInfo")
+            _LOGGER.debug(
+                "REST /v1/device/machineInfo raw response: %s", data,
+            )
+        if data:
+            return self._parse_machine_info_payload(data)
+        return await self._stitch_device_info_legacy()
 
-        # machineInfo returns: deviceName, mac, ip, sn, machineType, machineSubType,
-        # laserPower, firmware, etc.
+    def _parse_machine_info_payload(self, data: dict) -> DeviceInfo:
+        """Parse the ``/device/machineInfo`` (or v1 sibling) body."""
         power = 0
         try:
             power = int(data.get("laserPower", 0))
@@ -200,6 +215,38 @@ class RestProtocol(XtoolProtocol):
             laser=LaserInfo(power_watts=power),
             main_firmware=firmware_str,
             mac_address=str(data.get("mac", "") or ""),
+        )
+
+    async def _stitch_device_info_legacy(self) -> DeviceInfo:
+        """M1-shape identity stitch — Studio's M1 bundle composes the
+        deviceInfo dump from ``/system?action=*`` + ``/getmachinetype``
+        + ``/getlaserpowertype``. Field names are best-effort from
+        bundle inspection; tighten as live captures land.
+        """
+        name_q = await self._get_json("/system?action=get_dev_name")
+        version_q = await self._get_json("/system?action=version_v2")
+        mtype_q = await self._get_json("/getmachinetype")
+        _LOGGER.debug(
+            "REST legacy stitch: name=%s version=%s machineType=%s",
+            name_q, version_q, mtype_q,
+        )
+        if not any([name_q, version_q, mtype_q]):
+            return DeviceInfo()
+
+        def _pluck(d: dict | None, *keys: str) -> str:
+            if not d:
+                return ""
+            for k in keys:
+                v = d.get(k)
+                if v:
+                    return str(v)
+            return ""
+
+        return DeviceInfo(
+            serial_number=_pluck(mtype_q, "sn", "serialNumber"),
+            device_name=_pluck(name_q, "name", "deviceName", "data"),
+            main_firmware=_pluck(version_q, "version", "firmware", "data"),
+            mac_address="",
         )
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
