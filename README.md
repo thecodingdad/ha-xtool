@@ -9,6 +9,8 @@ This integration communicates directly with your xTool device over the local net
 
 > ⚠️ **This is an independent community project and is not affiliated with or endorsed by xTool. The integration is provided as-is, without any warranty.** Operating a laser cutter, engraver or fiber-laser welder through Home Assistant carries real-world safety risks (fire, blindness, burns, electrical hazards) — automated control over a high-power laser is *your* responsibility. Use at your own risk; see the full [Disclaimer](#disclaimer) for details.
 
+> ℹ️ **The integration was developed and tested with an xTool S1.** Other protocols/models are supported based on reverse-engineering, but have not been tested with real hardware. Community feedback is welcome!
+
 ## Features
 
 - Full local control — no cloud, no xTool account required
@@ -41,8 +43,6 @@ The integration supports four protocol families that cover all current xTool mod
 | WS-V2 (V2 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, M1, M1 Ultra, P2, P2S, P3, MetalFab, Apparel Printer | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
 
 V1/V2 selection is automatic. UDP discovery tags each device as V1 or V2 (legacy plain probe vs. encrypted multicast).
-
-> **Note:** The integration was developed and tested with an xTool S1. Other models are supported based on reverse-engineering the xTool Studio Windows app, but have not been tested with real hardware. Community feedback is welcome!
 
 ## Installation
 
