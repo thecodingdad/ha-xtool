@@ -65,14 +65,16 @@ release notes published on `api.xtool.com/efficacy/v1/package/version/latest`.
 | F2 Ultra (GS004-CLASS-4) | `40.54.020.05` | Core system framework + protocol upgrade. Studio v1.4+ required. |
 | F2 Ultra Single (GS007-CLASS-4) | `40.57.020.05` | Core system framework + protocol upgrade. Studio v1.4+ required. |
 | F2 Ultra UV (GS009-CLASS-4) | `40.130.021.02` | Numbering aligned with the V2 family. |
+| M1 | `40.18.x` | Communication framework upgrade observed on `40.18.026.00.ht3`. Exact rollout threshold not published — Studio bundle exposes the V2 surface (`/v1/parts/control`, `/v1/peripheral/param`, `/v1/platform/accessories`). |
 | M1 Ultra | `40.41.017` | Communication framework upgrade. Breaks XCS Mobile. |
+| P2 | `40.x` | Studio bundle exposes the V2 surface alongside the legacy REST one. Exact rollout threshold not published. |
 | P2S | `40.22.011.06` | Communication framework upgrade. Breaks LightBurn + XCS Mobile. |
 | P3 | `40.23.006.03` | Ships V2-only. ⚠️ Update can take 10–15 min. |
 | MetalFab (HJ003) | `40.70.013.4` | Studio v1.6+ required. |
 | Apparel Printer (DT001) | `40.100.025.03` | Includes manual ink-stack calibration + alignment-reset features. |
 
 V1-firmware lines that have **not** moved to V2 yet: D1 / D1 Pro /
-D1 Pro 2.0 (D-series stays on legacy REST + push-WS), M1, P1, P2, S1
+D1 Pro 2.0 (D-series stays on legacy REST + push-WS), P1, S1
 (S1 has its own `ws_mcode` family unrelated to V1/V2).
 
 
