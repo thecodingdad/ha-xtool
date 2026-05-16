@@ -228,6 +228,24 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
 )
 
 
+XTOOL_M1_WSV2 = XtoolDeviceModel(
+    model_id="M1",
+    name="xTool M1",
+    protocol_class=WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_beeper=True,
+    has_flame_alarm=True,
+    has_move_stop=True,
+    has_smoking_fan=True,
+    has_z_axis=True,
+    has_fill_light=True,
+    has_mode_switch=True,
+    firmware_content_id="xTool-m1-firmware",
+    protocol_version="V2",
+    discovery_match=("M1",),
+)
+
+
 XTOOL_M1_ULTRA_WSV2 = XtoolDeviceModel(
     model_id="M1Ultra",
     name="xTool M1 Ultra",
@@ -254,6 +272,37 @@ XTOOL_M1_ULTRA_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MLM",
     protocol_version="V2",
     discovery_match=("M1Ultra",),
+)
+
+
+XTOOL_P2_WSV2 = XtoolDeviceModel(
+    model_id="P2",
+    name="xTool P2",
+    protocol_class=WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_beeper=True,
+    has_flame_alarm=True,
+    has_move_stop=True,
+    has_smoking_fan=True,
+    has_z_axis=True,
+    has_drawer=True,
+    has_cover_sensor=True,
+    has_lid_sensor=True,
+    has_camera=True,
+    camera_names=("overview", "closeup"),
+    has_camera_exposure=True,
+    has_digital_lock=True,
+    has_distance_measure=True,
+    has_laser_head_position=True,
+    has_mode_switch=True,
+    has_fill_light=True,
+    has_ir_led=True,
+    has_gyro=True,
+    has_water_cooling=True,
+    firmware_content_id="xTool-p2-firmware",
+    firmware_machine_type="MXP",
+    protocol_version="V2",
+    discovery_match=("P2",),
 )
 
 
@@ -377,7 +426,9 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_F2_ULTRA_WSV2,
     XTOOL_F2_ULTRA_SINGLE_WSV2,
     XTOOL_F2_ULTRA_UV_WSV2,
+    XTOOL_M1_WSV2,
     XTOOL_M1_ULTRA_WSV2,
+    XTOOL_P2_WSV2,
     XTOOL_P2S_WSV2,
     XTOOL_P3_WSV2,
     XTOOL_METALFAB_WSV2,
