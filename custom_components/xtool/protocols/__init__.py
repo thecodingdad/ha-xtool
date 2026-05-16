@@ -193,8 +193,13 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
             or info.device_name
             or firmware
         ):
-            _LOGGER.debug(
-                "Validation against %s as %s rejected: empty device info",
+            _LOGGER.warning(
+                "Validation against %s as %s rejected: REST device-info "
+                "endpoints returned no usable identity (tried "
+                "/device/machineInfo, /v1/device/machineInfo, and the "
+                "M1-shape /system + /getmachinetype stitch). Please open "
+                "an issue at https://github.com/thecodingdad/ha-xtool/issues "
+                "with this log line and the surrounding DEBUG output.",
                 host, chosen.model_id,
             )
             return VALIDATION_ERROR_PROTOCOL_FAILED
