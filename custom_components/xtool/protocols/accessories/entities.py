@@ -107,8 +107,13 @@ class _AccessoryEntity(XtoolEntity):
             f"accessory_{definition.type_id.lower()}_{spec.key}"
         )
         self._attr_translation_key = translation_key
+        # MAC-shaped SNs contain colons which HA's entity_id format
+        # disallows — sanitise before composing the unique-id suffix
+        # so the registered entity_id is valid. (Issue #4 v2.5.4
+        # retest: IF2's ``38:36:0C:01:C1:96`` MAC broke migration.)
+        sn_slug = sn.replace(":", "_").replace(" ", "_")
         unique_suffix = (
-            f"accessory_{definition.type_id.lower()}_{sn}_{spec.key}"
+            f"accessory_{definition.type_id.lower()}_{sn_slug}_{spec.key}"
         )
         self._set_unique_id(unique_suffix)
         if spec.icon is not None:
@@ -346,8 +351,9 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
         self._attr_translation_key = (
             f"accessory_{definition.type_id.lower()}_firmware"
         )
+        sn_slug = sn.replace(":", "_").replace(" ", "_")
         self._set_unique_id(
-            f"accessory_{definition.type_id.lower()}_{sn}_firmware"
+            f"accessory_{definition.type_id.lower()}_{sn_slug}_firmware"
         )
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
