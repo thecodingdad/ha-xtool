@@ -270,8 +270,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
                     "registered (raw=%r)", type_id, row,
                 )
                 continue
-            sn = str(row.get("sn") or row.get("type_id_raw") or "unknown")
-            key = f"{type_id}:{sn}"
+            mac_sn = str(row.get("sn") or row.get("type_id_raw") or "unknown")
             fields: dict[str, Any] = {}
             if definition.info_mcode:
                 try:
@@ -296,9 +295,19 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
                             "Accessory %s parse failed: %s — raw=%r",
                             type_id, err, info_reply,
                         )
+            # Prefer the firmware-reported product SN (from the
+            # ``info_mcode`` reply, e.g. ``M9082 E:"<sn>"``) over the
+            # BT MAC that ``M9098`` emits. MAC contains colons that
+            # break HA's entity-id format, and the product SN is
+            # what's printed on the accessory's label — far better
+            # UX. Fall back to MAC when the info-mcode poll didn't
+            # yield an SN (e.g. older DuctFanV1 without that field).
+            product_sn = str(fields.get("sn") or "").strip()
+            sn = product_sn or mac_sn
+            key = f"{type_id}:{sn}"
             _LOGGER.debug(
-                "Accessory %s detected: sn=%s fields=%r",
-                type_id, sn, fields,
+                "Accessory %s detected: sn=%s (mac=%s) fields=%r",
+                type_id, sn, mac_sn, fields,
             )
             new_state[key] = AccessoryState(
                 type_id=type_id, sn=sn, fields=fields,
