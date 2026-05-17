@@ -91,9 +91,10 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     # firmware / log capture confirms a real wire-source.
     # ``working_mode`` diagnostic sensor removed in v2.5.4 — the
     # firmware ``workingMode`` field on F-series V2 carries the
-    # ``"HANDLE"`` / ``"NORMAL"`` enum that mirrors the Stops-when-
-    # moved switch, which already surfaces the bool. Showing the
-    # raw enum string was confusing. REST / D-series still use
+    # ``"NORMAL"`` (stationary) / ``"HANDLE"`` (handheld) enum that
+    # mirrors the Stops-when-moved switch, which already surfaces
+    # the bool. Showing the raw enum string was confusing.
+    # REST / D-series still use
     # ``state.working_mode`` for genuine job-mode tracking.
     XtoolSensorEntityDescription(
         key="task_time",
@@ -664,17 +665,22 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
             return 0
         return getattr(d, self._other_state_attr) or 0
 
+    # Studio writes fill-light brightness via the *config* surface,
+    # not the peripheral surface. The peripheral PUT used to be
+    # accepted by the firmware but never updated the persistent
+    # config — successive polls reverted to the cached value. The
+    # config-blob keys below land cleanly on F2 family V2 firmware
+    # (Issue #4 retest captures, v2.5.7 fix).
+    _config_key: str = ""           # e.g. "fillLightBrightFront"
+    _other_config_key: str = ""     # e.g. "fillLightBrightBack"
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         ha_brightness = kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX)
         device_brightness = int(
             ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
         )
-        body = {
-            self._channel: device_brightness,
-            self._other_channel: self._other_value(),
-        }
-        await self.coordinator.protocol.set_peripheral(
-            "fill_light", action="set_bri", **body,
+        await self.coordinator.protocol.set_config(
+            self._config_key, device_brightness,
         )
         if self.coordinator.data is not None:
             setattr(
@@ -683,13 +689,7 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        body = {
-            self._channel: 0,
-            self._other_channel: self._other_value(),
-        }
-        await self.coordinator.protocol.set_peripheral(
-            "fill_light", action="set_bri", **body,
-        )
+        await self.coordinator.protocol.set_config(self._config_key, 0)
         if self.coordinator.data is not None:
             setattr(self.coordinator.data, self._state_attr, 0)
         self.async_write_ha_state()
@@ -698,8 +698,9 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
 class WSV2FillLight(_WSV2FillLightBase):
     """Single fill-light entity — used when the model has only one
     fill-light channel (or where surfacing two entities would be UX
-    noise). PUT writes both channels to the same value, mirroring
-    Studio's single-slider UX for legacy V2 firmware.
+    noise). Writes both ``fillLightBrightFront`` and
+    ``fillLightBrightBack`` to the same value, mirroring Studio's
+    single-slider UX.
     """
 
     _attr_translation_key = "fill_light"
@@ -708,6 +709,8 @@ class WSV2FillLight(_WSV2FillLightBase):
     _state_attr = "fill_light_a"
     _other_state_attr = "fill_light_b"
     _other_channel = "back"
+    _config_key = "fillLightBrightFront"
+    _other_config_key = "fillLightBrightBack"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -718,9 +721,11 @@ class WSV2FillLight(_WSV2FillLightBase):
         device_brightness = int(
             ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
         )
-        await self.coordinator.protocol.set_peripheral(
-            "fill_light", action="set_bri",
-            front=device_brightness, back=device_brightness,
+        await self.coordinator.protocol.set_config(
+            "fillLightBrightFront", device_brightness,
+        )
+        await self.coordinator.protocol.set_config(
+            "fillLightBrightBack", device_brightness,
         )
         if self.coordinator.data is not None:
             self.coordinator.data.fill_light_a = device_brightness
@@ -728,9 +733,8 @@ class WSV2FillLight(_WSV2FillLightBase):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_peripheral(
-            "fill_light", action="set_bri", front=0, back=0,
-        )
+        await self.coordinator.protocol.set_config("fillLightBrightFront", 0)
+        await self.coordinator.protocol.set_config("fillLightBrightBack", 0)
         if self.coordinator.data is not None:
             self.coordinator.data.fill_light_a = 0
             self.coordinator.data.fill_light_b = 0
@@ -746,6 +750,8 @@ class WSV2FillLightFront(_WSV2FillLightBase):
     _state_attr = "fill_light_a"
     _other_state_attr = "fill_light_b"
     _other_channel = "back"
+    _config_key = "fillLightBrightFront"
+    _other_config_key = "fillLightBrightBack"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -761,6 +767,8 @@ class WSV2FillLightBack(_WSV2FillLightBase):
     _state_attr = "fill_light_b"
     _other_state_attr = "fill_light_a"
     _other_channel = "front"
+    _config_key = "fillLightBrightBack"
+    _other_config_key = "fillLightBrightFront"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -876,18 +884,17 @@ class WSV2ZAxisHoming(_WSV2Button):
         super().__init__(coordinator, "z_axis_homing", "mdi:axis-z-arrow-lock")
 
     async def _action(self) -> None:
-        # Studio's ``focusControl`` route triggers Z-homing with
-        # ``autoHome:1`` plus a safe pre-stop and a 300 mm/min feed.
-        # Z value is unused when ``autoHome`` is set but the body
-        # field is required.
+        # Studio's ``focusControl`` route uses POST (not PUT — F2
+        # Ultra UV firmware 40.130.x returns 404 on PUT). Body is
+        # ``{action:"goTo", autoHome:1, stopFirst:1, Z:<height>}``
+        # — NO ``F`` field (Studio doesn't send one).
         await self.coordinator.protocol.request(
             "/v1/laser-head/focus/control",
-            "PUT",
+            "POST",
             data={
                 "action": "goTo",
                 "autoHome": 1,
                 "stopFirst": 1,
-                "F": 300,
                 "Z": 0,
             },
         )
@@ -928,10 +935,16 @@ class _WSV2Camera(XtoolEntity, Camera):
     Previously split into separate ``_WSV2Camera`` +
     ``_WSV2LiveCamera`` entities; dual-camera models then surfaced
     four entries on the device page. Merged in v2.5.4.
+
+    ``_attr_is_streaming`` is intentionally left ``False`` until
+    the live MJPEG path is fully verified — Issue #4 v2.5.4 retest
+    reports "Streaming" state but no frame rendered on F2 Ultra UV.
+    Falling back to snapshot-card keeps the still image working
+    while the live-stream wire shape is re-investigated.
     """
 
     _camera_name: str = ""
-    _attr_is_streaming = True
+    _attr_is_streaming = False
 
     def __init__(
         self,
@@ -1252,14 +1265,14 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     if model.has_machine_lock:
         # F2 Ultra UV (and the rest of the F-series V2 firmware) types
         # the Stops-when-moved enforcement field as the ``workingMode``
-        # *enum* — ``"HANDLE"`` = enforcement on, ``"NORMAL"`` = off.
-        # The previous ``machineLockCheck`` boolean key is silently
-        # ignored by this firmware.
+        # *enum*. Polarity confirmed via Issue #4 v2.5.4 retest:
+        # ``"NORMAL"`` = enforcement on (stationary mode),
+        # ``"HANDLE"`` = enforcement off (handheld override).
         entities.append(
             _WSV2EnumConfigSwitch(
                 coordinator, "stops_when_moved", "workingMode",
                 "stops_when_moved",
-                on_value="HANDLE", off_value="NORMAL",
+                on_value="NORMAL", off_value="HANDLE",
                 icon="mdi:vibrate",
             )
         )
@@ -1328,8 +1341,15 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     # on V2 hardware. Studio displays them but the device no-ops
     # the writes, so the entities surfaced Unknown forever.
     entities: list[NumberEntity] = [
+        # Studio writes both ``purifierTimeout`` *and* ``EXTPurifierTimeout``
+        # for the "Exhaust time after processing" slider. ha-xtool used to
+        # send ``smokingFanDelay`` which the device rejects with
+        # ``code 1: failed`` on F2 family V2 firmware (Issue #4 v2.5.4
+        # retest). Switching to ``purifierTimeout`` matches Studio. The
+        # accompanying ``EXTPurifierTimeout`` is sibling-only and the
+        # main entity already syncs it via the device-config push.
         _WSV2ConfigNumber(
-            coordinator, "smoking_fan_duration", "smokingFanDelay",
+            coordinator, "smoking_fan_duration", "purifierTimeout",
             "smoking_fan_duration", 1, 600, 1,
             UnitOfTime.SECONDS, "mdi:fan-clock",
         ),
