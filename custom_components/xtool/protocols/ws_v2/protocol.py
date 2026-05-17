@@ -1416,7 +1416,6 @@ class WSV2Protocol(XtoolProtocol):
                     ("sleepTimeout",        "sleep_timeout"),
                     ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
                     ("printToolType",       "print_tool_type"),
-                    ("fireLevel",           "fire_level"),
                     # TODO v2.5.5 — entity scaffolding deferred:
                     # ("gapCheckWithKey",            "gap_check_with_key"),
                     # ("globalOffsetZ",              "global_offset_z"),
@@ -1855,7 +1854,7 @@ class WSV2Protocol(XtoolProtocol):
             "air_assist_gear_cut", "air_assist_gear_grave",
             "sleep_timeout", "sleep_timeout_open_gap",
             "fill_light_auto_off", "ir_light_auto_off",
-            "print_tool_type", "flame_level_hl", "fire_level",
+            "print_tool_type", "flame_level_hl",
             "working_seconds", "session_count", "standby_seconds",
             "tool_runtime_seconds", "alarm_present",
         ):
@@ -2002,7 +2001,6 @@ class WSV2Protocol(XtoolProtocol):
             ("sleepTimeout",        "sleep_timeout"),
             ("sleepTimeoutOpenGap", "sleep_timeout_open_gap"),
             ("printToolType",       "print_tool_type"),
-            ("fireLevel",           "fire_level"),
             # TODO v2.5.5 — entity scaffolding deferred:
             # ("gapCheckWithKey",            "gap_check_with_key"),
             # ("globalOffsetZ",              "global_offset_z"),
