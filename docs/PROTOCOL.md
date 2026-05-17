@@ -2308,6 +2308,22 @@ discriminator.
 
 JSON over HTTP. Verified against the per-model `index.js` bundles in the XCS APK and the newer xTool Studio Windows app (`exts.zip/<model>/index.js`).
 
+### M1 dialect — mixed text/JSON shapes
+
+The original M1 uses a distinct V1 REST surface (separate from the F-series, P-series and M1 Ultra "modern" V1 dialect). Its device-identity bootstrap stitches **multiple endpoints with mixed response shapes** — some return bare text, some JSON.
+
+| Endpoint | Return | Field used |
+|---|---|---|
+| `GET /system?action=get_dev_name` | plain string | device name |
+| `GET /getmachinetype` | plain string | serial / machine-type code |
+| `GET /getlaserpowertype` | JSON `{result:"<W>"}` | laser power (W) |
+| `GET /system?action=version_v2` | JSON `{package_version, master_h3_laserservice, …}` | firmware version |
+| `GET /net?action=ifconfig&t=<ms>` | JSON `{mac, wlan0-ip, eth0-0-ip, …}` | MAC + IPs |
+
+Other V1 models expose a single `GET /device/machineInfo` endpoint that returns the full identity blob as one JSON object. M1 doesn't implement that path — hitting it returns an empty body / non-JSON. Clients calling `/device/machineInfo` against M1 will see `Expecting value: line 1 column 1` parse errors.
+
+The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>` for homing/light/lock, `/cnc/data?action=start|pause|stop` for processing) and fill-light (`/setfilllight?bright=<n>` GET-with-query instead of POST-body). The same legacy dialect applies to P1 (oldest Laserbox firmware).
+
 ### Ports
 
 | Port | Purpose |
