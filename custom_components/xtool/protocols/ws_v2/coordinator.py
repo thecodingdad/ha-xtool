@@ -53,6 +53,27 @@ class WSV2Coordinator(XtoolCoordinator):
         # gyro, drawer, IR LED, …).
         if hasattr(self.protocol, "set_model"):
             self.protocol.set_model(self.model)
+        # Wire the push-notify callback so DEVICE_CONFIG / peripheral
+        # pushes drain into ``self.data`` and re-render entities
+        # immediately, without waiting for the next 5s poll cycle.
+        if hasattr(self.protocol, "_push_notify"):
+            self.protocol._push_notify = self._on_protocol_push
+
+    def _on_protocol_push(self) -> None:
+        """Fired by ``WSV2Protocol._dispatch_event`` after every push.
+
+        Drains the protocol's ``_latest`` cache into ``self.data`` and
+        emits a coordinator update so HA re-renders entities right
+        away. Read-only / non-pushed fields stay at their last poll
+        values; the next ``poll_state`` reconciles.
+        """
+        if self.data is None:
+            return
+        state = dataclass_replace(self.data)
+        # Mypy: dynamic attribute is fine — only called for WSV2Protocol.
+        self.protocol._apply_latest_to_state(state)  # type: ignore[attr-defined]
+        self.data = state
+        self.async_set_updated_data(state)
 
     async def _async_update_data(self) -> XtoolDeviceState:
         # Always carry the last poll's field values forward so the

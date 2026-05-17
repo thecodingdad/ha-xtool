@@ -427,6 +427,44 @@ class WSV2Protocol(XtoolProtocol):
     from the JSON reply.
     """
 
+    # Push-cached fields that overrule the poll snapshot when a push
+    # has more recent data. Used by both ``poll_state`` (drain at end
+    # of cycle) and the push-notify callback (drain + emit immediately
+    # so entity state surfaces in HA without waiting for next poll).
+    _LATEST_STATE_FIELDS: tuple[str, ...] = (
+        "status", "task_id", "task_time", "cover_open", "machine_lock",
+        "last_job_time_seconds",
+        "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
+        "water_pump_running", "water_line_ok", "water_temperature",
+        "water_flow", "drawer_open", "cpu_fan_running",
+        "gyro_x", "gyro_y", "gyro_z",
+        "position_x", "position_y", "position_z",
+        "last_distance_mm", "display_brightness",
+        "fill_light_a", "fill_light_b",
+        "flame_alarm_v2_enabled", "beep_enabled_v2",
+        "gap_check_enabled", "machine_lock_check_enabled",
+        "purifier_timeout", "working_mode",
+        "stops_when_moved", "auto_sleep_enable",
+        "air_assist_close_delay", "smoking_fan_duration",
+        "air_assist_gear_cut", "air_assist_gear_grave",
+        "sleep_timeout", "sleep_timeout_open_gap",
+        "fill_light_auto_off", "ir_light_auto_off",
+        "print_tool_type", "flame_level_hl",
+        "working_seconds", "session_count", "standby_seconds",
+        "tool_runtime_seconds", "alarm_present",
+    )
+
+    def _apply_latest_to_state(self, state: XtoolDeviceState) -> None:
+        """Drain push-cached ``self._latest`` values into ``state``.
+
+        Called from both ``poll_state`` (end-of-cycle merge) and the
+        push-notify callback wired by the coordinator (immediate
+        propagation when a DEVICE_CONFIG / peripheral push arrives).
+        """
+        for k in self._LATEST_STATE_FIELDS:
+            if k in self._latest:
+                setattr(state, k, self._latest[k])
+
     def __init__(self, host: str, port: int = WSV2_PORT) -> None:
         super().__init__(host)
         self._port = port
@@ -478,6 +516,12 @@ class WSV2Protocol(XtoolProtocol):
         # merges parsed values into the matching paired-accessory
         # state so the entity layer refreshes between BT polls.
         self._pending_accessory_updates: list[tuple[str, dict[str, Any]]] = []
+        # Coordinator sets this callback during connect; it fires after
+        # every ``_dispatch_push`` so entity state surfaces in HA
+        # without waiting for the next 5s poll cycle. ``None`` until
+        # the coordinator wires it (or for code paths that don't need
+        # immediate UI feedback).
+        self._push_notify: Callable[[], None] | None = None
         # Aggregator for partial BINARY frames — V2 firmware sometimes
         # splits a single CRC-wrapped envelope across multiple WS
         # messages, so we always feed bytes through ``_decode_frames``
@@ -1057,6 +1101,16 @@ class WSV2Protocol(XtoolProtocol):
                 return
         # Otherwise treat as a push event.
         self._dispatch_push(event)
+        # Signal the coordinator that ``_latest`` may carry fresh
+        # state — let it drain into ``coordinator.data`` and re-render
+        # entities immediately, instead of waiting up to one full
+        # poll cycle (5 s) for the next ``poll_state`` drain.
+        notify = self._push_notify
+        if notify is not None:
+            try:
+                notify()
+            except Exception as err:
+                _LOGGER.debug("V2 push_notify callback failed: %s", err)
 
     def _handle_text(self, raw: str) -> None:
         """TEXT-frame fallback (rare on V2 firmware)."""
@@ -1837,29 +1891,7 @@ class WSV2Protocol(XtoolProtocol):
         self._poll_counter += 1
 
         # 7. Push-cached values (overrule poll if newer)
-        for k in (
-            "status", "task_id", "task_time", "cover_open", "machine_lock",
-            "last_job_time_seconds",
-            "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
-            "water_pump_running", "water_line_ok", "water_temperature",
-            "water_flow", "drawer_open", "cpu_fan_running",
-            "gyro_x", "gyro_y", "gyro_z",
-            "position_x", "position_y", "position_z",
-            "last_distance_mm", "display_brightness",
-            "fill_light_a", "fill_light_b",
-            "flame_alarm_v2_enabled", "beep_enabled_v2",
-            "gap_check_enabled", "machine_lock_check_enabled",
-            "purifier_timeout", "working_mode",
-            "air_assist_close_delay", "smoking_fan_duration",
-            "air_assist_gear_cut", "air_assist_gear_grave",
-            "sleep_timeout", "sleep_timeout_open_gap",
-            "fill_light_auto_off", "ir_light_auto_off",
-            "print_tool_type", "flame_level_hl",
-            "working_seconds", "session_count", "standby_seconds",
-            "tool_runtime_seconds", "alarm_present",
-        ):
-            if k in self._latest:
-                setattr(state, k, self._latest[k])
+        self._apply_latest_to_state(state)
 
         _LOGGER.debug(
             "V2 poll resolved: status=%s task_id=%r task_time=%s "
