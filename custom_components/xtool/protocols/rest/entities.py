@@ -54,11 +54,24 @@ from .protocol import (
     IR_LED_INDEX_CLOSEUP,
     IR_LED_INDEX_GLOBAL,
     REST_CAMERA_PORT,
+    RestProtocolM1Legacy,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 MIN_SNAPSHOT_INTERVAL = timedelta(seconds=30)
+
+
+def _is_m1_legacy(coordinator: XtoolCoordinator) -> bool:
+    """M1 / P1 legacy dialect — different REST endpoint surface.
+
+    Used by the per-platform builders to skip entities backed by
+    endpoints the M1 firmware doesn't implement (cooling fan,
+    purifier check, sleep timeout, reboot, etc.). The base
+    ``RestProtocol`` was built around the F-series / P-family
+    wire shape; M1's surface is narrower + uses different verbs.
+    """
+    return isinstance(coordinator.protocol, RestProtocolM1Legacy)
 
 
 # --- Switches: IR LED + digital lock ----------------------------------------
@@ -463,15 +476,22 @@ def build_rest_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         entities.append(XtoolIRLED(coordinator, "global"))
     if model.has_digital_lock:
         entities.append(XtoolDigitalLock(coordinator))
-    # Universal REST toggles (each gates itself on data presence via available)
-    entities.extend([
-        XtoolBeepEnable(coordinator),
-        XtoolFilterCheck(coordinator),
-        XtoolPurifierCheck(coordinator),
-        XtoolPurifierContinue(coordinator),
-        XtoolCoolingFan(coordinator),
-        XtoolSmokingFanRest(coordinator),
-    ])
+    # Universal REST toggles. ``XtoolBeepEnable`` works on every V1
+    # REST model (M1 + F/P all have ``/getBeepEnable`` + ``/setBeepEnable``).
+    # The rest of these are F/P-family-specific endpoints — M1
+    # firmware doesn't implement ``/peripheral/cooling_fan``,
+    # ``/peripheral/smoking_fan``, ``/setfiltercheck``, ``/setpurifiercheck``;
+    # ``/getpurifiercontinue`` on M1 returns a seconds value, not a
+    # bool, so the switch shape is wrong there.
+    entities.append(XtoolBeepEnable(coordinator))
+    if not _is_m1_legacy(coordinator):
+        entities.extend([
+            XtoolFilterCheck(coordinator),
+            XtoolPurifierCheck(coordinator),
+            XtoolPurifierContinue(coordinator),
+            XtoolCoolingFan(coordinator),
+            XtoolSmokingFanRest(coordinator),
+        ])
     if model.has_drawer:
         entities.append(XtoolDrawerCheck(coordinator))
     return entities
@@ -485,12 +505,17 @@ def build_rest_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     if coordinator.model.has_air_assist_state:
         entities.append(XtoolAirAssistGear(coordinator, "cut"))
         entities.append(XtoolAirAssistGear(coordinator, "grave"))
-    entities.extend([
-        _sleep_timeout(coordinator),
-        _sleep_timeout_open_gap(coordinator),
-        _fill_light_auto_off(coordinator),
-        _ir_light_auto_off(coordinator),
-    ])
+    # ``/setsleeptimeout``, ``/setsleeptimeoutopengap``,
+    # ``/setFilllightAutoClosetimout``, ``/setIrlightAutoClosetimout``
+    # are F/P-family-specific endpoints. M1 firmware doesn't expose
+    # any of them; entities would stay Unknown forever.
+    if not _is_m1_legacy(coordinator):
+        entities.extend([
+            _sleep_timeout(coordinator),
+            _sleep_timeout_open_gap(coordinator),
+            _fill_light_auto_off(coordinator),
+            _ir_light_auto_off(coordinator),
+        ])
     if coordinator.model.has_display_screen:
         entities.append(XtoolDisplayBrightness(coordinator))
     return entities
@@ -503,18 +528,24 @@ def build_rest_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(XtoolHomeLaserHead(coordinator))
     if model.has_distance_measure:
         entities.append(XtoolMeasureDistance(coordinator))
-    entities.append(XtoolReboot(coordinator))
+    # ``/reboot`` is F/P-family — M1 firmware has no such endpoint.
+    if not _is_m1_legacy(coordinator):
+        entities.append(XtoolReboot(coordinator))
     if model.has_water_cooling:
         entities.append(XtoolTimeSync(coordinator))
     return entities
 
 
 def build_rest_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
-    entities: list[SelectEntity] = [
+    # Both Selects map to ``/config/set`` keys
+    # (``purifierSpeed`` / ``flameLevelHLSelect``) that the M1
+    # firmware doesn't recognise — would surface as broken Selects.
+    if _is_m1_legacy(coordinator):
+        return []
+    return [
         XtoolPurifierSpeed(coordinator),
         XtoolFlameLevelHL(coordinator),
     ]
-    return entities
 
 
 def build_rest_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
@@ -537,19 +568,34 @@ def build_rest_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
 
 
 def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
+    # M1 firmware has no source for the laser-head-position fields
+    # (``state.position_x`` / ``position_y``) or ``state.task_time``
+    # (no ``/processing/progress``). Skip the universal descriptions
+    # that read from those state fields. Other entries
+    # (``task_id``, ``ip_address``, ``laser_power``, ``laser_module``)
+    # are still populated correctly via ``/cnc/status`` +
+    # ``get_device_info``.
+    is_m1 = _is_m1_legacy(coordinator)
+    skip_keys = (
+        {"laser_position_x", "laser_position_y", "task_time"}
+        if is_m1 else set()
+    )
     entities: list[SensorEntity] = [
         XtoolSensor(coordinator, description)
         for description in SENSOR_DESCRIPTIONS
+        if description.key not in skip_keys
     ]
     model = coordinator.model
     if model.has_distance_measure:
         entities.append(XtoolLastDistance(coordinator))
-    # Universal diagnostic sensors
-    entities.extend([
-        _RestStateSensor(coordinator, "working_mode", "mdi:cog-play", "working_mode"),
-        _RestStateSensor(coordinator, "print_tool_type", "mdi:tools", "print_tool_type"),
-        _RestStateSensor(coordinator, "hardware_type", "mdi:chip", "hardware_type"),
-    ])
+    # Universal diagnostic sensors — backed by state fields the M1
+    # poll never populates (no /device/runningStatus on M1).
+    if not is_m1:
+        entities.extend([
+            _RestStateSensor(coordinator, "working_mode", "mdi:cog-play", "working_mode"),
+            _RestStateSensor(coordinator, "print_tool_type", "mdi:tools", "print_tool_type"),
+            _RestStateSensor(coordinator, "hardware_type", "mdi:chip", "hardware_type"),
+        ])
     if model.has_water_cooling:
         entities.append(_RestTempSensor(coordinator, "water_temperature", "mdi:thermometer-water", "water_temperature"))
         entities.append(_RestFlowSensor(coordinator, "water_flow", "mdi:waves", "water_flow"))
@@ -600,13 +646,15 @@ def build_rest_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySenso
     model = coordinator.model
     if model.has_air_assist_state:
         entities.append(XtoolAirAssistConnected(coordinator))
-    # Universal push-state binaries
-    entities.extend([
-        _RestPushBinary(coordinator, "cooling_fan_running", "mdi:fan",
-                        "cooling_fan_running", BinarySensorDeviceClass.RUNNING),
-        _RestPushBinary(coordinator, "smoking_fan_running", "mdi:fan",
-                        "smoking_fan_running", BinarySensorDeviceClass.RUNNING),
-    ])
+    # M1 firmware doesn't push ``cooling_fan_running`` /
+    # ``smoking_fan_running`` — those state fields never get set.
+    if not _is_m1_legacy(coordinator):
+        entities.extend([
+            _RestPushBinary(coordinator, "cooling_fan_running", "mdi:fan",
+                            "cooling_fan_running", BinarySensorDeviceClass.RUNNING),
+            _RestPushBinary(coordinator, "smoking_fan_running", "mdi:fan",
+                            "smoking_fan_running", BinarySensorDeviceClass.RUNNING),
+        ])
     if model.has_drawer:
         entities.append(_RestPushBinary(coordinator, "drawer_open", "mdi:archive-arrow-up",
                                         "drawer_open", BinarySensorDeviceClass.OPENING))
@@ -1145,9 +1193,14 @@ class RestFireWarningEvent(XtoolEvent):
 
 
 def build_rest_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
-    return [
-        RestButtonEvent(coordinator),
+    entities: list[EventEntity] = [
         RestJobEvent(coordinator),
         RestErrorEvent(coordinator),
         RestFireWarningEvent(coordinator),
     ]
+    # ``RestButtonEvent`` depends on the ``/peripheral/button?action=get``
+    # poll which only the F-family + M1 Ultra + P-family expose. M1 /
+    # P1 firmware has no front-panel button event surface.
+    if coordinator.model.has_button_event:
+        entities.insert(0, RestButtonEvent(coordinator))
+    return entities
