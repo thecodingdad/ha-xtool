@@ -877,29 +877,6 @@ class WSV2MeasureDistance(_WSV2Button):
         )
 
 
-class WSV2ZAxisHoming(_WSV2Button):
-    """Z-axis homing for F2 Ultra UV (Studio's ``zAxisReset``)."""
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "z_axis_homing", "mdi:axis-z-arrow-lock")
-
-    async def _action(self) -> None:
-        # Studio's ``focusControl`` route uses POST (not PUT — F2
-        # Ultra UV firmware 40.130.x returns 404 on PUT). Body is
-        # ``{action:"goTo", autoHome:1, stopFirst:1, Z:<height>}``
-        # — NO ``F`` field (Studio doesn't send one).
-        await self.coordinator.protocol.request(
-            "/v1/laser-head/focus/control",
-            "POST",
-            data={
-                "action": "goTo",
-                "autoHome": 1,
-                "stopFirst": 1,
-                "Z": 0,
-            },
-        )
-
-
 class WSV2Reboot(_WSV2Button):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "reboot", "mdi:restart")
@@ -1353,11 +1330,12 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
             "smoking_fan_duration", 1, 600, 1,
             UnitOfTime.SECONDS, "mdi:fan-clock",
         ),
-        _WSV2ConfigNumber(
-            coordinator, "fire_level", "fireLevel",
-            "fire_level", 0, 255, 1,
-            None, "mdi:fire",
-        ),
+        # ``fire_level`` Number removed in v2.5.7 — bundle audit
+        # showed ``fireLevel`` is absent from every V2 Studio
+        # bundle (GS006/GS009/GS004/GS007/HJ003/DT001/M1Ultra/P2S/P3/
+        # GS003/GS005/F1). Pure ha-xtool invention; the firmware
+        # never accepted the writes. The S1 family still consumes
+        # ``state.fire_level`` from M340 (separate code path).
     ]
     model = coordinator.model
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
@@ -1446,8 +1424,11 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
-    if coordinator.model.has_z_axis_homing:
-        entities.append(WSV2ZAxisHoming(coordinator))
+    # Z-axis homing button removed in v2.5.7: HA Core has no entity-
+    # level action confirmation, only per-Lovelace-card
+    # ``tap_action.confirmation``. The button physically moves the
+    # laser head — automation / mis-click can crash it into the
+    # workpiece. Users can still trigger it from xTool Studio.
     return entities
 
 
