@@ -897,26 +897,14 @@ class WSV2Protocol(XtoolProtocol):
             )
             return None
 
-        # ``PUT /v1/filetransfer/download`` is the legacy V2 negotiation
-        # step. Studio's GS006 bundle marks the file-fetch step with
-        # ``isFileTransfer:true`` and never issues this PUT — it opens
-        # the ``file_stream`` channel directly. F2 Ultra UV firmware
-        # ``40.130.021.00.ht2`` rejects the PUT with ``code -99: error
-        # parameters``. Treat the PUT as best-effort: send it, log on
-        # failure, and proceed to the file-stream download anyway.
-        try:
-            await self.request(
-                "/v1/filetransfer/download",
-                "PUT",
-                data={"filename": filename, "fileType": 5},
-            )
-        except Exception as err:
-            _LOGGER.debug(
-                "V2 camera_snap %s: filetransfer/download init "
-                "rejected (%s) — proceeding to file_stream anyway",
-                camera_name, err,
-            )
-
+        # ``PUT /v1/filetransfer/download`` was the legacy V2
+        # negotiation step. Removed in v2.5.7 — Studio's
+        # GS009-CLASS-4 bundle's ``captureGlobalImage`` route marks
+        # the second leg as ``isFileTransfer:true, params:{fileType:5}``
+        # and opens the ``file_stream`` channel directly. F2 Ultra UV
+        # firmware ``40.130.021.00.ht2`` actively rejects the PUT
+        # with ``code -99: error parameters``. Skipping the PUT
+        # mirrors Studio and drops a noisy log line per snap.
         try:
             blob = await self._download_file_stream(filename, file_type=5)
         except Exception as err:
@@ -1413,10 +1401,16 @@ class WSV2Protocol(XtoolProtocol):
                     ("autoSleepEnable",     "auto_sleep_enable"),
                     ("fillLightBrightFront","fill_light_a"),
                     ("fillLightBrightBack", "fill_light_b"),
+                    # F2 family V2 firmware reuses ``purifierTimeout`` as
+                    # the "Exhaust time after processing" knob — Studio's
+                    # ``setFanSmokeExhaustTime`` writes it. Mirror into
+                    # both legacy state fields so REST-era purifier
+                    # entities and the V2 exhaust-fan entity both
+                    # render correctly. (Issue #4 v2.5.4 retest.)
                     ("purifierTimeout",     "purifier_timeout"),
+                    ("purifierTimeout",     "smoking_fan_duration"),
                     ("workingMode",         "working_mode"),
                     ("airAssistDelay",      "air_assist_close_delay"),
-                    ("smokingFanDelay",     "smoking_fan_duration"),
                     ("airassistCut",        "air_assist_gear_cut"),
                     ("airassistGrave",      "air_assist_gear_grave"),
                     ("sleepTimeout",        "sleep_timeout"),
@@ -1434,12 +1428,14 @@ class WSV2Protocol(XtoolProtocol):
                     if src in info:
                         self._latest[dst] = info[src]
                 # ``workingMode`` is an enum string on F-series V2
-                # firmware (``HANDLE`` = Stops-when-moved on, ``NORMAL``
+                # firmware. **Polarity confirmed inverted via Issue #4
+                # v2.5.4 retest**: ``NORMAL`` = Stops-when-moved on,
+                # ``HANDLE`` = off (HANDLE means handheld override).
                 # = off). Surface it as a bool mirror so the
                 # ``stops_when_moved`` switch can render its toggle.
                 if "workingMode" in info:
                     wm = str(info["workingMode"] or "").upper()
-                    self._latest["stops_when_moved"] = wm == "HANDLE"
+                    self._latest["stops_when_moved"] = wm == "NORMAL"
 
         elif url.startswith("/peripheral/"):
             ptype = url.removeprefix("/peripheral/")
@@ -1995,10 +1991,12 @@ class WSV2Protocol(XtoolProtocol):
             ("autoSleepEnable",     "auto_sleep_enable"),
             ("fillLightBrightFront","fill_light_a"),
             ("fillLightBrightBack", "fill_light_b"),
+            # See DEVICE_CONFIG push fan-out above — ``purifierTimeout``
+            # doubles as the F2 family exhaust-fan post-run timer.
             ("purifierTimeout",     "purifier_timeout"),
+            ("purifierTimeout",     "smoking_fan_duration"),
             ("workingMode",         "working_mode"),
             ("airAssistDelay",      "air_assist_close_delay"),
-            ("smokingFanDelay",     "smoking_fan_duration"),
             ("airassistCut",        "air_assist_gear_cut"),
             ("airassistGrave",      "air_assist_gear_grave"),
             ("sleepTimeout",        "sleep_timeout"),
@@ -2016,6 +2014,8 @@ class WSV2Protocol(XtoolProtocol):
             if src in kv:
                 self._latest[dst] = kv[src]
         # ``workingMode`` enum → ``stops_when_moved`` bool mirror.
+        # Polarity: ``NORMAL`` = stationary / enforcement on,
+        # ``HANDLE`` = handheld override / enforcement off.
         if "workingMode" in kv:
             wm = str(kv["workingMode"] or "").upper()
             self._latest["stops_when_moved"] = wm == "HANDLE"
