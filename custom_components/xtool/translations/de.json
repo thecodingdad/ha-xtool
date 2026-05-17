@@ -467,16 +467,16 @@
         "name": "Manuelle Stufe"
       },
       "accessory_ductfanv3_post_run": {
-        "name": "Inline-Lüfter Nachlauf"
+        "name": "Zeit, die der Inline-Lüfter weiterläuft"
       },
       "accessory_ductfan_post_run": {
-        "name": "Inline-Lüfter Nachlauf"
+        "name": "Zeit, die der Inline-Lüfter weiterläuft"
       },
       "air_assist_close_delay": {
         "name": "Air-Assist-Nachlauf"
       },
       "smoking_fan_duration": {
-        "name": "Absaugung-Nachlauf"
+        "name": "Lüfternachlauf nach Verarbeitung"
       },
       "tilt_threshold": {
         "name": "Neigungs-Schwellwert"
@@ -525,9 +525,6 @@
       },
       "work_area_down": {
         "name": "Arbeitsbereich Unten"
-      },
-      "fire_level": {
-        "name": "Feuererkennungs-Schwelle"
       },
       "accessory_airpump_close_delay": {
         "name": "Nachlaufzeit"
@@ -694,9 +691,6 @@
       },
       "measure_distance": {
         "name": "Distanz messen"
-      },
-      "z_axis_homing": {
-        "name": "Z-Achsen-Homing"
       },
       "quit_lightburn": {
         "name": "LightBurn-Modus verlassen"

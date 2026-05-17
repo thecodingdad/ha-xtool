@@ -177,13 +177,12 @@
     },
     "number": {
       "air_assist_close_delay": { "name": "Air assist delay" },
-      "smoking_fan_duration": { "name": "Exhaust fan duration" },
+      "smoking_fan_duration": { "name": "Exhaust time after processing" },
       "tilt_threshold": { "name": "Tilt threshold" },
       "moving_threshold": { "name": "Movement threshold" },
       "camera_exposure_overview": { "name": "Camera exposure (overview)" },
       "camera_exposure_closeup": { "name": "Camera exposure (close-up)" },
-      "purifier_timeout": { "name": "Purifier auto-off" },
-      "fire_level": { "name": "Fire detection level" }
+      "purifier_timeout": { "name": "Purifier auto-off" }
     },
     "select": {
       "flame_alarm_sensitivity": {
@@ -216,7 +215,6 @@
       "home_z": { "name": "Home Z" },
       "home_laser_head": { "name": "Home laser head" },
       "measure_distance": { "name": "Measure distance" },
-      "z_axis_homing": { "name": "Z-axis homing" },
       "quit_lightburn": { "name": "Quit LightBurn mode" }
     },
     "event": {

@@ -470,13 +470,13 @@
         "name": "Manual gear"
       },
       "accessory_ductfanv3_post_run": {
-        "name": "Inline-fan post-run"
+        "name": "Time the inline fan continues to work"
       },
       "accessory_ductfan_post_run": {
-        "name": "Inline-fan post-run"
+        "name": "Time the inline fan continues to work"
       },
       "smoking_fan_duration": {
-        "name": "Exhaust post-run"
+        "name": "Exhaust time after processing"
       },
       "tilt_threshold": {
         "name": "Tilt threshold"
@@ -525,9 +525,6 @@
       },
       "work_area_down": {
         "name": "Work area limit (down)"
-      },
-      "fire_level": {
-        "name": "Fire detection level"
       },
       "accessory_airpump_close_delay": {
         "name": "Close delay"
@@ -694,9 +691,6 @@
       },
       "measure_distance": {
         "name": "Measure distance"
-      },
-      "z_axis_homing": {
-        "name": "Z-axis homing"
       },
       "quit_lightburn": {
         "name": "Quit LightBurn mode"
