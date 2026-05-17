@@ -1141,6 +1141,92 @@ class RestProtocolM1Legacy(RestProtocol):
     async def wake_from_sleep(self) -> None:
         await self._get("/sleepwakeup")
 
+    async def poll_state(self, state: XtoolDeviceState) -> None:
+        """M1 V1-firmware poll surface.
+
+        Mirrors the endpoints Studio's M1 ``deviceInfo`` route
+        reads — ``/cnc/status``, ``/getfilllight``,
+        ``/peripherystatus?action=*``, ``/system?action=get_task_number``,
+        ``/getpurifiercontinue``. Skips the F/P-series endpoints
+        (``/device/runningStatus``, ``/peripheral/*``,
+        ``/processing/progress``) which return 404 on M1 firmware —
+        those would trigger the offline back-off helper every cycle.
+        """
+        # One fresh attempt per cycle for the offline gate.
+        self._offline_until = 0.0
+
+        # 1 — Status + task ID
+        status_data = await self._get_json("/cnc/status")
+        if status_data:
+            mapped = _map_rest_status(status_data)
+            if mapped is not None:
+                state.status = mapped
+            task_id = status_data.get("taskId")
+            if task_id:
+                state.task_id = str(task_id)
+
+        # 2 — Fill light brightness (device scale 0-255 → HA 0-100)
+        fl = await self._get_json("/getfilllight")
+        if isinstance(fl, dict):
+            try:
+                raw = int(str(fl.get("result", "0")).strip() or 0)
+                ha_level = round(raw * BRIGHTNESS_HA_MAX / 255)
+                state.fill_light_a = ha_level
+                state.fill_light_b = ha_level
+            except (TypeError, ValueError):
+                pass
+
+        # 3-4 — Lifetime work + tool-runtime counters (seconds)
+        state.working_seconds = await self._m1_read_worktime("systemworktime")
+        state.tool_runtime_seconds = await self._m1_read_worktime("laserworktime")
+
+        # 5 — Session count = sum of all four task counters
+        tasks = await self._get_json("/system?action=get_task_number")
+        if isinstance(tasks, dict):
+            total = 0
+            for k in (
+                "offline_finished_number", "offline_unfinished_number",
+                "online_finished_number", "online_unfinished_number",
+            ):
+                try:
+                    total += int(tasks.get(k) or 0)
+                except (TypeError, ValueError):
+                    pass
+            state.session_count = total
+
+        # 6 — Purifier auto-off timer (seconds)
+        pt = await self._get_json("/getpurifiercontinue")
+        if isinstance(pt, dict):
+            try:
+                state.purifier_timeout = int(
+                    str(pt.get("result", "0")).strip() or 0
+                )
+            except (TypeError, ValueError):
+                pass
+
+    async def _m1_read_worktime(self, action: str) -> int:
+        """Read a ``/peripherystatus?action=<action>`` seconds counter.
+
+        Shape unverified — Studio's transformResult treats the
+        value as a bare number (``Math.round(i/3600)``). Could be
+        plain text (e.g. ``"3600"``) or JSON ``{result:"3600"}``.
+        Defensive try-both: text first (less assumption), JSON
+        fallback. Returns ``0`` if neither parses.
+        """
+        txt = await self._get(f"/peripherystatus?action={action}")
+        if txt is not None:
+            try:
+                return int(str(txt).strip().strip('"'))
+            except (TypeError, ValueError):
+                pass
+        js = await self._get_json(f"/peripherystatus?action={action}")
+        if isinstance(js, dict):
+            try:
+                return int(str(js.get("result", "0")).strip() or 0)
+            except (TypeError, ValueError):
+                pass
+        return 0
+
 
 async def _http_accessory_upload(
     base_url: str,
