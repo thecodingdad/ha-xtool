@@ -1921,7 +1921,7 @@ Action paths:
 | `/v1/platform/camera/snap` | POST | — | `/v1/platform/*` equivalent of `/v1/camera/snap`. |
 | `/v1/laser-head/control` | PUT | `{action, …}` | Laser-head verbs (move, jog, calibrate). |
 | `/v1/laser-head/parameter` | GET / PUT | — | Laser-head-wide tuning parameters (power curve, focus offsets, …). |
-| `/v1/laser-head/focus/control` | PUT | `{action:"start"\|"stop"\|"goTo"}` | Autofocus run or explicit Z move. Studio's z-axis-homing button sends `{action:"goTo", autoHome:1, stopFirst:1, F:300, Z:0}` to home the Z axis on F2 Ultra UV. |
+| `/v1/laser-head/focus/control` | POST | `{action:"start"\|"stop"\|"goTo"\|"auto_start"\|"auto_stop"}` | Autofocus run or explicit Z move. Studio's z-axis-homing button sends `{action:"goTo", autoHome:1, stopFirst:1, Z:0}` to home the Z axis on F2 Ultra UV. **POST only** — PUT returns code 404 on F2 family V2 firmware. |
 | `/v1/laser-head/focus/parameter` | GET / PUT | — | Autofocus configuration (search range, step size, dwell). |
 | `/v1/motion_control/paramter` | GET / PUT | — | Motion-controller-wide tuning (acceleration, max speed). **Note**: the spelling `paramter` is firmware-canonical (typo in the route table — verified across GS003/GS005/GS006/GS007/HJ003). |
 | `/v1/extender/control` | PUT | `{action, …}` | Extender-attachment control (conveyor / rotary table). Paired with the `/conveyor/alarm` push. |
@@ -1954,7 +1954,7 @@ emits these push frames (all without `transactionId`):
 
 | `url` | `module` | Notes |
 |---|---|---|
-| `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). Keys observed in the wild: `flameAlarm`, `beepEnable`, `gapCheck`, `gapCheckWithKey`, `machineLockCheck`, `autoSleepEnable`, `fillLightBrightFront`, `fillLightBrightBack`, `purifierTimeout`, `purifierSpeed`, `workingMode` (HANDLE / NORMAL enum), `airAssistDelay`, `smokingFanDelay`, `airassistCut`, `airassistGrave`, `sleepTimeout`, `sleepTimeoutOpenGap`, `printToolType`, `fireLevel`, `globalOffsetZ`, `innerZOffset`, `secondOffsetFlag`, `zPositionCompensateSmall`, `ConveyorAngleCompensate`, `ConveyorURate`. |
+| `/device/config` | `DEVICE_CONFIG` | `type:"INFO"` — `info` carries a config-blob diff (one or more keys that just changed). Keys observed in the wild: `flameAlarm`, `beepEnable`, `gapCheck`, `gapCheckWithKey`, `machineLockCheck`, `autoSleepEnable`, `fillLightBrightFront`, `fillLightBrightBack`, `purifierTimeout`, `purifierSpeed`, `workingMode` (`NORMAL` = stationary / Stops-when-moved enabled, `HANDLE` = handheld override / disabled), `airAssistDelay`, `smokingFanDelay`, `airassistCut`, `airassistGrave`, `sleepTimeout`, `sleepTimeoutOpenGap`, `printToolType`, `fireLevel`, `globalOffsetZ`, `innerZOffset`, `secondOffsetFlag`, `zPositionCompensateSmall`, `ConveyorAngleCompensate`, `ConveyorURate`. |
 | `/device/info` | `MACHINE_INFO` | `type:"INFO"` — full machine identity blob (`deviceName`, `sn`, `mac`, `firmware.package_version`, `laserPower[]`, `hardware{}`). MetalFab returns an empty body for the `GET /v1/device/machineInfo`; the same payload arrives via this push a few hundred ms after the WS opens. Consumers should fall back to it when the GET is empty. |
 | `/peripheral/<type>` | varies | Per-peripheral push. Observed types: `drawer`, `water_pump`, `water_line`, `cooling_fan`, `smoking_fan`, `cpu_fan`, `uv_fire_sensor`, `ir_led`, `fill_light`, `digital_screen`, `ext_purifier`, `gyro`, `laser_head`, `ir_measure_distance`. |
 | `/drawer/status` | `DRAWER` | Drawer transitions. **Note:** the `type` strings invert the obvious meaning — firmware emits `type:"OPEN"` when the drawer is pushed back into the slot, `type:"CLOSE"` when it is pulled out (matches the `state:"on"` / `state:"off"` polarity of the polled `drawer` peripheral). |
@@ -2325,7 +2325,7 @@ JSON over HTTP. Verified against the per-model `index.js` bundles in the XCS APK
 | `/cnc/status` | GET | Status code mappable to M222 codes |
 | `/cnc/data?action=upload&zip=false&id=-1` | POST | Upload G-code |
 | `/processing/upload` | POST multipart | Upload processing G-code (P2 family) |
-| `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness |
+| `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness. **Note:** on F2 family V2 firmware this endpoint accepts the PUT but never persists the value — Studio writes brightness through `/v1/device/configs` with `fillLightBrightFront` / `fillLightBrightBack` keys instead. The peripheral endpoint is read-only on those models. |
 | `/peripheral/laser_head` | POST | `{action:"go_to",x,y,waitTime}` move head, `{action:"get_coord"}` query |
 | `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close-up, 2=global) — P2/P2S |
 | `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover open |
