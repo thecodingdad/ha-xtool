@@ -1125,18 +1125,30 @@ class RestProtocolM1Legacy(RestProtocol):
         value = round(level * 255 / BRIGHTNESS_HA_MAX)
         await self._get(f"/setfilllight?bright={int(value)}")
 
+    async def _cnc_cmd(self, cmd: str) -> None:
+        """Send a GRBL / M-code via ``GET /cnc/cmd?cmd=<cmd>``.
+
+        Studio bundle uses GET (default verb in route table) and
+        sends the raw command value — spaces in M-codes like
+        ``M110 S15`` need URL-encoding so aiohttp doesn't reject
+        them. ``$`` is RFC 3986 reserved-but-allowed; ``quote(...,
+        safe='$')`` keeps it literal which is what GRBL expects.
+        """
+        from urllib.parse import quote
+        await self._get(f"/cnc/cmd?cmd={quote(cmd, safe='$')}")
+
     async def home_xy(self) -> None:
-        """Home X+Y axes via M-code passthrough."""
-        await self._post("/cnc/cmd?cmd=$H")
+        """Home all axes via GRBL ``$H`` command."""
+        await self._cnc_cmd("$H")
 
     async def unlock_laser_head(self) -> None:
-        await self._post("/cnc/cmd?cmd=M110 S12")
+        await self._cnc_cmd("M110 S12")
 
     async def lock_laser_head(self) -> None:
-        await self._post("/cnc/cmd?cmd=M110 S15")
+        await self._cnc_cmd("M110 S15")
 
     async def clear_progress(self) -> None:
-        await self._post("/cnc/cmd?cmd=M88 S0")
+        await self._cnc_cmd("M88 S0")
 
     async def wake_from_sleep(self) -> None:
         await self._get("/sleepwakeup")
