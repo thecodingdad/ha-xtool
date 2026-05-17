@@ -175,12 +175,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
             unique_id=coordinator.serial_number,
         )
 
-    # One-time entity-id migration: re-stamp object-ids so they
-    # carry the serial-number prefix (matches the design intent in
-    # ``XtoolEntity._set_unique_id``). Stale entries from earlier
-    # setup runs where the serial was empty are removed so the new
-    # entity-ids can claim their clean slots without ``_2`` suffixes.
-    _migrate_entity_registry(hass, entry, coordinator)
+    # Entity-id migration was previously run on every setup. It
+    # ping-ponged friendly ↔ serial-prefixed names on each reload
+    # (Issue #4, v2.5.4 retest), and it crashed on accessory
+    # unique_ids that contain colons. HA's native suggested_object_id
+    # already produces the right shape on fresh registrations; the
+    # old re-stamp is no longer needed for new installs. Leaving the
+    # function around for now in case we need a clean migration pass
+    # in a future release, but it is no longer wired in.
+    # _migrate_entity_registry(hass, entry, coordinator)
 
     entry.runtime_data = coordinator
 
