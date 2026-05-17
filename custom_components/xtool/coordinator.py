@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from homeassistant.components.button import ButtonEntity
     from homeassistant.components.camera import Camera
     from homeassistant.components.event import EventEntity
+    from homeassistant.components.fan import FanEntity
     from homeassistant.components.light import LightEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
@@ -191,6 +192,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         return []
 
     def build_cameras(self) -> list["Camera"]:
+        return []
+
+    def build_fans(self) -> list["FanEntity"]:
         return []
 
     def build_selects(self) -> list["SelectEntity"]:

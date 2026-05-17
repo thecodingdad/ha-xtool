@@ -367,6 +367,11 @@
         "name": "Arbeitslicht hinten"
       }
     },
+    "fan": {
+      "accessory_ductfanv3_fan": {
+        "name": "Lüfter"
+      }
+    },
     "switch": {
       "buzzer": {
         "name": "Signalton"

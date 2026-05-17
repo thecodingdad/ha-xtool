@@ -367,6 +367,11 @@
         "name": "Fill light back"
       }
     },
+    "fan": {
+      "accessory_ductfanv3_fan": {
+        "name": "Fan"
+      }
+    },
     "switch": {
       "buzzer": {
         "name": "Buzzer"

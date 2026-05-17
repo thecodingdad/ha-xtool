@@ -186,6 +186,18 @@ _ENTITIES_V3 = (
         write_mcode=_fanv3_mode_speed_mcode,
         entity_category="config",
     ),
+    # HA-native Fan-domain wrapper around the same wire path —
+    # surfaces ``preset_modes`` + ``percentage`` for users who
+    # prefer the Fan card over a flat 7-option dropdown. Both
+    # entities co-exist; either UI drives the device through
+    # ``M9064 <mode><gear>``. Class lives in
+    # ``protocols/accessories/entities.py:_AccessoryFan`` —
+    # ``field="mode_speed"`` is just the skip-if-missing guard.
+    AccessoryEntitySpec(
+        "fan", "fan", field="mode_speed",
+        icon="mdi:fan",
+        entity_category="config",
+    ),
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
                         icon="mdi:bell-ring",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",

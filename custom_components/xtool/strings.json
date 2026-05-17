@@ -156,6 +156,9 @@
       "fill_light_front": { "name": "Fill light front" },
       "fill_light_back": { "name": "Fill light back" }
     },
+    "fan": {
+      "accessory_ductfanv3_fan": { "name": "Fan" }
+    },
     "switch": {
       "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },

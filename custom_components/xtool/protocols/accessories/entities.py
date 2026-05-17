@@ -31,6 +31,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.components.button import ButtonEntity
+from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorEntity
@@ -279,6 +280,109 @@ class _AccessorySelect(_AccessoryEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         await _dispatch_write(self, option)
+
+
+class _AccessoryFan(_AccessoryEntity, FanEntity):
+    """HA Fan-domain wrapper for the DuctFanV3 IF2 surface.
+
+    Sits alongside ``_AccessorySelect`` so users can pick either
+    UI. Maps the device's Manual/Auto + 0-4 gear layout onto HA's
+    ``preset_modes`` + ``percentage`` API. All writes route
+    through the same ``M9064 <mode><gear>`` path the Select uses.
+    """
+
+    _xtool_platform = "fan"
+    _attr_supported_features = (
+        FanEntityFeature.SET_SPEED
+        | FanEntityFeature.PRESET_MODE
+        | FanEntityFeature.TURN_ON
+        | FanEntityFeature.TURN_OFF
+    )
+    _attr_speed_count = 4
+    _attr_preset_modes = ["Auto Regular", "Auto Quiet"]
+
+    # M9064 wire shapes — kept in lockstep with ``duct_fan.py``'s
+    # ``_FANV3_OPTION_WIRE`` table. Defining them inline avoids a
+    # circular import (accessories/duct_fan.py imports this file).
+    _PRESET_WIRE: dict[str, str] = {
+        "Auto Regular": "B3",
+        "Auto Quiet":   "B1",
+    }
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Remember the last manual gear the user (or device) set,
+        # so ``turn_on`` without an explicit percentage restores
+        # the same speed. Initialised to gear 4 (max) as a sane
+        # default until we see a real manual write.
+        self._last_manual_gear: int = 4
+
+    def _accessory_fields(self) -> dict[str, Any] | None:
+        state = self._state
+        return state.fields if state is not None else None
+
+    @property
+    def is_on(self) -> bool | None:
+        f = self._accessory_fields()
+        if f is None:
+            return None
+        if (f.get("control_mode") or 0) >= 1:
+            return True
+        return (f.get("current_gear") or 0) > 0
+
+    @property
+    def percentage(self) -> int | None:
+        f = self._accessory_fields()
+        if f is None:
+            return None
+        if (f.get("control_mode") or 0) >= 1:
+            return None
+        gear = int(f.get("current_gear") or 0)
+        return int(round(gear * 25))
+
+    @property
+    def preset_mode(self) -> str | None:
+        f = self._accessory_fields()
+        if f is None or (f.get("control_mode") or 0) == 0:
+            return None
+        opt = f.get("mode_speed")
+        if opt in self._attr_preset_modes:
+            return str(opt)
+        return None
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        gear = max(0, min(4, int(round(percentage / 25))))
+        if gear > 0:
+            self._last_manual_gear = gear
+        from .base import MCODE_FAN_SET_GEAR
+        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A{gear}")
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        wire = self._PRESET_WIRE.get(preset_mode)
+        if wire is None:
+            return
+        from .base import MCODE_FAN_SET_GEAR
+        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
+
+    async def async_turn_on(
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if preset_mode is not None:
+            await self.async_set_preset_mode(preset_mode)
+            return
+        if percentage is not None:
+            await self.async_set_percentage(percentage)
+            return
+        gear = self._last_manual_gear or 4
+        from .base import MCODE_FAN_SET_GEAR
+        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A{gear}")
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        from .base import MCODE_FAN_SET_GEAR
+        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A0")
 
 
 class _AccessoryNumber(_AccessoryEntity, NumberEntity):
@@ -601,6 +705,7 @@ _PLATFORM_TO_CLASS: dict[str, type] = {
     "select": _AccessorySelect,
     "number": _AccessoryNumber,
     "button": _AccessoryButton,
+    "fan": _AccessoryFan,
 }
 
 
