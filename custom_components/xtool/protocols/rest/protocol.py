@@ -1059,35 +1059,65 @@ class RestProtocolM1Legacy(RestProtocol):
     PATH_JOB_STOP = "/cnc/data?action=stop"
 
     async def get_device_info(self) -> DeviceInfo:
-        """M1-shape identity stitch — Studio's M1 bundle composes the
-        deviceInfo dump from ``/system?action=*`` + ``/getmachinetype``.
-        Field names are best-effort from bundle inspection; tighten as
-        live captures land.
+        """M1-shape identity stitch.
+
+        Studio's M1 ``deviceInfo`` route stitches identity from
+        multiple endpoints with **mixed response shapes** — some
+        return bare text, some JSON. Mirroring the bundle's exact
+        per-endpoint reader so we surface the same DeviceInfo
+        Studio shows in its UI.
         """
-        name_q = await self._get_json("/system?action=get_dev_name")
+        # Plain-text replies — ``/system?action=get_dev_name``
+        # returns the device-name string directly,
+        # ``/getmachinetype`` the SN / machine-type code.
+        name = (await self._get("/system?action=get_dev_name")) or ""
+        name = name.strip().strip('"') or "xTool M1"
+        sn = (await self._get("/getmachinetype")) or ""
+        sn = sn.strip().strip('"')
+
+        # JSON replies — ``/getlaserpowertype`` returns
+        # ``{result:"<W>"}``, ``/system?action=version_v2``
+        # returns ``{package_version, master_h3_laserservice, …}``.
+        power_q = await self._get_json("/getlaserpowertype")
+        power = 0
+        if isinstance(power_q, dict):
+            try:
+                power = int(str(power_q.get("result", "0")).strip() or 0)
+            except (TypeError, ValueError):
+                pass
+
         version_q = await self._get_json("/system?action=version_v2")
-        mtype_q = await self._get_json("/getmachinetype")
-        _LOGGER.debug(
-            "REST M1 legacy stitch: name=%s version=%s machineType=%s",
-            name_q, version_q, mtype_q,
+        firmware = ""
+        if isinstance(version_q, dict):
+            firmware = str(
+                version_q.get("package_version")
+                or version_q.get("master_h3_laserservice")
+                or ""
+            )
+
+        net_q = await self._get_json(
+            f"/net?action=ifconfig&t={int(time.time() * 1000)}"
         )
-        if not any([name_q, version_q, mtype_q]):
+        mac = ""
+        if isinstance(net_q, dict):
+            mac = str(net_q.get("mac") or net_q.get("ethaddr") or "")
+
+        _LOGGER.debug(
+            "REST M1 legacy stitch: name=%r sn=%r power=%r firmware=%r mac=%r",
+            name, sn, power, firmware, mac,
+        )
+        if not (name or sn or firmware):
             return DeviceInfo()
-
-        def _pluck(d: dict | None, *keys: str) -> str:
-            if not d:
-                return ""
-            for k in keys:
-                v = d.get(k)
-                if v:
-                    return str(v)
-            return ""
-
+        _LOGGER.info(
+            "REST M1 identity resolved: %s (sn=%s, fw=%s)",
+            name, sn, firmware,
+        )
         return DeviceInfo(
-            serial_number=_pluck(mtype_q, "sn", "serialNumber"),
-            device_name=_pluck(name_q, "name", "deviceName", "data"),
-            main_firmware=_pluck(version_q, "version", "firmware", "data"),
-            mac_address="",
+            device_name=name,
+            serial_number=sn,
+            laser=LaserInfo(power_watts=power),
+            main_firmware=firmware,
+            mac_address=mac,
         )
 
     async def set_fill_light(self, level: int) -> None:
