@@ -174,6 +174,20 @@ class WSV2Coordinator(XtoolCoordinator):
         # helper used by ``_on_protocol_push`` too — see comment
         # there for why instant drain matters.
         self._drain_pending_accessory_pushes(state)
+        # Recompute DuctFanV3 ``mode_speed`` after each poll +
+        # push merge so the Select reflects the combined
+        # (mode_class, current_gear, auto_submode) tuple. The
+        # M9082 parser no longer fills this directly — the
+        # auto_submode hint can arrive separately from the set
+        # handler (HA write) or a push event.
+        accs_for_derive = state.connected_accessories or {}
+        for acc in accs_for_derive.values():
+            if acc.type_id != "DuctFanV3":
+                continue
+            from ..accessories.duct_fan import derive_fan_v3_mode_speed
+            derived = derive_fan_v3_mode_speed(acc.fields)
+            if derived is not None:
+                acc.fields["mode_speed"] = derived
         accs = state.connected_accessories or {}
         model = self.model
         for acc in accs.values():
@@ -279,6 +293,18 @@ class WSV2Coordinator(XtoolCoordinator):
                     if v is None:
                         continue
                     acc.fields[k] = v
+                # DuctFanV3's ``mode_speed`` is derived from the
+                # current (mode_class, current_gear, auto_submode)
+                # tuple — recompute after every push/poll merge so
+                # the Select / Fan entities surface the latest
+                # combined state without needing a follow-up poll.
+                if acc.type_id == "DuctFanV3":
+                    from ..accessories.duct_fan import (
+                        derive_fan_v3_mode_speed,
+                    )
+                    derived = derive_fan_v3_mode_speed(acc.fields)
+                    if derived is not None:
+                        acc.fields["mode_speed"] = derived
                 matched.append(f"{acc.type_id}:{acc.sn}")
             if matched:
                 _LOGGER.debug(

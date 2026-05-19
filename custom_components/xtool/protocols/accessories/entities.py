@@ -247,6 +247,18 @@ async def _dispatch_write(entity: _AccessoryEntity, value: Any) -> None:
         return
     mcode = write(value) if callable(write) else write
     await _passthrough_write(entity, mcode)
+    # For DuctFanV3's M9064 writes (gear / Auto sub-mode), cache
+    # the resulting state on the accessory's fields so the Select
+    # / Fan entities reflect the click instantly — the M9082 poll
+    # is ~600 ms behind, and Auto sub-mode (Quiet/Regular) is not
+    # recoverable from the poll at all.
+    if (
+        entity._definition.type_id == "DuctFanV3"
+        and isinstance(mcode, str)
+        and mcode.startswith("M9064 ")
+    ):
+        _remember_fan_v3_state(entity, mcode[len("M9064 "):])
+        entity.async_write_ha_state()
 
 
 class _AccessorySwitch(_AccessoryEntity, SwitchEntity):
@@ -280,6 +292,38 @@ class _AccessorySelect(_AccessoryEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         await _dispatch_write(self, option)
+
+
+def _remember_fan_v3_state(
+    entity: "_AccessoryEntity", mcode_wire: str,
+) -> None:
+    """Cache the just-written sub-mode / gear / mode_class onto the
+    accessory state so HA reflects the user's click instantly,
+    before the M9082 poll or push event lands.
+
+    ``mcode_wire`` is the trailing token after ``M9064 `` (e.g.
+    ``"B1"``, ``"B3"``, ``"A0"``, ``"A1"``..``"A4"``).
+    """
+    state = entity._state
+    if state is None:
+        return
+    fields = state.fields
+    if mcode_wire == "B1":
+        fields["auto_submode"] = "Auto Quiet"
+        fields["mode_class"] = 4
+        fields["mode_speed"] = "Auto Quiet"
+    elif mcode_wire == "B3":
+        fields["auto_submode"] = "Auto Regular"
+        fields["mode_class"] = 4
+        fields["mode_speed"] = "Auto Regular"
+    elif mcode_wire == "A0":
+        fields["mode_class"] = 2
+        fields["mode_speed"] = "Off"
+    elif mcode_wire in ("A1", "A2", "A3", "A4"):
+        gear = int(mcode_wire[1])
+        fields["mode_class"] = 3
+        fields["current_gear"] = gear
+        fields["mode_speed"] = str(gear)
 
 
 class _AccessoryFan(_AccessoryEntity, FanEntity):
@@ -326,16 +370,19 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         f = self._accessory_fields()
         if f is None:
             return None
-        if (f.get("control_mode") or 0) >= 1:
-            return True
-        return (f.get("current_gear") or 0) > 0
+        mode_class = f.get("mode_class")
+        if mode_class is None:
+            return None
+        # mode_class 3 = Manual running, 4 = Auto running. 2 = Off.
+        return mode_class in (3, 4)
 
     @property
     def percentage(self) -> int | None:
         f = self._accessory_fields()
         if f is None:
             return None
-        if (f.get("control_mode") or 0) >= 1:
+        mode_class = f.get("mode_class")
+        if mode_class != 3:
             return None
         gear = int(f.get("current_gear") or 0)
         return int(round(gear * 25))
@@ -343,9 +390,9 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
     @property
     def preset_mode(self) -> str | None:
         f = self._accessory_fields()
-        if f is None or (f.get("control_mode") or 0) == 0:
+        if f is None or f.get("mode_class") != 4:
             return None
-        opt = f.get("mode_speed")
+        opt = f.get("mode_speed") or f.get("auto_submode")
         if opt in self._attr_preset_modes:
             return str(opt)
         return None
@@ -355,7 +402,10 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         if gear > 0:
             self._last_manual_gear = gear
         from .base import MCODE_FAN_SET_GEAR
-        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A{gear}")
+        wire = f"A{gear}"
+        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
+        _remember_fan_v3_state(self, wire)
+        self.async_write_ha_state()
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         wire = self._PRESET_WIRE.get(preset_mode)
@@ -363,6 +413,8 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
             return
         from .base import MCODE_FAN_SET_GEAR
         await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
+        _remember_fan_v3_state(self, wire)
+        self.async_write_ha_state()
 
     async def async_turn_on(
         self,
@@ -378,11 +430,16 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
             return
         gear = self._last_manual_gear or 4
         from .base import MCODE_FAN_SET_GEAR
-        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A{gear}")
+        wire = f"A{gear}"
+        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
+        _remember_fan_v3_state(self, wire)
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         from .base import MCODE_FAN_SET_GEAR
         await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A0")
+        _remember_fan_v3_state(self, "A0")
+        self.async_write_ha_state()
 
 
 class _AccessoryNumber(_AccessoryEntity, NumberEntity):

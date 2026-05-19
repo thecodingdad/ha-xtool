@@ -313,19 +313,21 @@ def _parse_accessory_push(head: str, body: str) -> dict[str, Any]:
 
     # The push frames carry the *output* of an action, not the
     # info-poll reply, so the wire shape differs per M-code.
-    # ``M9064 A<n> B<n> C<n> D<n> S<n>`` (gear-set ack from
-    # DuctFan/DuctFanV3 — same parser as the ``M9082`` info reply
-    # because the field tokens overlap).
+    # ``M9064 A<n> B<n> C<n> D<n> S<n>`` is the DuctFanV3 push
+    # shape (5 positional tokens, no version anchor). DuctFan V1
+    # entities don't read the V3-only fields ``mode_class`` /
+    # ``current_gear``, so applying the V3 parser to a V1 push
+    # is harmless; if a future V1-IF2 capture shows divergent
+    # wire shape we can re-introduce a per-type dispatch here.
     if head == MCODE_FAN_SET_GEAR:
-        # Reuse DuctFan's parser — it picks ``A``, ``C``, ``Z``,
-        # and ``E:`` tokens out of arbitrary M-code bodies.
+        from ..accessories.duct_fan import parse_fan_v3_push
         try:
-            return ACCESSORY_DEFINITIONS["DuctFan"].parse_info(body)
+            return parse_fan_v3_push(body)
         except Exception:
             return {}
     if head == MCODE_FAN_INFO:
         try:
-            return ACCESSORY_DEFINITIONS["DuctFan"].parse_info(body)
+            return ACCESSORY_DEFINITIONS["DuctFanV3"].parse_info(body)
         except Exception:
             return {}
     if head in (MCODE_PURIFIER_INFO, MCODE_PURIFIER_SET_GEAR):

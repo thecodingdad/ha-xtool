@@ -309,6 +309,18 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
             product_sn = str(fields.get("sn") or "").strip()
             sn = product_sn or mac_sn
             key = f"{type_id}:{sn}"
+            # Carry forward sticky fields the poll reply can't
+            # populate but push events / set-handlers cache (e.g.
+            # DuctFanV3's ``auto_submode`` — Auto Regular vs Quiet
+            # is unrecoverable from the M9082 poll, only the
+            # write-side knows). Without this, every 5 s poll would
+            # wipe the cache and the Select would drift to the
+            # default Auto Regular.
+            prior = (state.connected_accessories or {}).get(key)
+            if prior is not None:
+                for sticky in ("auto_submode",):
+                    if sticky not in fields and sticky in prior.fields:
+                        fields[sticky] = prior.fields[sticky]
             _LOGGER.debug(
                 "Accessory %s detected: sn=%s (mac=%s) fields=%r",
                 type_id, sn, mac_sn, fields,

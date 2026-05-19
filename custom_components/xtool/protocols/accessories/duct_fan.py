@@ -66,83 +66,179 @@ _FANV3_OPTION_WIRE: dict[str, str] = {
     "4":            "A4",
 }
 
+# Reverse: write-mcode tail ↔ Select option, used by the set-handler
+# to update ``auto_submode`` so the Select reflects the new Auto
+# sub-mode immediately (M9082 poll can't distinguish Quiet/Regular).
+_FANV3_WIRE_TO_OPTION: dict[str, str] = {
+    wire: opt for opt, wire in _FANV3_OPTION_WIRE.items()
+}
+
 
 def _fanv3_option_from_state(
-    control_mode: int | None, current_gear: int | None,
+    mode_class: int | None,
+    current_gear: int | None,
+    auto_submode: str | None,
 ) -> str | None:
-    """Derive the Select option from the M9082 ``C`` + ``B`` tokens.
+    """Derive the Select option from the M9082 ``D`` + ``B`` tokens.
 
-    - ``C=0`` (Manual): ``Off`` (B=0) or ``str(B)`` (B=1-4)
-    - ``C≥1`` (Auto): map B=3 → Auto Regular, B=1 → Auto Quiet;
-      anything else falls back to ``Auto Regular`` as a safe default.
+    Live wire mapping (verified against if2_3.log v2.5.8 retest,
+    user-supplied 14-action click trace):
+
+    - ``D=2`` → ``"Off"`` (Manual Off; B carries last motor RPM)
+    - ``D=3`` → ``str(B)`` (Manual running, B = current gear 1-4)
+    - ``D=4`` → Auto running — sub-mode (Quiet vs Regular) is NOT
+      derivable from the M9082 poll alone; both yield the same
+      ``D=4``. Use the cached ``auto_submode`` updated by set-
+      handlers and M9064 push events; fall back to ``"Auto Regular"``.
     """
-    if control_mode is None:
+    if mode_class is None:
         return None
-    if control_mode == 0:
-        if current_gear is None:
+    if mode_class == 2:
+        return "Off"
+    if mode_class == 3:
+        if current_gear is None or not 1 <= current_gear <= 4:
             return None
-        if current_gear == 0:
-            return "Off"
-        if 1 <= current_gear <= 4:
-            return str(current_gear)
-        return None
-    # Auto modes
-    if current_gear == 1:
-        return "Auto Quiet"
-    return "Auto Regular"
+        return str(current_gear)
+    if mode_class == 4:
+        if auto_submode in ("Auto Regular", "Auto Quiet"):
+            return auto_submode
+        return "Auto Regular"
+    return None
+
+
+def _v3_tokens(text: str, include_a: bool = False) -> dict[str, int | None]:
+    """Split an M9064 / M9082 V3 wire body into letter-keyed ints.
+
+    The version anchor (``A<…dotted…>``) only appears in the M9082
+    reply, never in the M9064 push event. ``include_a=False``
+    (default) skips it; pass ``include_a=True`` for the push, where
+    ``A`` is a plain numeric gear echo.
+    """
+    keys = ("A", "B", "C", "D", "S", "Z") if include_a else (
+        "B", "C", "D", "S", "Z"
+    )
+    out: dict[str, int | None] = {k: None for k in keys}
+    for t in text.split():
+        if not t or t[0] not in out or t.startswith(t[0] + ":"):
+            continue
+        try:
+            out[t[0]] = int(t[1:])
+        except ValueError:
+            continue
+    return out
 
 
 def parse_fan_v3_info(text: str) -> dict[str, object]:
     """Decode ``DuctFanV3`` (IF2 2.0) ``M9082`` reply.
 
-    Wire shape on F2 Ultra UV firmware ``40.130.021.00.ht2``
-    (verified from a live capture):
+    Wire shape on F2 Ultra UV firmware ``40.130.021.00.ht2``:
 
-    ``A<version> B<gear> C<mode> D<target> E:"<sn>" S<buzzer> Z<connected>``
+    ``A<version> B<gear> C<c_state> D<mode_class> E:"<sn>" S<buzzer> Z<online>``
 
-    where:
+    Field semantics (verified live; v2.5.8 retest 14-action trace):
 
-    - ``A`` carries the full firmware-version string (contains
-      dots — must be parsed positionally, not via the generic
-      ``num()`` helper which would otherwise also match the
-      ``B02`` substring inside the version).
-    - ``B`` is the current motor speed (0-4 in Manual mode, an
-      empirical 0-100 PWM-like reading in Auto modes).
-    - ``C`` is the control mode (0 = Manual, ≥ 1 = Auto).
-    - ``D`` is the most recently selected manual gear / preset
-      anchor.
-    - ``S`` is the buzzer flag, ``Z`` the online flag.
+    - ``A`` is the firmware-version string. Contains dots — parsed
+      positionally as ``tokens[0]`` to avoid colliding with B/C/D
+      via a generic numeric scan.
+    - ``B`` = ``current_gear`` — motor speed indicator (Manual:
+      1-4 = gear; Manual Off: residual RPM of the previous gear;
+      Auto: ramping speed).
+    - ``C`` = ``c_state`` — alternates 2/3 across mode transitions;
+      semantically unclear, kept for debugging. Earlier revs
+      misnamed this ``control_mode``, which was wrong.
+    - ``D`` = ``mode_class`` — authoritative mode discriminator:
+      ``2`` = Manual Off, ``3`` = Manual running, ``4`` = Auto
+      running. Earlier revs misnamed this ``target_gear``, which
+      was wrong.
+    - ``S`` = buzzer-enable flag, ``Z`` = online flag.
+
+    ``mode_class=4`` (Auto) does NOT carry the Regular/Quiet
+    sub-mode in the poll reply. The set-handler caches it in
+    ``auto_submode`` on every write, and the M9064 push parser
+    refreshes it on external Studio sets.
     """
     tokens = text.split()
     version = None
     if tokens and tokens[0].startswith("A"):
         version = tokens[0][1:] or None
 
-    def _tok_int(prefix: str) -> int | None:
-        for t in tokens[1:]:
-            if t.startswith(prefix) and not t.startswith(prefix + ':'):
-                try:
-                    return int(t[len(prefix):])
-                except ValueError:
-                    return None
-        return None
-
-    current_gear = _tok_int("B")
-    control_mode = _tok_int("C")
-    target_gear = _tok_int("D")
-    buzzer = _tok_int("S")
-    connected = _tok_int("Z")
+    fields = _v3_tokens(" ".join(tokens[1:]))
+    current_gear = fields["B"]
+    c_state = fields["C"]
+    mode_class = fields["D"]
+    buzzer = fields["S"]
+    connected = fields["Z"]
     return {
         "version": version,
         "current_gear": current_gear,
-        "control_mode": control_mode,
-        "target_gear": target_gear,
+        "c_state": c_state,
+        "mode_class": mode_class,
         "buzzer_enable": bool(buzzer) if buzzer is not None else None,
         "connected": bool(connected) if connected is not None else None,
         "sn": quoted(text, "E:"),
-        # Combined mode + gear picker for the single-Select entity.
-        "mode_speed": _fanv3_option_from_state(control_mode, current_gear),
+        # mode_speed left ``None`` here — the V2 coordinator's
+        # accessory merge step calls ``derive_fan_v3_mode_speed``
+        # after merging push-cached ``auto_submode``, so the Select
+        # always reflects the latest sub-mode hint.
     }
+
+
+def parse_fan_v3_push(text: str) -> dict[str, object]:
+    """Decode a DuctFanV3 ``M9064`` ``/accessory/status`` push body.
+
+    Push wire shape (verified live, if2_3.log v2.5.8):
+    ``A<a> B<b> C<c> D<d> S<s>`` — same letter-positional convention
+    as the M9082 reply but without the firmware-version anchor.
+
+    Field semantics:
+
+    - ``D`` = ``mode_class`` (2 / 3 / 4) — authoritative; mirrors
+      the M9082 poll's ``D`` token. See ``parse_fan_v3_info``.
+    - ``A`` = target / last-manual gear echo. In Manual mode the
+      user-clicked gear (0 = Off, 1-4 = picked); in Auto mode
+      echoes the prior Manual gear. Used to flip ``current_gear``
+      immediately when ``D=3`` so the entity reacts without
+      waiting for the ~600 ms M9082 poll.
+    - ``B`` / ``C`` = transient state indicators; alternate 2/3
+      across mode transitions, semantically unclear, kept for
+      debug visibility.
+    - ``S`` = buzzer-enable mirror.
+
+    Auto sub-mode (Regular vs Quiet) is NOT recoverable from the
+    push — neither the poll nor the push reliably distinguishes
+    them. The set-handler caches sub-mode on every write_mcode
+    fire (see ``_fanv3_set_handler`` in entities.py); external
+    Studio sets will surface generically as "Auto" until the next
+    HA-side write or a fresh sub-mode hint arrives.
+    """
+    f = _v3_tokens(text, include_a=True)
+    out: dict[str, object] = {
+        "mode_class": f["D"],
+        "c_state": f["C"],
+    }
+    a_token = f["A"]
+    if f["D"] == 3 and a_token is not None and 0 <= a_token <= 4:
+        out["current_gear"] = a_token
+    if f["S"] is not None:
+        out["buzzer_enable"] = bool(f["S"])
+    return out
+
+
+def derive_fan_v3_mode_speed(
+    fields: dict[str, object],
+) -> str | None:
+    """Compute ``mode_speed`` from current accessory fields.
+
+    Called from the WS-V2 coordinator's accessory merge step after
+    every poll + push update, so the Select / Fan entity surface
+    the latest combined state. Reads ``mode_class``, ``current_gear``,
+    and the cached ``auto_submode``.
+    """
+    return _fanv3_option_from_state(
+        fields.get("mode_class"),  # type: ignore[arg-type]
+        fields.get("current_gear"),  # type: ignore[arg-type]
+        fields.get("auto_submode"),  # type: ignore[arg-type]
+    )
 
 
 def _fanv3_mode_speed_mcode(option: str) -> str | None:
