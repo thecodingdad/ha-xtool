@@ -56,7 +56,7 @@ from homeassistant.const import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
+from ...const import BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringBinarySensor
 from ...event import XtoolEvent
@@ -81,6 +81,8 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         translation_key="task_id",
         icon="mdi:identifier",
         entity_category=EntityCategory.DIAGNOSTIC,
+        # Studio-side UUID; rarely meaningful to a HA user — opt-in.
+        entity_registry_enabled_default=False,
         value_fn=lambda state, _: state.task_id or None,
     ),
     # ``task_name`` / loaded-G-code filename entity intentionally
@@ -389,16 +391,15 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         return getattr(d, self._state_attr, None)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        # No optimistic ``setattr`` — the ``/device/config`` push
+        # lands sub-second with the firmware's authoritative value
+        # and ``_on_protocol_push`` fans it into ``coordinator.data``.
+        # Optimistic writes racing the stale-then-fresh push sequence
+        # caused ON→OFF→ON bounces (Issue #4 v2.5.8 retest, Beep).
         await self.coordinator.protocol.set_config(self._config_key, True)
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, True)
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.protocol.set_config(self._config_key, False)
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, False)
-        self.async_write_ha_state()
 
 
 class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
@@ -443,20 +444,16 @@ class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
         return getattr(d, self._state_attr, None)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        # See _WSV2ConfigSwitch — push lands sub-second; optimistic
+        # writes race stale-then-fresh pushes and bounce the UI.
         await self.coordinator.protocol.set_config(
             self._config_key, self._on_value,
         )
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, True)
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.protocol.set_config(
             self._config_key, self._off_value,
         )
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, False)
-        self.async_write_ha_state()
 
 
 class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
@@ -654,10 +651,12 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
         d = self.coordinator.data
         if d is None:
             return None
-        device_value = getattr(d, self._state_attr) or 0
-        return int(
-            device_value * BRIGHTNESS_HA_MAX / max(BRIGHTNESS_DEVICE_MAX, 1)
-        )
+        # WS-V2 firmware exposes ``fillLightBright*`` on the 0-255
+        # scale natively — same range as HA's Light brightness. No
+        # scaling needed. (v2.5.8 normalized through a 0-100 device
+        # alias which halved the perceived brightness; Issue #4
+        # retest datapoints confirmed.)
+        return int(getattr(d, self._state_attr) or 0)
 
     def _other_value(self) -> int:
         d = self.coordinator.data
@@ -675,16 +674,13 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
     _other_config_key: str = ""     # e.g. "fillLightBrightBack"
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        ha_brightness = kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX)
-        device_brightness = int(
-            ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
-        )
+        ha_brightness = int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX))
         await self.coordinator.protocol.set_config(
-            self._config_key, device_brightness,
+            self._config_key, ha_brightness,
         )
         if self.coordinator.data is not None:
             setattr(
-                self.coordinator.data, self._state_attr, device_brightness,
+                self.coordinator.data, self._state_attr, ha_brightness,
             )
         self.async_write_ha_state()
 
@@ -717,19 +713,16 @@ class WSV2FillLight(_WSV2FillLightBase):
         self._set_unique_id("fill_light")
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        ha_brightness = kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX)
-        device_brightness = int(
-            ha_brightness * BRIGHTNESS_DEVICE_MAX / BRIGHTNESS_HA_MAX
+        ha_brightness = int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX))
+        await self.coordinator.protocol.set_config(
+            "fillLightBrightFront", ha_brightness,
         )
         await self.coordinator.protocol.set_config(
-            "fillLightBrightFront", device_brightness,
-        )
-        await self.coordinator.protocol.set_config(
-            "fillLightBrightBack", device_brightness,
+            "fillLightBrightBack", ha_brightness,
         )
         if self.coordinator.data is not None:
-            self.coordinator.data.fill_light_a = device_brightness
-            self.coordinator.data.fill_light_b = device_brightness
+            self.coordinator.data.fill_light_a = ha_brightness
+            self.coordinator.data.fill_light_b = ha_brightness
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -1214,11 +1207,12 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     model = coordinator.model
 
     # Config-backed toggles (always available on V2 firmware).
-    # NOTE: flameAlarm is an integer enum (0/1/2 = high/low/off) on
-    # firmware — the dedicated `WSV2FlameAlarmSelect` writes it
-    # correctly, so we deliberately do not surface it as a boolean
-    # switch (would send `true`/`false`, rejected by firmware with
-    # `code 1: failed`).
+    # ``flameAlarm`` is a plain boolean in Studio's
+    # ``handleControlFlame`` setter (``kv:{flameAlarm: t}`` where
+    # ``t`` is ``true``/``false``) — the firmware accepts bool
+    # writes and the ``_WSV2ConfigSwitch`` ``set_config`` retry
+    # logic re-sends as bool if int is rejected. Gated on
+    # ``has_flame_alarm`` so non-laser models stay clean.
     entities.extend([
         _WSV2ConfigSwitch(
             coordinator, "beep_enable", "beepEnable", "beep_enabled_v2",
@@ -1239,6 +1233,14 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # one is currently paired (laser-state values are merged via
         # ``WSV2Coordinator._poll_accessories``).
     ])
+    if model.has_flame_alarm:
+        entities.append(
+            _WSV2ConfigSwitch(
+                coordinator, "flame_alarm_v2", "flameAlarm",
+                "flame_alarm_v2_enabled",
+                "mdi:fire-alert",
+            )
+        )
     if model.has_machine_lock:
         # F2 Ultra UV (and the rest of the F-series V2 firmware) types
         # the Stops-when-moved enforcement field as the ``workingMode``
