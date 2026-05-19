@@ -381,6 +381,11 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         """
         if not self.data or not self.data.connected_accessories:
             return
+        # Sweep stale MAC-keyed accessory devices left over from the
+        # v2.5.7 unique-id swap (BT MAC → firmware product SN). Runs
+        # on every dispatch but is set-difference idempotent — a
+        # no-op once the registry is clean.
+        self._cleanup_orphan_accessory_devices()
         try:
             from .protocols.accessories.entities import (
                 build_accessory_entities,
@@ -417,6 +422,51 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
                 len(items), platform,
             )
             cb(items)
+
+    def _cleanup_orphan_accessory_devices(self) -> None:
+        """Remove HA device-registry entries for accessories that were
+        keyed by BT MAC before v2.5.7's swap to firmware product SN.
+
+        On upgrade the old MAC-keyed device entries persist alongside
+        the new SN-keyed ones — e.g. one IF2 with the full entity
+        set (SN-keyed, live) and a phantom IF2 with the leftover
+        ``time_the_inline_fan_continues_to_work_2`` / firmware
+        entities (MAC-keyed, orphan). Detected by a MAC-shaped tail
+        on the device identifier — if that key isn't in the live
+        ``connected_accessories`` map, the device is removed.
+        Idempotent: once cleared the regex never matches again.
+        """
+        import re
+        from homeassistant.helpers import device_registry as dr
+
+        if not self.data or not self.serial_number:
+            return
+        live_keys: set[str] = set(self.data.connected_accessories or {})
+        laser_sid = self.serial_number
+        dev_reg = dr.async_get(self.hass)
+        mac_tail = re.compile(
+            r":[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}$"
+        )
+        # Snapshot — async_remove_device mutates the registry's dict.
+        for device in list(dev_reg.devices.values()):
+            for domain, identifier in device.identifiers:
+                if domain != DOMAIN:
+                    continue
+                prefix = f"{laser_sid}:"
+                if not identifier.startswith(prefix):
+                    continue
+                if not mac_tail.search(identifier):
+                    continue
+                acc_key = identifier[len(prefix):]
+                if acc_key in live_keys:
+                    continue
+                _LOGGER.info(
+                    "Removing orphaned MAC-keyed accessory device %r — "
+                    "superseded by SN-keyed equivalent (v2.5.7+ unique-id swap)",
+                    identifier,
+                )
+                dev_reg.async_remove_device(device.id)
+                break
 
     # --- Event emission -----------------------------------------------------
 
