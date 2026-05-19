@@ -176,7 +176,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select) |
 | Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
 | Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
-| Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle |
+| Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |
 
 ### Number
 
