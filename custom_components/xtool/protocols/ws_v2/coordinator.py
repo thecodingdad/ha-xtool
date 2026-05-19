@@ -62,18 +62,38 @@ class WSV2Coordinator(XtoolCoordinator):
     def _on_protocol_push(self) -> None:
         """Fired by ``WSV2Protocol._dispatch_event`` after every push.
 
-        Drains the protocol's ``_latest`` cache into ``self.data`` and
-        emits a coordinator update so HA re-renders entities right
-        away. Read-only / non-pushed fields stay at their last poll
-        values; the next ``poll_state`` reconciles.
+        Drains the protocol's ``_latest`` cache (laser fields) AND
+        the ``_pending_accessory_updates`` queue (per-accessory
+        M-code pushes) into ``self.data`` and emits a coordinator
+        update so HA re-renders entities right away. Read-only /
+        non-pushed fields stay at their last poll values; the next
+        ``poll_state`` reconciles.
         """
         if self.data is None:
             return
         state = dataclass_replace(self.data)
         # Mypy: dynamic attribute is fine — only called for WSV2Protocol.
         self.protocol._apply_latest_to_state(state)  # type: ignore[attr-defined]
+        self._drain_pending_accessory_pushes(state)
         self.data = state
         self.async_set_updated_data(state)
+
+    def _drain_pending_accessory_pushes(
+        self, state: XtoolDeviceState,
+    ) -> None:
+        """Move any queued ``/accessory/status`` push updates from
+        the protocol into ``state.connected_accessories``.
+
+        Called from both ``_poll_accessories`` (so the 5 s poll
+        cycle merges) AND ``_on_protocol_push`` (so accessory
+        pushes refresh entities instantly, mirroring how laser
+        pushes already do post-v2.5.7).
+        """
+        pending = getattr(self.protocol, "_pending_accessory_updates", None)
+        if not pending:
+            return
+        updates, self.protocol._pending_accessory_updates = pending, []
+        self._merge_accessory_push_updates(state, updates)
 
     async def _async_update_data(self) -> XtoolDeviceState:
         # Always carry the last poll's field values forward so the
@@ -150,18 +170,10 @@ class WSV2Coordinator(XtoolCoordinator):
         wire surface.
         """
         await super()._poll_accessories(state)
-        # Drain any `/accessory/status` push updates queued by the
-        # protocol since the last poll. Each entry carries the
-        # leading M-code + a dict of parsed fields; we look up the
-        # matching accessory in ``connected_accessories`` (keyed by
-        # the M-code's owning AccessoryDefinition) and merge fields
-        # in. The push lands ahead of the next BT-walk so entity
-        # state refreshes between the (slower) 60 s passthrough
-        # polls.
-        pending = getattr(self.protocol, "_pending_accessory_updates", None)
-        if pending:
-            updates, self.protocol._pending_accessory_updates = pending, []
-            self._merge_accessory_push_updates(state, updates)
+        # Drain queued `/accessory/status` push updates. Shared
+        # helper used by ``_on_protocol_push`` too — see comment
+        # there for why instant drain matters.
+        self._drain_pending_accessory_pushes(state)
         accs = state.connected_accessories or {}
         model = self.model
         for acc in accs.values():
