@@ -705,7 +705,13 @@ class RestProtocol(XtoolProtocol):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                     if resp.status == 200:
-                        return await resp.text()
+                        text = await resp.text()
+                        self._offline_until = 0.0
+                        _LOGGER.debug("REST GET %s → %r", url, text)
+                        return text
+                    _LOGGER.debug(
+                        "REST GET %s → HTTP %d", url, resp.status,
+                    )
             self._offline_until = 0.0
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             self._mark_offline(url, err)
@@ -724,9 +730,13 @@ class RestProtocol(XtoolProtocol):
                         data = await resp.json(content_type=None)
                         # Some endpoints wrap in {"code": 0, "data": {...}}
                         self._offline_until = 0.0
+                        _LOGGER.debug("REST GET JSON %s → %r", url, data)
                         if isinstance(data, dict) and "data" in data:
                             return data["data"]
                         return data
+                    _LOGGER.debug(
+                        "REST GET JSON %s → HTTP %d", url, resp.status,
+                    )
             self._offline_until = 0.0
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             self._mark_offline(url, err)
@@ -746,7 +756,15 @@ class RestProtocol(XtoolProtocol):
                     timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as resp:
                     if resp.status == 200:
-                        return await resp.text()
+                        text = await resp.text()
+                        self._offline_until = 0.0
+                        _LOGGER.debug(
+                            "REST POST %s body=%r → %r", url, data, text,
+                        )
+                        return text
+                    _LOGGER.debug(
+                        "REST POST %s → HTTP %d", url, resp.status,
+                    )
             self._offline_until = 0.0
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             self._mark_offline(url, err)
@@ -768,9 +786,16 @@ class RestProtocol(XtoolProtocol):
                     if resp.status == 200:
                         result = await resp.json(content_type=None)
                         self._offline_until = 0.0
+                        _LOGGER.debug(
+                            "REST POST JSON %s body=%r → %r",
+                            url, data, result,
+                        )
                         if isinstance(result, dict) and "data" in result:
                             return result["data"]
                         return result
+                    _LOGGER.debug(
+                        "REST POST JSON %s → HTTP %d", url, resp.status,
+                    )
             self._offline_until = 0.0
         except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
             self._mark_offline(url, err)

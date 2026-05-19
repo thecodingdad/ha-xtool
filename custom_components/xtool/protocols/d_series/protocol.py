@@ -336,8 +336,14 @@ class DSeriesProtocol(XtoolProtocol):
                     url, timeout=aiohttp.ClientTimeout(total=timeout)
                 ) as resp:
                     if resp.status != 200:
+                        _LOGGER.debug(
+                            "D-series GET %s → HTTP %d", url, resp.status,
+                        )
                         return None
                     payload = await resp.json(content_type=None)
+                    _LOGGER.debug(
+                        "D-series GET %s → %r", url, payload,
+                    )
                     if isinstance(payload, dict) and payload.get("result") == "fail":
                         return None
                     return payload if isinstance(payload, dict) else None

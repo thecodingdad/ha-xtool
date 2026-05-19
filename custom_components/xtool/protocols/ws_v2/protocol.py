@@ -702,12 +702,21 @@ class WSV2Protocol(XtoolProtocol):
         code = response.get("code", 0) if isinstance(response, dict) else 0
         if code != 0:
             msg = response.get("msg") or response.get("message") or "unknown"
+            _LOGGER.debug(
+                "V2 RX %s %s txn=%d code=%d msg=%s",
+                method, url, transaction_id, code, msg,
+            )
             raise RuntimeError(
                 f"V2 {method} {url} returned code {code}: {msg}"
             )
-        return (
+        result = (
             response.get("data") if isinstance(response, dict) else {}
         ) or {}
+        _LOGGER.debug(
+            "V2 RX %s %s txn=%d data=%r",
+            method, url, transaction_id, result,
+        )
+        return result
 
     async def _send_first_message(self) -> None:
         """Studio's ``sendFirstMessageCode`` — must succeed before any
