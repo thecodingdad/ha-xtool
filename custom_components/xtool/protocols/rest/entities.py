@@ -424,6 +424,8 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         key="task_id",
         translation_key="task_id",
         icon="mdi:identifier",
+        # Studio-side UUID; rarely meaningful to a HA user — opt-in.
+        entity_registry_enabled_default=False,
         value_fn=lambda state, _: state.task_id or None,
     ),
     XtoolSensorEntityDescription(
