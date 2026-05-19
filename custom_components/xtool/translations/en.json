@@ -412,9 +412,6 @@
       "flame_alarm_v2": {
         "name": "Flame alarm"
       },
-      "beep_v2": {
-        "name": "Buzzer reminders"
-      },
       "gap_check": {
         "name": "Stops when enclosure opened"
       },
@@ -425,10 +422,11 @@
         "name": "Stops when moved"
       },
       "device_sleep": {
-        "name": "Device sleep"
+        "name": "Device sleep",
+        "description": "Powers the laser tube off when idle. May add a brief delay to the next job start."
       },
       "beep_enable": {
-        "name": "Beep"
+        "name": "Buzzer reminders"
       },
       "drawer_check": {
         "name": "Drawer check"

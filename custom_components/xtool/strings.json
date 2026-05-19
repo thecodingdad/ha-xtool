@@ -172,11 +172,14 @@
       "ir_led": { "name": "Red dot" },
       "digital_lock": { "name": "Cover lock" },
       "flame_alarm_v2": { "name": "Flame alarm" },
-      "beep_v2": { "name": "Buzzer reminders" },
+      "beep_enable": { "name": "Buzzer reminders" },
       "gap_check": { "name": "Stops when enclosure opened" },
       "machine_lock_check": { "name": "Lock check" },
       "stops_when_moved": { "name": "Stops when moved" },
-      "device_sleep": { "name": "Device sleep" }
+      "device_sleep": {
+        "name": "Device sleep",
+        "description": "Powers the laser tube off when idle. May add a brief delay to the next job start."
+      }
     },
     "number": {
       "air_assist_close_delay": { "name": "Air assist delay" },
