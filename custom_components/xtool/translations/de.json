@@ -422,8 +422,7 @@
         "name": "Stopp bei Bewegung"
       },
       "device_sleep": {
-        "name": "Geräte-Schlafmodus",
-        "description": "Wenn das Gerät nicht in den Schlafmodus wechselt, kann die Wärmeentwicklung die Leistung beeinträchtigen. Es wird empfohlen, die Schlaffunktion aktiviert zu lassen."
+        "name": "Geräte-Schlafmodus"
       },
       "beep_enable": {
         "name": "Signalton-Erinnerungen"

@@ -422,8 +422,7 @@
         "name": "Stops when moved"
       },
       "device_sleep": {
-        "name": "Device sleep",
-        "description": "If the device doesn't enter sleep mode, heat may affect performance. It is recommended to keep the sleep feature enabled."
+        "name": "Device sleep"
       },
       "beep_enable": {
         "name": "Buzzer reminders"
