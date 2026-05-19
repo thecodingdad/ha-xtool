@@ -1683,7 +1683,7 @@ filter reset) ride the same transport with a different M-code.
 
 | Accessory type | Info M-code | Reply tokens | Writers |
 |---|---|---|---|
-| `DuctFan` / `DuctFanV3` | `M9082` | DuctFan: ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"``. DuctFanV3 (IF2 2.0, observed on F2 Ultra UV firmware 40.130.021): ``A<firmware-version-string> B<gear> C<mode> D<target-gear> E:"<sn>" S<buzzer> Z<connected>`` — `A` carries the full dotted version (parse positionally, not via `num()`), `C` is `0` (Manual) or `≥1` (Auto), `B` is 0–4 in Manual mode but reports an empirical PWM-like 0–100 reading in Auto modes. | `M9064 <mode><gear>` (gear; mode = `A` Manual / `B` Auto), `M9079 S<0\|1>` (buzzer), `M9085 T<seconds>` (post-run timer), `M9258 A0` (reset filter) |
+| `DuctFan` / `DuctFanV3` | `M9082` | DuctFan: ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"``. DuctFanV3 (IF2 2.0, verified live on F2 Ultra UV firmware 40.130.021 against a 14-action Studio click trace): ``A<firmware-version-string> B<current_gear> C<c_state> D<mode_class> E:"<sn>" S<buzzer> Z<connected>``. **Field semantics:** `A` = full dotted firmware version (parse positionally, not via `num()`). `B` = current motor speed; in Manual mode this is the gear (1–4); in Manual Off it holds the residual RPM of the prior gear; in Auto modes it reports the ramping speed. `D` = mode_class — authoritative mode discriminator: `2` = Manual Off, `3` = Manual running, `4` = Auto running. `C` = transient state indicator (alternates 2/3 across mode transitions; semantics unclear, ignore unless debugging). `S` = buzzer flag, `Z` = online flag. **Caveat:** `D=4` does NOT distinguish Auto Regular from Auto Quiet — both yield the same poll. Clients tracking sub-mode have to remember it from their own writes (`M9064 B1` = Auto Quiet, `M9064 B3` = Auto Regular) or from M9064 push events; external Studio sets that did not transit the client's write path are unrecoverable from the M9082 reply. | `M9064 <mode><gear>` (mode = `A` Manual / `B` Auto; gear = 0-4 or Auto preset), `M9079 S<0\|1>` (buzzer), `M9085 T<seconds>` (post-run timer), `M9258 A0` (reset filter) |
 | `Purifier` / `BigPurifierV3` / `LargePurifier` | `M9033` | ``<v1> <v2> <gear> H<H> I<I> J<J> K<K> L<L> E:"<sn>"`` (H/I/J/K/L = pre / medium / carbon / dense_carbon / hepa filter % per AP2 datasheet) | `M9039 <gear>` (gear), `M9258 0` (reset filter) |
 | `BackpackPurifier` | `M9033` | `<vA> H<H> I<I> L<L> E:"<sn>"` (3-filter variant) | `M9258 <filterType>0` (reset filter) |
 | `AirPump` / `AirPumpV2` | `M9082` | reuses the DuctFan parser (sn + gear) | — |
@@ -1718,6 +1718,19 @@ info reply (same shape Studio polls via the F0F7 tunnel — see
 opcode (e.g. ``M9064`` → DuctFan / DuctFanV3, ``M9039`` →
 Purifier family) and merge the parsed fields into the paired
 accessory's cached state without waiting on the next BT walk.
+
+**DuctFanV3 ``M9064`` push body** uses the same letter-positional
+convention as the M9082 reply but **without** the firmware-version
+anchor: ``A<a> B<b> C<c> D<d> S<s>``. ``D`` carries the
+authoritative ``mode_class`` (same semantics as the poll: 2/3/4
+for Manual Off / Manual running / Auto running). ``A`` echoes the
+last manual gear (0 = Off, 1–4) and is useful as an immediate
+``current_gear`` hint when ``D=3`` so the consumer entity can
+flip before the next M9082 poll (~600 ms behind). ``B`` and ``C``
+are transient state indicators; their values do **not** reliably
+discriminate Auto Regular from Auto Quiet — sub-mode tracking
+needs to be done client-side from the writer path (`M9064 B1` =
+Quiet, `M9064 B3` = Regular). ``S`` mirrors the buzzer flag.
 
 ### `M9098` reply shape per family
 
