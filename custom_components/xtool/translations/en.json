@@ -423,7 +423,7 @@
       },
       "device_sleep": {
         "name": "Device sleep",
-        "description": "Powers the laser tube off when idle. May add a brief delay to the next job start."
+        "description": "If the device doesn't enter sleep mode, heat may affect performance. It is recommended to keep the sleep feature enabled."
       },
       "beep_enable": {
         "name": "Buzzer reminders"

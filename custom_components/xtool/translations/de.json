@@ -412,9 +412,6 @@
       "flame_alarm_v2": {
         "name": "Feueralarm"
       },
-      "beep_v2": {
-        "name": "Signalton-Erinnerungen"
-      },
       "gap_check": {
         "name": "Stopp bei geöffnetem Deckel"
       },
@@ -425,10 +422,11 @@
         "name": "Stopp bei Bewegung"
       },
       "device_sleep": {
-        "name": "Geräte-Schlafmodus"
+        "name": "Geräte-Schlafmodus",
+        "description": "Wenn das Gerät nicht in den Schlafmodus wechselt, kann die Wärmeentwicklung die Leistung beeinträchtigen. Es wird empfohlen, die Schlaffunktion aktiviert zu lassen."
       },
       "beep_enable": {
-        "name": "Signalton"
+        "name": "Signalton-Erinnerungen"
       },
       "drawer_check": {
         "name": "Schubladenprüfung"
