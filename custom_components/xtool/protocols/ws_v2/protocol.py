@@ -1747,6 +1747,13 @@ class WSV2Protocol(XtoolProtocol):
                 ptypes.append(("digital_screen", None))
             if getattr(model, "has_fill_light", False):
                 ptypes.append(("fill_light", None))
+            if getattr(model, "has_ir_led", False):
+                # Studio's ``controlRedLed`` reads the IR LED state
+                # via ``/v1/peripheral/param?type=ir_led`` with
+                # ``index:"global"``. Without this poll the Red dot
+                # entity defaults to off even when the firmware
+                # boots with it lit.
+                ptypes.append(("ir_led", {"index": "global"}))
             if getattr(model, "has_purifier_timeout", False) or \
                getattr(model, "has_air_assist_state", False):
                 ptypes.append(("ext_purifier", None))
@@ -1992,6 +1999,18 @@ class WSV2Protocol(XtoolProtocol):
             if isinstance(v, (int, float)):
                 state.purifier_speed = int(v)
                 state.purifier_on = state.purifier_speed > 0
+        elif ptype == "ir_led":
+            # Single LED array on V2 hardware (see ``has_ir_led``
+            # entity comment). Shape mirrors ``gap``: ``state="on"``
+            # / ``"off"``. Mirror to both ``ir_led_global`` and
+            # ``ir_led_close`` so future ``closeup`` index queries
+            # don't desync.
+            if is_on is True:
+                state.ir_led_global = True
+                state.ir_led_close = True
+            elif is_off is True:
+                state.ir_led_global = False
+                state.ir_led_close = False
         else:
             _LOGGER.debug(
                 "V2 peripheral/param type=%r returned shape we don't parse: "
