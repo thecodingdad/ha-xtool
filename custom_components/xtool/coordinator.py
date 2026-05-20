@@ -461,8 +461,15 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         )
         # Snapshot — async_remove_device mutates the registry's dict.
         for device in list(dev_reg.devices.values()):
-            for domain, identifier in device.identifiers:
-                if domain != DOMAIN:
+            for ident in device.identifiers:
+                # Defensive: third-party integrations occasionally
+                # register 3-tuple identifiers; unpack-by-index keeps
+                # the sweep narrow and skips anything that isn't a
+                # 2-tuple under our DOMAIN.
+                if not isinstance(ident, tuple) or len(ident) != 2:
+                    continue
+                domain, identifier = ident
+                if domain != DOMAIN or not isinstance(identifier, str):
                     continue
                 prefix = f"{laser_sid}:"
                 if not identifier.startswith(prefix):
