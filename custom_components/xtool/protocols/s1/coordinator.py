@@ -294,10 +294,19 @@ class S1Coordinator(XtoolCoordinator):
             if info.laser.power_watts:
                 self.laser = info.laser
             # Authoritative main firmware comes from M99 (in M2003 JSON).
+            # All three board firmwares must be guarded: when the
+            # device is powered off, M2003 still parses (returns an
+            # empty DeviceInfo) and would otherwise wipe the cached
+            # versions, leaving the Update entity with only Main
+            # populated → installed-vs-latest mismatch → spurious
+            # "update available" against a stale Main version pulled
+            # from the multi-package API call.
             if info.main_firmware:
                 self.firmware_version = info.main_firmware
-            self.laser_firmware = info.laser_firmware
-            self.wifi_firmware = info.wifi_firmware
+            if info.laser_firmware:
+                self.laser_firmware = info.laser_firmware
+            if info.wifi_firmware:
+                self.wifi_firmware = info.wifi_firmware
             if info.mac_address:
                 self.mac_address = info.mac_address
             if info.workspace_x:

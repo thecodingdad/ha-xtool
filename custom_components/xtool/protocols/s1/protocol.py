@@ -895,7 +895,16 @@ class S1Protocol(XtoolProtocol):
     # --- Firmware update overrides --------------------------------------
 
     async def get_firmware_versions(self, coordinator) -> dict[str, str]:
-        """Per-board (M99 / M1199 / M2099) versions for cloud-update check."""
+        """Per-board (M99 / M1199 / M2099) versions for cloud-update check.
+
+        Returns an empty dict unless ALL three boards have a cached
+        version on the coordinator. When the device is powered off
+        the M2003 poll only stitches in the boards that responded
+        (often just Main); sending an incomplete dict to the cloud
+        API would make it report stale latest-versions for the
+        missing boards and the Update entity would flip to "update
+        available" against a phantom mismatch.
+        """
         model = coordinator.model
         if not model.firmware_multi_package or not model.firmware_board_ids:
             return (
@@ -903,20 +912,14 @@ class S1Protocol(XtoolProtocol):
                 if coordinator.firmware_version else {}
             )
         ids = model.firmware_board_ids
-        fw_main = coordinator.firmware_version
-        if not fw_main:
+        sources = (
+            coordinator.firmware_version,
+            coordinator.laser_firmware,
+            coordinator.wifi_firmware,
+        )
+        if not all(sources[: len(ids)]):
             return {}
-        versions: dict[str, str] = {ids[0]: fw_main}
-        cache = getattr(coordinator, "_device_info_cache", None)
-        if cache is not None:
-            if len(ids) > 1 and cache.laser_firmware:
-                versions[ids[1]] = cache.laser_firmware
-            if len(ids) > 2 and cache.wifi_firmware:
-                versions[ids[2]] = cache.wifi_firmware
-        # Fill missing slots with the main version as a best-effort default.
-        for board_id in ids:
-            versions.setdefault(board_id, fw_main)
-        return versions
+        return {board_id: src for board_id, src in zip(ids, sources)}
 
     async def flash_firmware(
         self,
