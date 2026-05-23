@@ -10,7 +10,7 @@ This integration communicates directly with your xTool device over the local net
 > [!IMPORTANT] 
 > **This is an independent community project and is not affiliated with or endorsed by xTool. The integration is provided as-is, without any warranty.** Operating a laser cutter, engraver or fiber-laser welder through Home Assistant carries real-world safety risks (fire, blindness, burns, electrical hazards) — automated control over a high-power laser is *your* responsibility. Use at your own risk; see the full [Disclaimer](#disclaimer) for details.
 
-> [!INFO]
+> [!NOTE]
 > **The integration was developed and tested with an xTool S1.** Other protocols/models are supported based on reverse-engineering, but have not been tested with real hardware. Community feedback is welcome!
 
 ## Features
