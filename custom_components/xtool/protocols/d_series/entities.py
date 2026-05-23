@@ -262,6 +262,51 @@ class XtoolQuitLightBurn(XtoolEntity, ButtonEntity):
         await self.coordinator.protocol.quit_lightburn_mode()
 
 
+class XtoolDSeriesPauseJob(XtoolEntity, ButtonEntity):
+    """D-series: pause the current job (/cnc/data?action=pause)."""
+
+    _attr_translation_key = "pause_job"
+    _attr_icon = "mdi:pause"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("pause_job")
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.pause_job()
+        await self.coordinator.async_request_refresh()
+
+
+class XtoolDSeriesResumeJob(XtoolEntity, ButtonEntity):
+    """D-series: resume a paused job (/cnc/data?action=resume)."""
+
+    _attr_translation_key = "resume_job"
+    _attr_icon = "mdi:play"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("resume_job")
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.resume_job()
+        await self.coordinator.async_request_refresh()
+
+
+class XtoolDSeriesCancelJob(XtoolEntity, ButtonEntity):
+    """D-series: cancel the current job (/cnc/data?action=stop)."""
+
+    _attr_translation_key = "cancel_job"
+    _attr_icon = "mdi:stop"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("cancel_job")
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.cancel_job()
+        await self.coordinator.async_request_refresh()
+
+
 class XtoolRedCrossMode(XtoolEntity, SelectEntity):
     """D-series red-cross laser pointer mode (M97 S0/S1)."""
 
@@ -327,6 +372,14 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfTime.SECONDS,
         device_class=SensorDeviceClass.DURATION,
         value_fn=lambda state, _: state.task_time,
+    ),
+    XtoolSensorEntityDescription(
+        key="task_progress",
+        translation_key="task_progress",
+        icon="mdi:progress-clock",
+        native_unit_of_measurement="%",
+        suggested_display_precision=1,
+        value_fn=lambda state, _: state.task_progress,
     ),
     XtoolSensorEntityDescription(
         key="ip_address",
@@ -399,7 +452,12 @@ def build_d_series_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 
 def build_d_series_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
-    return [XtoolQuitLightBurn(coordinator)]
+    return [
+        XtoolDSeriesPauseJob(coordinator),
+        XtoolDSeriesResumeJob(coordinator),
+        XtoolDSeriesCancelJob(coordinator),
+        XtoolQuitLightBurn(coordinator),
+    ]
 
 
 def build_d_series_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:

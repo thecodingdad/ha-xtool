@@ -103,6 +103,7 @@
       "air_assist_level": { "name": "Air assist level" },
       "task_id": { "name": "Task ID" },
       "task_time": { "name": "Task time" },
+      "task_progress": { "name": "Task progress" },
       "working_time": { "name": "Working time" },
       "session_count": { "name": "Session count" },
       "standby_time": { "name": "Standby time" },

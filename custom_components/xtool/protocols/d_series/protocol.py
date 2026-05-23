@@ -279,6 +279,11 @@ class DSeriesProtocol(XtoolProtocol):
                 state.task_time = int(prog.get("working", 0)) // 1000
             except (TypeError, ValueError):
                 pass
+            try:
+                pct = float(prog.get("progress", 0) or 0)
+                state.task_progress = max(0.0, min(100.0, pct))
+            except (TypeError, ValueError):
+                pass
 
         # Peripheral status — sd card, safety flags, thresholds, flame sens.
         peri = await self._get_json(DSERIES_PATH_PERIPHERY_STATUS)
@@ -397,6 +402,21 @@ class DSeriesProtocol(XtoolProtocol):
     async def quit_lightburn_mode(self) -> None:
         """Send M112 N0 to leave LightBurn standby."""
         await self.send_command(CMD_QUIT_LIGHTBURN_MODE)
+
+    async def pause_job(self) -> None:
+        await self._get_json(
+            f"{DSERIES_PATH_CNC_DATA}?action={DSERIES_CNC_PAUSE}"
+        )
+
+    async def resume_job(self) -> None:
+        await self._get_json(
+            f"{DSERIES_PATH_CNC_DATA}?action={DSERIES_CNC_RESUME}"
+        )
+
+    async def cancel_job(self) -> None:
+        await self._get_json(
+            f"{DSERIES_PATH_CNC_DATA}?action={DSERIES_CNC_STOP}"
+        )
 
     async def set_redcross_mode(self, mode: int) -> None:
         """M97 S0 = cross-laser pointer, M97 S1 = low-light mode."""

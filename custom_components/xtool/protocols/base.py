@@ -277,6 +277,11 @@ class XtoolDeviceState:
     # Task
     task_id: str = ""
     task_time: int = 0
+    # 0.0–100.0 percent. Only populated by families whose progress
+    # endpoint actually returns a percent value (currently D-series
+    # ``/progress.progress``); other families leave it at ``None``
+    # so the sensor stays unavailable.
+    task_progress: float | None = None
 
     # Lifetime statistics (S1 M2008)
     working_seconds: int | None = None
