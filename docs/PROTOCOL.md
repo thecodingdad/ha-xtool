@@ -90,23 +90,64 @@ fire first, so a robust client mirrors both and dedupes by IP.
 ### Discovery V1 (legacy plain UDP, port 20000)
 
 V1-firmware devices (S1, D-series, plus any F1/M1/P2/F2 still on V1
-firmware) listen on UDP/20000 for a JSON probe.
+firmware) listen on UDP/20000 for a JSON probe. Studio's
+`LegacyMulticastServer` class is the reference implementation.
 
-Request (broadcast to `255.255.255.255:20000`):
+#### Targets
+
+- Multicast: `224.0.1.77:20000` (`MULTICAST_ADDRESS` in Studio's
+  source — primary path).
+- Broadcast: `255.255.255.255:20000` (fallback / supplementary; some
+  network setups drop multicast).
+- Unicast: `<targetIP>:20000` (manual-IP probe — Studio's
+  `sendUnicastMessage` helper).
+
+#### Request
+
+Studio's `createDiscoveryMessage` produces the full envelope:
 
 ```json
-{"requestId": <random_int>}
+{
+  "ip":        "192.168.1.42",
+  "port":      54218,
+  "requestId": 1735063457123
+}
 ```
 
-Reply (unicast back from device):
+- `ip` is the host machine's own LAN address (useful to the device
+  if it ever has to send something other than the unicast reply).
+- `port` is the local UDP socket's ephemeral port (the device
+  echoes the reply back to it).
+- `requestId` is a millisecond-precision timestamp; the response
+  must echo the same value so the client can correlate.
+
+A bare `{"requestId": <n>}` also works — older firmware revisions
+ignore `ip`/`port` and reply to the UDP source address regardless.
+
+#### Reply (unicast back from device)
 
 ```json
-{"requestId": <echo>, "ip": "192.168.x.x", "name": "xTool S1", "version": "V40.32.013.2224.01"}
+{
+  "requestId": 1735063457123,
+  "ip":        "192.168.1.10",
+  "name":      "xTool S1",
+  "version":   "V40.32.013.2224.01"
+}
 ```
 
-Studio also multicasts the probe to `224.0.1.77:20000` for V1 — both
-target choices reach the same firmware; a local broadcast already
-covers the LAN scope.
+#### Retry pattern
+
+Studio repeats the probe **3 times with a 3 s delay between
+attempts** (`CONFIG.UDP_COUNT=3, UDP_DELAY=3000`). The total
+discovery window is ~9 s. A `TCP_TIMEOUT=1500` is used by the
+parallel HTTP-version sanity check on the unicast manual-IP flow.
+
+#### Response correlation
+
+The client maintains a set of in-flight `requestId` values and
+ignores replies whose `requestId` is not in the set. This lets the
+4-way multi-fire (broadcast + multicast + unicast retries) coexist
+without double-counting devices.
 
 ### Discovery V2 (encrypted multicast)
 
@@ -743,6 +784,34 @@ not exposed.**
 
 D-series flame sensitivity values are `1=high`, `2=low`, `3=off` —
 inverse of the S1 mapping (`0/1/2`).
+
+The `status` string is **not consumed by xTool Studio** —
+`LegacyMulticastServer` and the `deviceInfo` composite probe both
+strip it. Only known value in the wild is `"normal"`; semantics
+unverified. Treat as an opaque diagnostic field.
+
+`/progress` JSON shape:
+
+```json
+{
+  "progress": 100.00,
+  "working":  56197,
+  "line":     0
+}
+```
+
+- `progress` is a 0.0–100.0 percent (float).
+- `working` is the elapsed time since the current job started, in
+  milliseconds.
+- `line` is the current G-code line index being executed.
+
+All three are populated only while a job is running; the endpoint
+still returns the JSON envelope when idle but the values reflect
+the last completed job.
+
+`/cnc/data?action=pause|resume|stop` returns `{"result":"ok"}` on
+success, `{"result":"fail"}` if the action is not valid in the
+current state (e.g. `pause` while idle).
 
 #### Additional endpoints (full list from D1 Pro firmware binary)
 
