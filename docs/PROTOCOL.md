@@ -36,7 +36,7 @@ USB, `needConnectAlive: false`, no heartbeat).
 | `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
 | `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
 | `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
-| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss) |
+| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23 | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
 
 V1- and V2-firmware lines for the same hardware coexist — discovery +
 the port-28900 probe pick the right family at config-flow time. See
@@ -2122,6 +2122,352 @@ The Linux-based REST family shares the same `laserservice` HTTP daemon, but each
 The REST `/cnc/status` JSON uses different codes than the S1's M222.
 Both can be normalised onto the same status set with a small lookup
 table (see `_REST_STATUS_MAP` in the bundles).
+
+
+---
+
+## M2 protocol
+
+xTool M2 (model_id `JS002`, added in Studio v1.7.23) is a
+**WS-V2-family device with a new URL surface**. The transport is
+identical to the rest of the [WS-V2 protocol](#ws-v2-protocol-tls-websocket-rpc--push)
+family — TLS WebSocket on port 28900 with the same multi-channel
+framework (`function=instruction` / `function=file_stream` /
+`function=media_stream`) and the same request/response frame shape
+(`{type, method, url, params, data, transactionId}`). Studio's
+`xcs-extension` manifest is explicit:
+
+```json
+{"name":"M2","deviceCode":"JS002","machineType":"LASER",
+ "protocolConfig":{"versionConfigs":[{"protocolVersion":"V2",
+ "connectConfigs":{"USB":{"channelType":"socket","machineVersion":"V2"},
+                   "WIFI":{"channelType":"socket","machineVersion":"V2"}}}]}}
+```
+
+What differs is the URL set carried inside the V2 instruction
+frames — M2 introduces the new `/v1/platform/*` and `/v1/project/*`
+namespaces that replace the F-family's `/v1/device/machine_information`
++ `/v1/device/runtime-infos` + `/v1/peripheral/param` umbrellas
+with per-peripheral / per-tool routes. The on-device firmware
+also binds a local HTTP server on port 8080 (for cross-service
+IPC and a diagnostics surface) — that is **not** what Studio uses
+over the network. See the [debug-service surface](#debug-service-surface-low-level--diagnostics)
+table for the routes that ARE plain HTTP on the device.
+
+The device runs an Allwinner Tina Linux build on an MR536 SoC and
+ships **four controllers** in a single OTA bundle (the cloud
+`xTool-m2-firmware` package decomposes on-device into `MR536` main
++ dedicated `InkjetController` / `LaserController` /
+`MotionController` blobs). M2 is a multi-tool: laser head + inkjet
+head, switchable via the debug-service `work-head/select` endpoint.
+
+### Ports
+
+| Port | Purpose |
+|---|---|
+| **28900** | **Primary control transport — TLS WSS multi-channel framework, same as the existing WS-V2 family.** Carries the instruction / file_stream / media_stream channels. All `/v1/platform/*` + `/v1/project/*` request frames + push events ride this socket. |
+| 8089 | Live camera stream only — `ws://<ip>:8089/v1/wsplayer?stream=<cameraId>`, h264-raw or mpeg2-ts. Separate from the V2 multi-channel framework. |
+| 8080 | Local HTTP server bound by the firmware's `app-controller` / `host-service` / `debug-service` for internal IPC and a diagnostics surface. Studio does **not** use HTTP/8080 over the network in the normal control flow; see [debug-service surface](#debug-service-surface-low-level--diagnostics) below for the routes that ARE plain HTTP. |
+| 20000 | V1 plain-JSON UDP discovery (same `{ip, port, requestId}` envelope as the rest of the V1 family — see [Discovery](#discovery-v1-legacy-plain-udp-port-20000)) |
+
+### Transport — same framework as WS-V2 family
+
+M2 uses identical request-frame shape to the existing WS-V2
+family (see [Frame parsing](#frame-parsing) under the WS-V2
+protocol section):
+
+```json
+{
+  "type":          "request",
+  "method":        "GET" | "POST" | "PUT" | "NOTIFY" | ...,
+  "url":           "/v1/platform/device/state",
+  "params":        { "...": "..." },
+  "data":          { "...": "..." },
+  "transactionId": <uint>
+}
+```
+
+The **`url` field is the routing key** carried inside the frame. The 
+**`method` field is the frame's directive** (the directive happens to 
+look like an HTTP verb because Studio's apis array was originally an 
+axios config, but the transport is always the same WSS multi-channel 
+WebSocket).
+
+**Push events** arrive on the instruction channel as
+`{type:"request", method:"NOTIFY", url:"/v1/platform/...", data:{...}}`
+— the URL identifies the event class. Studio's bundle collects
+these into a fixed URL → event-name map (the `m5` constant) and
+dispatches them to handler classes via `deviceMessageService.handleMessage`.
+
+Camera live video is the one exception: it rides its own dedicated
+WebSocket on port 8089 (`ws://<ip>:8089/v1/wsplayer?stream=<id>`,
+h264-raw or mpeg2-ts).
+
+### On-device service architecture
+
+The HTTP server is composed by three eCAL-backed C++ services
+(verified against strings in the rootfs `app` partition) that all
+bind the same port and route by URL prefix:
+
+- **`app-controller`** — handles `/v1/platform/device/*` (Studio's
+  high-level UI surface) plus the push-event channels for
+  accessory state, go-home, move, measure, alarm, vibration, and
+  key/event reports.
+- **`host-service`** — owns the `/v1/project/*` business logic
+  (peripheral control, laser-head, inkjet, measure, process,
+  calibration, accessories).
+- **`debug-service`** — separate HTTP server with a low-level
+  control + diagnostics surface that Studio does not normally
+  use; see the table below.
+
+Internal IPC between services uses **eCAL** (Continental's
+open-source pub/sub framework) with protobuf payloads — that's
+why the routes don't appear in any single binary's string table
+but spread across `app-controller`, `host-service`, and
+`debug-service`.
+
+#### debug-service surface (low-level / diagnostics)
+
+These routes are exposed by `debug-service` only. They mirror or
+shortcut the platform / project surfaces above and exist mainly
+for engineering / diagnostics — Studio does not call them in the
+normal control flow. Useful as an escape hatch when the platform
+routes misbehave or when reverse-engineering specific behaviour.
+
+| Path | Purpose |
+|---|---|
+| `/v1/api/gcode` | Send raw G-code to the controller |
+| `/v1/api/mcode` | Send raw M-code to the controller |
+| `/v1/api/state` | Raw firmware-side state dump |
+| `/v1/camera/capture` | Direct camera capture (bypasses `/v1/platform/camera/snap`) |
+| `/v1/camera/{status,restart,restart-count,unlimited-retry}` | Camera-service lifecycle controls |
+| `/v1/camera/flame-status` | Raw flame-detection state from camera-service |
+| `/v1/device/{air-pump,buzzer,fill-light,lid,bottom-plate,smoke-fan,ntc,vcc24v,button,height-adjust,dev_ctrl,usb-devices}` | Direct per-peripheral access — same hardware the `/v1/project/peripheral/*` and `/v1/project/laser-head/*` routes expose, without the higher-level state machine |
+| `/v1/device/work-head/{connect,exist,info,power,select,valid}` | Tool-head probe + power / select (used internally when switching between laser and inkjet) |
+| `/v1/project/process/{start,pause,resume,cancel,parameter}` | Job control duplicates of the `/v1/project/device/control` actions |
+| `/v1/project/config/{get,set}` | Raw config-blob access |
+| `/v1/project/{ble-control,ble-status,get-ble-name}` | Dongle BLE controls |
+| `/v1/project/inkjet/{log,sn,upgrade,uncap-pos,usb-read,usb-write}` | Inkjet diagnostics + USB read/write to the ink-head MCU |
+| `/v1/project/{curve,debug_test,delete_all_shaper_data,get_cur_coordinate,get_measure_result,get_running_status,get-tdm-error,get_vibration_result,measure,move,pack-logs,vibration}` | Manual measurement / move / debug helpers |
+| `/v1/project/{alarm,alarm/records}` | Alarm history (alarm push lives on `/v1/platform/device/alarm`) |
+| `/v1/project/wifi/detail` | Detailed Wi-Fi connection info (subset on `/v1/platform/wifi/connected-info`) |
+
+### Instruction-channel routing reference (Studio bundle)
+
+Per-route directive (`method`), params, request body and response
+shape verified against Studio's M2 (JS002) bundle apis array.
+Studio's ``transformRequest`` / ``transformResult`` accessors are
+shown verbatim where they exist.
+
+> **Reminder:** these are NOT HTTP requests. Each row describes
+> a frame Studio sends on the V2 instruction channel (the TLS
+> WebSocket on port 28900). The **Frame method** column is the
+> directive carried in the frame's ``method`` field — `GET`,
+> `POST`, `PUT` etc. tell the device what to do, the URL is the
+> routing key inside ``url``, params / body land in ``params``
+> / ``data``. The response is the payload of the matching
+> ``transactionId`` reply frame.
+>
+> **Frame method `(push event)`** marks URLs that the device
+> emits unsolicited (`method:"NOTIFY"` frames keyed by URL).
+> Studio collects them into a fixed URL → event-name map (see
+> [Push events](#push-events-url-keyed-event-channel) at the end
+> of this section).
+
+#### Device info / config
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/platform/device/machine-info` | GET | — | — | `{firmware:{version,…}, sn, …}` — Studio's ``deviceInfo`` adds `version=firmware.version`, `snCode=sn` and an `accessoriesFirmware:[{contentId:"xTool-m2-firmware", contentVersion:version}]` block on top |
+| `/v1/platform/device/machine-info/name` | PUT | — | new device name string | OK |
+| `/v1/platform/device/capabilities` | GET | — | — | feature-flags blob (identity passthrough) |
+| `/v1/platform/device/config` | GET | optional `{action:"START"}`, optional `data:{kv:[<keys>]}` selector | — | `{fillLightBrightness,smokeFanTimeout,smokeFanRunningSpeed,smokeFanCleanTime,backPlaneCleanTime,fillLightCleanTime,cameraCleanTime,…}` |
+| `/v1/platform/device/config` | PUT | — | per-key body, e.g. `{smokeFanTimeout:<n>}` | OK |
+| `/v1/platform/device/alarm` | GET / (push event) | — | — | alarm list; also fires as `ALARM_INFO` push |
+
+#### Status / processing
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/platform/device/state` | (push event) | — | — | `DEVICE_STATE` push event — `{curMode:{mode,desc,subMode,taskId}}`. M2 reuses the WS-V2 `P_*` mode enum (`P_IDLE`, `P_PROCESSING`, `P_FRAMING`, `P_PAUSE`, `P_FINISH`, …) |
+| `/v1/platform/device/process` | (push event) | — | — | `PROCESS_EVENT` push — job-lifecycle deltas |
+| `/v1/platform/device/state/sync` | POST | optional `{name:"far"}` | — | full state snapshot |
+| `/v1/project/running/status` | GET | — | — | running-state blob (used by ``getRunningStatus``) |
+| `/v1/project/device/control` | POST | `?action=START\|PAUSE\|RESUME\|CANCEL` | — | OK. Studio's ``startProcess`` / ``pausePrint`` / ``resumePrint`` / ``cancelPrint`` all POST here |
+| `/v1/processing/state` | PUT | `?action=stop` | — | OK. **Framing stop only** (``stopWalkBorder``) — do not use to cancel a real job |
+| `/v1/processing/upload/config` | PUT | `{filetype:"xf",autoStart:0,taskId}` (form/multipart paired with the gcode upload) | gcode blob | OK |
+| `/v1/processing/frame/replace` | PUT | — | `{loopPrint:1}` | OK |
+
+#### Camera
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/platform/camera/snap` | POST | `?name=far\|near\|side` | — | JPEG body. Channels: `far` = global / overview, `near` = local / close-up, `side` = side view |
+| `/v1/platform/camera/list` | GET | — | — | list of available cameras |
+| `/v1/platform/camera/live` | POST | — | live-stream control | OK — paired with the WS player on port 8089 |
+| `/v1/platform/camera/calibration/params` | GET / POST | — | calibration params | — |
+| `/v1/camera/fire-record` | GET | — | — | flame-record JPEG (`responseType:blob`) |
+| `/v1/camera/fire-record` | POST | — | — | reset / clear the flame record |
+| `ws://<ip>:8089/v1/wsplayer?stream=<cameraId>` | WS | — | — | live h264-raw or mpeg2-ts video (`config.version=V2` → h264-raw, otherwise mpeg2-ts) |
+
+#### Peripherals
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/project/peripheral/lid` | GET / (push event) | — | — | `{state:"on"\|"off"}`. Also fires as `LID_STATE` push |
+| `/v1/project/peripheral/pallet` | GET | — | — | `{state:…}` — Studio's ``transformResult`` returns `e.state` |
+| `/v1/project/peripheral/fill-light` | GET | `?name=far\|near\|left\|right` | — | brightness blob (four-channel light) |
+| `/v1/project/peripheral/fill-light` | PUT | `?name=far\|near\|left\|right` | `{brightness:<n>}` | OK |
+| `/v1/project/peripheral/airPump-control` | POST | — | speed / control body | OK — Studio's ``setAirPumpSpeed`` |
+| `/v1/project/peripheral/smokeFan-control` | POST | — | speed / control body | OK — Studio's ``setSmokeFanSpeed`` |
+
+#### Laser head / motion
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/project/laser-head/info` | GET / (push event) | — | — | `{type, power, …}`. Also fires as `HEAD_CHANGE` push when the user swaps tool heads |
+| `/v1/project/laser-head/get-temp` | GET | — | — | laser-head temperature blob |
+| `/v1/project/laser-head/fan-control` | POST | — | speed body | OK |
+| `/v1/project/laser-head/cleaning` | POST | — | `{setZero:false\|true}` | OK |
+| `/v1/project/laser-head/touch-cleaning` | POST | — | `{setZero:false\|true}` | OK |
+| `/v1/project/laser-head/weak-laser` | POST | — | enable / power body | OK |
+| `/v1/project/ntc/temperature` | GET | — | — | `{topTemp,fanTemp}` (Studio's ``getNtcTemperature`` slices these two only) |
+| `/v1/project/device/coordinate` | GET | — | — | `{x,y,z}` — laser-head position |
+| `/v1/project/device/control` | POST | `?action=START\|PAUSE\|RESUME\|CANCEL` | — | (see Status section) |
+| `/v1/project/control/home` | POST | `?axis=ALL\|Z` | — | OK. Studio's ``resetLaserHead`` / ``resetLaserHeadZAxis`` |
+| `/v1/project/control/absolute-move` | POST | — | `{coor:{x,y,z}, speed:18000}` | OK |
+| `/v1/project/control/relative-move` | POST | — | `{dx,dy,dz, speed}` | OK |
+| `/v1/project/control/automation` | POST | — | automation start body | OK |
+| `/v1/project/control/laser-measure` | POST | — | laser-measure control | OK |
+| `/v1/project/device/go-home/start` | (push event) | — | — | `RESET_START` push — homing began |
+| `/v1/project/device/go-home/result` | (push event) | — | — | `RESET_FINISH` push — homing done |
+| `/v1/project/device/move/finish` | (push event) | — | — | `GOTO_FINISH` push — absolute-move completed |
+| `/v1/project/device/measure` | (push event) | — | — | `MEASURE_DONE` push — measurement finished |
+| `/v1/project/device/reset` | POST | — | reset target | OK |
+
+#### Measurement / calibration
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/project/measure/control` | POST | — | `{enable:true\|false}` | OK |
+| `/v1/project/measure/execute` | POST | — | execute body | OK |
+| `/v1/project/calibration/control` | POST | — | `{enable:true\|false}` | OK |
+| `/v1/project/calibration/gyro` | POST / (push event) | — | start/stop body | OK; also fires as a push |
+| `/v1/project/calibration/vibration` | POST / (push event) | — | start body | OK |
+| `/v1/project/vibration/result` | GET / (push event) | — | — | calibration result. Also fires as `VIBRATION_RESULT` push |
+
+#### Inkjet
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/project/inkjet/info` | GET | — | — | inkjet head identity blob |
+| `/v1/project/inkjet/cap` | POST | — | cap-on body | OK |
+| `/v1/project/inkjet/cap-status` | GET | — | — | `{capped:bool}` |
+| `/v1/project/inkjet/clean` | POST | — | clean cycle body | OK |
+| `/v1/project/inkjet/params` | GET / PUT | — | nozzle params | params blob |
+| `/v1/project/inkjet/offset` | GET / PUT | — | offset body | offset blob |
+| `/v1/project/inkjet/ink-volume` | GET | — | — | ink-level percentages per cartridge |
+| `/v1/project/inkjet/ink-status` | GET | — | — | per-channel ink status |
+| `/v1/project/inkjet/uncap` | POST | — | uncap body | OK |
+| (debug-service only) `/v1/project/inkjet/{log,sn,upgrade,uncap-pos,usb-read,usb-write}` | GET / POST | — | debug-channel routes | — |
+
+#### Accessories
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/platform/accessories/list` | GET | — | — | `{<dev_id>:{status,version:{app_version,boot_version},bootloader_status},…}` — Studio's `getAccessoriesListViaV2Platform` walks the dict |
+| `/v1/platform/accessories/control` | POST | `?id=<dev_id>` | M-code passthrough body | F0F7-framed accessory reply (same as WS-V2 `/v1/parts/control`) |
+| `/v1/platform/accessories/upgrade` | POST | — | firmware blob | OK — Studio's `startAccessoryFirmwareUpgrade` |
+| `/v1/project/accessory/list` | GET | — | — | paired accessory list |
+| `/v1/project/accessory/status` | (push event) | — | — | `ACCESSORY_STATUS` push |
+| `/v1/project/accessory/message` | (push event) | — | — | accessory M-code push |
+| `/v1/project/accessory/message_update` | (push event) | — | — | accessory state-update push |
+| `/v1/project/accessory/link_status` | GET / (push event) | — | — | `{linked:bool}` per accessory |
+| `/v1/project/accessory/upgrade-progress` | GET / (push event) | — | — | `{curr_progress,total_progress}` |
+
+#### Wi-Fi / system
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/platform/wifi/ap-list` | GET | — | — | available SSIDs |
+| `/v1/platform/wifi/credentials` | PUT | — | `{ssid,passwd}` (Studio's `configWifi`) | OK |
+| `/v1/platform/wifi/connect-result` | (push event) | — | — | `WIFI_CONNECT_RESULT` push |
+| `/v1/platform/wifi/connected-info` | GET | — | — | current connection info |
+| `/v1/platform/log` | POST | — | timeout 90 s | log archive |
+| `/v1/log/tar` | PUT | — | — | log packaging trigger |
+| `/v1/platform/device/upgrade` | POST | — | `{filename:"package.zip", fileCheckType:1}` (timeout 120 s) | OK — Studio's `notifyFirmwareUpgrade` |
+| `/v1/platform/device/upgrade/progress` | GET | — | — | upgrade progress |
+| `/v1/platform/device/upgrade/result` | GET / (push event) | — | — | final upgrade result |
+| `/v1/filetransfer/upload` / `/download` / `/finish` | PUT | per-Studio params (e.g. `{filetype:2,filename:"package.zip"}` for firmware) | binary blob | code/status |
+| `/v1/oss/public/token/<…>` | GET | — | — | cloud OSS token (S3-compatible upload credentials) |
+
+#### Push events (URL-keyed event channel)
+
+Studio collects all M2 push events into a fixed URL→eventType map
+(``m5`` constant in the bundle). Consumers route by URL and decode
+the per-event payload:
+
+```
+DEVICE_STATE         → /v1/platform/device/state
+MEASURE_DONE         → /v1/project/device/measure
+PROCESS_EVENT        → /v1/platform/device/process
+HEAD_CHANGE          → /v1/project/laser-head/info
+LID_STATE            → /v1/project/peripheral/lid
+GOTO_FINISH          → /v1/project/device/move/finish
+RESET_START          → /v1/project/device/go-home/start
+RESET_FINISH         → /v1/project/device/go-home/result
+ALARM_INFO           → /v1/platform/device/alarm
+VIBRATION_RESULT     → /v1/project/vibration/result
+KEY_EVENT_REPORT     → /v1/project/event/key
+AUTOMATION_ID_REPORT → /v1/project/automation/id
+WIFI_CONNECT_RESULT  → /v1/platform/wifi/connect-result
+```
+
+These pushes ride the **WS-V2 instruction channel** (port 28900),
+not HTTP. The device emits them as
+``{type:"request", method:"NOTIFY", url:"<map-entry>", data:{...}}``
+frames; the client demuxes by `url` and dispatches to the
+matching event handler — same drain pattern as existing WS-V2
+push events (`/accessory/status`, `/device/info`, …).
+
+### Discovery
+
+M2 answers the legacy V1 UDP probe on 20000 unchanged
+(`discovery-service` symbols confirm the same `deviceFind` envelope
+and the same `aes256cbc_encrypt` helper available for V2-style
+probes). Reply identifies the device by name string `JS002` or
+`M2` depending on Studio version.
+
+### Job control
+
+Studio's primary path uses `PUT /v1/processing/state?action=…`
+with `start` / `pause` / `resume` / `stop`. The `debug-service`
+mirror at `/v1/project/process/{start,pause,resume,cancel}` also
+works and Studio falls back to it on older firmware.
+
+### Firmware-update package shape
+
+The cloud `xTool-m2-firmware` payload contains:
+
+```json
+{
+  "device_code": "mr536-xtool-js002",
+  "module_list": {
+    "MR536":            { "version": "V0.5.2",  "file_name": "JS002.MR536-...swu" },
+    "InkjetController": { "version": "V1.2.25", "file_name": "JS002.InkjetController-...bin" },
+    "LaserController":  { "version": "V0.5.2",  "file_name": "JS002.LaserController-...fw" },
+    "MotionController": { "version": "V0.4.3",  "file_name": "JS002.MotionController-...fw" }
+  },
+  "package_version": "V0.5.2"
+}
+```
+
+The MR536 `.swu` is a SWUpdate (Yocto/Tina) bundle containing a
+squashfs rootfs + EXT4 `app` partition + recovery + kernel + resource
+images. Inkjet / Laser / Motion `.bin` and `.fw` files flash to
+their respective sub-controllers via the on-device upgrade service.
+Cloud-side the whole thing ships as a single content_id — the
+on-device upgrade service does the per-controller dispatch.
 
 
 ---
