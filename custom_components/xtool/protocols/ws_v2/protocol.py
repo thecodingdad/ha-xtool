@@ -456,6 +456,22 @@ class WSV2Protocol(XtoolProtocol):
         "tool_runtime_seconds", "alarm_present",
     )
 
+    # URL routing keys carried in the V2 instruction-frame ``url:`` field.
+    # Exposed as class attributes so per-model subclasses (P2S, DT001, M2…)
+    # can override them without copying the whole ``poll_state`` body. The
+    # values below are the F1/F2-family norm — verified against Studio
+    # v1.7.23 per-model extension bundles in ``exts.zip``.
+    PATH_DEVICE_INFO = "/v1/device/machineInfo"
+    PATH_RUNTIME_INFOS = "/v1/device/runtime-infos"
+    PATH_CONFIGS_GET = "/v1/device/configs"
+    PATH_CONFIGS_SET = "/v1/device/configs"
+    PATH_STATISTICS = "/v1/device/statistics"
+    PATH_PROGRESS = "/v1/processing/progress"
+    PATH_ALARMS = "/v1/device/alarms"
+    PATH_PROCESSING_STATE = "/v1/processing/state"
+    PATH_CAMERA_SNAP = "/v1/camera/snap"
+    PATH_UPGRADE_MODE = "/v1/device/upgrade-mode"
+
     def _apply_latest_to_state(self, state: XtoolDeviceState) -> None:
         """Drain push-cached ``self._latest`` values into ``state``.
 
@@ -502,6 +518,16 @@ class WSV2Protocol(XtoolProtocol):
         # retries with the bool. Cleared on reconnect so a firmware
         # upgrade re-probes.
         self._config_keys_bool: set[str] = set()
+        # Per-connection cache of top-level endpoints the firmware
+        # rejected (``code -2 / -3 / 10 / 1 / 404``). Mirrors the
+        # ``_unsupported_peripheral_types`` pattern but for the slow-
+        # cadence poll endpoints (`/v1/device/alarms`,
+        # `/v1/device/statistics`) that several V2 models don't
+        # expose — F1 / GS005 / HJ003 / M1Ultra / P3 / P2S / DT001 all
+        # lack `/v1/device/alarms`; GS006 / P2S / DT001 lack
+        # `/v1/device/statistics`. Cached endpoints get skipped on
+        # subsequent polls to suppress log noise.
+        self._unsupported_endpoints: set[str] = set()
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -589,6 +615,7 @@ class WSV2Protocol(XtoolProtocol):
         # Reset the per-connection peripheral-rejection cache — fresh
         # firmware revisions might expose types the previous one didn't.
         self._unsupported_peripheral_types.clear()
+        self._unsupported_endpoints.clear()
         self._config_keys_bool.clear()
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
@@ -771,7 +798,7 @@ class WSV2Protocol(XtoolProtocol):
             coerced = bool(value)
         try:
             return await self.request(
-                "/v1/device/configs",
+                self.PATH_CONFIGS_SET,
                 "PUT",
                 data={"alias": "config", "type": "user",
                       "kv": {key: coerced}},
@@ -795,7 +822,7 @@ class WSV2Protocol(XtoolProtocol):
                 )
                 self._config_keys_bool.add(key)
                 return await self.request(
-                    "/v1/device/configs",
+                    self.PATH_CONFIGS_SET,
                     "PUT",
                     data={"alias": "config", "type": "user",
                           "kv": {key: bool(value)}},
@@ -847,7 +874,7 @@ class WSV2Protocol(XtoolProtocol):
         ``code 1: failed`` on F2 Ultra UV.
         """
         return await self.request(
-            "/v1/processing/state",
+            self.PATH_PROCESSING_STATE,
             "PUT",
             params={"action": action},
             data={},
@@ -934,7 +961,7 @@ class WSV2Protocol(XtoolProtocol):
         """
         try:
             snap = await self.request(
-                "/v1/camera/snap",
+                self.PATH_CAMERA_SNAP,
                 "GET",
                 params={"name": camera_name},
                 timeout=15.0,
@@ -1625,7 +1652,7 @@ class WSV2Protocol(XtoolProtocol):
 
     async def get_version(self) -> str | None:
         try:
-            data = await self.request("/v1/device/machineInfo", "GET")
+            data = await self.request(self.PATH_DEVICE_INFO, "GET")
         except Exception:
             return self._latest.get("firmware_version")
         firmware = data.get("firmware") if isinstance(data, dict) else None
@@ -1642,10 +1669,10 @@ class WSV2Protocol(XtoolProtocol):
     async def get_device_info(self) -> DeviceInfo:
         info = DeviceInfo()
         try:
-            data = await self.request("/v1/device/machineInfo", "GET")
+            data = await self.request(self.PATH_DEVICE_INFO, "GET")
         except Exception:
             data = {}
-        _LOGGER.debug("V2 /v1/device/machineInfo raw response: %s", data)
+        _LOGGER.debug("V2 %s raw response: %s", self.PATH_DEVICE_INFO, data)
         if isinstance(data, dict):
             info.device_name = (
                 data.get("deviceName") or data.get("machine_name") or ""
@@ -1693,16 +1720,19 @@ class WSV2Protocol(XtoolProtocol):
             self._latest["mac_address"] = info.mac_address
         return info
 
-    async def poll_state(self, state: XtoolDeviceState) -> None:
-        """Refresh state via V2 request endpoints + push cache."""
-        if not self._connected:
-            await self.connect()
+    async def _poll_runtime_status(self, state: XtoolDeviceState) -> None:
+        """Fetch + apply the device runtime / curMode block.
 
-        # 1. Runtime state — work mode + subMode + taskId
+        Default URL is ``/v1/device/runtime-infos`` (F1/F2 norm). The
+        response shape ``{curMode:{mode, subMode, taskId}}`` is shared
+        across every V2-capable model — only the URL diverges, so
+        subclasses override ``PATH_RUNTIME_INFOS`` rather than the
+        whole method.
+        """
         try:
-            rt = await self.request("/v1/device/runtime-infos", "GET")
+            rt = await self.request(self.PATH_RUNTIME_INFOS, "GET")
         except Exception as err:
-            _LOGGER.debug("V2 runtime-infos failed: %s", err)
+            _LOGGER.debug("V2 %s failed: %s", self.PATH_RUNTIME_INFOS, err)
             rt = {}
         if isinstance(rt, dict):
             cur_mode = rt.get("curMode") or {}
@@ -1716,6 +1746,31 @@ class WSV2Protocol(XtoolProtocol):
                     state.working_mode = str(cur_mode["subMode"])
                 if cur_mode.get("taskId"):
                     state.task_id = str(cur_mode["taskId"])
+
+    async def _poll_configs(self) -> None:
+        """Fetch + apply the persistent config blob.
+
+        Default uses ``GET /v1/device/configs`` (F1/F2 norm) which
+        returns the full kv dict. P2S V2 firmware diverges: it uses
+        ``GET /v1/config/get`` with a body that lists which keys to
+        return — that override lives in :class:`P2SWSV2Protocol`.
+        """
+        try:
+            cfg = await self.request(self.PATH_CONFIGS_GET, "GET")
+        except Exception:
+            cfg = None
+        if isinstance(cfg, dict):
+            self._apply_configs(cfg)
+
+    async def poll_state(self, state: XtoolDeviceState) -> None:
+        """Refresh state via V2 request endpoints + push cache."""
+        if not self._connected:
+            await self.connect()
+
+        # 1. Runtime state — work mode + subMode + taskId. ``PATH_RUNTIME_INFOS``
+        # is overridable: P2S V2 firmware swaps it for
+        # ``/v1/device/runningStatus`` (same response shape).
+        await self._poll_runtime_status(state)
 
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
         # Build the type list dynamically from the model's capability
@@ -1813,24 +1868,34 @@ class WSV2Protocol(XtoolProtocol):
                 continue
             self._apply_peripheral_param(ptype, p, state)
 
-        # 3. /v1/device/configs — full config blob, slow cadence
-        # (every 6 polls ≈ every 30 s at 5 s base interval). Push
-        # events keep the values fresh between polls.
+        # 3. Configs — full config blob, slow cadence (every 6 polls ≈
+        # every 30 s at 5 s base interval). Push events keep the values
+        # fresh between polls. ``_poll_configs`` is overridable: P2S V2
+        # firmware uses ``/v1/config/get`` with a kv-list body.
         if self._poll_counter % 6 == 0:
-            try:
-                cfg = await self.request("/v1/device/configs", "GET")
-            except Exception:
-                cfg = None
-            if isinstance(cfg, dict):
-                self._apply_configs(cfg)
+            await self._poll_configs()
 
-        # 4. /v1/device/statistics — lifetime counters, slow cadence
-        if self._poll_counter % 12 == 0:
+        # 4. Statistics — lifetime counters, slow cadence. Skip on every
+        # poll once cached as unsupported (GS006, P2S, DT001 don't
+        # expose ``/v1/device/statistics``).
+        if (
+            self._poll_counter % 12 == 0
+            and self.PATH_STATISTICS not in self._unsupported_endpoints
+        ):
             try:
-                stats = await self.request("/v1/device/statistics", "GET")
+                stats = await self.request(self.PATH_STATISTICS, "GET")
+            except RuntimeError as err:
+                msg = str(err)
+                if any(c in msg for c in ("code -2", "code -3", "code 10", "code 1:", "code 404")):
+                    _LOGGER.debug(
+                        "V2 %s rejected by firmware (%s) — caching as unsupported",
+                        self.PATH_STATISTICS, msg,
+                    )
+                    self._unsupported_endpoints.add(self.PATH_STATISTICS)
+                stats = None
             except Exception:
                 stats = None
-            _LOGGER.debug("V2 /v1/device/statistics raw: %s", stats)
+            _LOGGER.debug("V2 %s raw: %s", self.PATH_STATISTICS, stats)
             if isinstance(stats, dict):
                 # Modern firmware (HJ003 / GS003 / F1U …) returns these
                 # exact field names per the Studio bundle's
@@ -1881,12 +1946,12 @@ class WSV2Protocol(XtoolProtocol):
                     if isinstance(v, (int, float)):
                         self._latest[dst] = int(v)
 
-        # 5. /v1/processing/progress — only when a job is running
+        # 5. Progress — only when a job is running.
         if state.status in (XtoolStatus.PROCESSING,
                              XtoolStatus.PROCESSING_READY,
                              XtoolStatus.FRAMING):
             try:
-                prog = await self.request("/v1/processing/progress", "GET")
+                prog = await self.request(self.PATH_PROGRESS, "GET")
             except Exception:
                 prog = None
             if isinstance(prog, dict):
@@ -1894,10 +1959,26 @@ class WSV2Protocol(XtoolProtocol):
                 if isinstance(wt, (int, float)):
                     state.task_time = int(wt)
 
-        # 6. /v1/device/alarms — alarm presence, slow cadence
-        if self._poll_counter % 6 == 0:
+        # 6. Alarms — alarm presence, slow cadence. Skip once cached as
+        # unsupported (F1 / GS005 / HJ003 / M1Ultra / P2S / P3 / DT001
+        # don't expose ``/v1/device/alarms`` — alarm transitions still
+        # arrive via push frames `/temperature/alarm`, `/laser_head/alarm`
+        # etc.).
+        if (
+            self._poll_counter % 6 == 0
+            and self.PATH_ALARMS not in self._unsupported_endpoints
+        ):
             try:
-                alarms = await self.request("/v1/device/alarms", "GET")
+                alarms = await self.request(self.PATH_ALARMS, "GET")
+            except RuntimeError as err:
+                msg = str(err)
+                if any(c in msg for c in ("code -2", "code -3", "code 10", "code 1:", "code 404")):
+                    _LOGGER.debug(
+                        "V2 %s rejected by firmware (%s) — caching as unsupported",
+                        self.PATH_ALARMS, msg,
+                    )
+                    self._unsupported_endpoints.add(self.PATH_ALARMS)
+                alarms = None
             except Exception:
                 alarms = None
             if isinstance(alarms, dict):
@@ -2106,7 +2187,7 @@ class WSV2Protocol(XtoolProtocol):
         # 1. handshake — ready
         try:
             await self.request(
-                "/v1/device/upgrade-mode",
+                self.PATH_UPGRADE_MODE,
                 "PUT",
                 params={"mode": "ready"},
                 data={"machine_type": machine_type},
@@ -2131,7 +2212,7 @@ class WSV2Protocol(XtoolProtocol):
         # 3. trigger the burn
         try:
             await self.request(
-                "/v1/device/upgrade-mode",
+                self.PATH_UPGRADE_MODE,
                 "PUT",
                 params={"mode": "upgrade"},
                 data={"force_upgrade": 1, "action": "burn", "atomm": 1},
