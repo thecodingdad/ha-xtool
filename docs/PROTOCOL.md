@@ -2168,7 +2168,8 @@ head, switchable via the debug-service `work-head/select` endpoint.
 | **28900** | **Primary control transport — TLS WSS multi-channel framework, same as the existing WS-V2 family.** Carries the instruction / file_stream / media_stream channels. All `/v1/platform/*` + `/v1/project/*` request frames + push events ride this socket. |
 | 8089 | Live camera stream only — `ws://<ip>:8089/v1/wsplayer?stream=<cameraId>`, h264-raw or mpeg2-ts. Separate from the V2 multi-channel framework. |
 | 8080 | Local HTTP server bound by the firmware's `app-controller` / `host-service` / `debug-service` for internal IPC and a diagnostics surface. Studio does **not** use HTTP/8080 over the network in the normal control flow; see [debug-service surface](#debug-service-surface-low-level--diagnostics) below for the routes that ARE plain HTTP. |
-| 20000 | V1 plain-JSON UDP discovery (same `{ip, port, requestId}` envelope as the rest of the V1 family — see [Discovery](#discovery-v1-legacy-plain-udp-port-20000)) |
+| 20000 + multicast 224.0.1.77 | V1 plain-JSON UDP discovery (same `{ip, port, requestId}` envelope — see [Discovery V1](#discovery-v1-legacy-plain-udp-port-20000)). M2 firmware supports it for back-compat. |
+| 5353 / 5354 / 25353 / 25354 (multicast 224.0.0.251 / 224.0.0.252 / 239.0.1.251 / 239.0.1.252) + 25454 unicast | V2 encrypted multicast discovery (same `deviceFind` envelope + AES-256-CBC primaryKey/commonKey scheme — see [Discovery V2](#discovery-v2-encrypted-multicast)). Firmware ships `aes256cbc_encrypt`/`decrypt` symbols + the `makeblockmakeblockmakeblock-2025` primaryKey, and the discovery-service example tool binds all four V2 multicast groups. Both flows work; Studio runs them in parallel and dedupes by IP. |
 
 ### Transport — same framework as WS-V2 family
 
@@ -2432,11 +2433,29 @@ push events (`/accessory/status`, `/device/info`, …).
 
 ### Discovery
 
-M2 answers the legacy V1 UDP probe on 20000 unchanged
-(`discovery-service` symbols confirm the same `deviceFind` envelope
-and the same `aes256cbc_encrypt` helper available for V2-style
-probes). Reply identifies the device by name string `JS002` or
-`M2` depending on Studio version.
+M2 firmware speaks **both** discovery flavours. The on-device
+`discovery-service` binary contains:
+
+- AES-256-CBC encrypt + decrypt helpers and the
+  `makeblockmakeblockmakeblock-2025` primaryKey constant —
+  required for the V2 encrypted-multicast handshake.
+- A `discovery_multicast_example` helper tool that binds all
+  four V2 multicast groups (`224.0.0.251`, `224.0.0.252`,
+  `239.0.1.251`, `239.0.1.252`) AND the legacy V1 multicast
+  (`224.0.1.77`).
+- The plain-JSON `deviceFind` envelope handler on UDP/20000.
+
+So both probes work in parallel. Studio runs both `LegacyMulticastServer`
+(V1) and `MulticastServer` (V2 encrypted) and dedupes the
+"discover" events by IP. Reply identifies the device by name
+string `JS002` (firmware-reported deviceCode) or `M2` (Studio's
+friendly name, depending on version).
+
+A client that runs only the V1 plain probe will still find the
+device — the V1 reply carries enough identity to start a V2
+WebSocket connection on port 28900. The V2 encrypted probe is
+the more efficient path (single multicast, no UDP back-off) and
+is what Studio prefers in practice.
 
 ### Job control
 
