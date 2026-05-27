@@ -1622,6 +1622,43 @@ Consumers should treat the absence of any key as "this firmware
 doesn't track that counter" — the corresponding sensor stays
 unavailable rather than reporting stale data.
 
+#### Per-model endpoint divergences
+
+Although every V2-capable model rides the same `instruction` channel
+framing (port 28900 WSS, CRC envelope, transaction-id correlation,
+push events), the actual route surface diverges across the per-model
+Studio extension bundles. The audit below summarises which models
+ship which alternative routes (verified against the per-model
+bundles in Studio v1.7.23 `exts.zip`). Treat the base routes
+documented above (`/v1/device/runtime-infos`,
+`/v1/device/configs`, `/v1/device/statistics`, `/v1/device/alarms`,
+`/v1/processing/state`, `/v1/camera/snap`) as the **F1 / F2 family
+norm**; the divergences listed here are the firmware-specific
+overrides:
+
+| Endpoint | Models that diverge | Alternative used |
+|---|---|---|
+| `/v1/device/runtime-infos` | P2S | `/v1/device/runningStatus` |
+| `/v1/device/configs` | P2S | `/v1/config/get` + `/v1/config/set` (legacy V1-style split) |
+| `/v1/device/statistics` | P2S, DT001 | `/v1/device/workingInfo` (P2S/DT001); GS006 simply omits the route |
+| `/v1/device/alarms` | F1, GS005, HJ003, M1Ultra, P2S, P3, DT001 | Not exposed — alarms surface only via push frames (`/temperature/alarm`, `/laser_head/alarm`, `/gyro/alarm`, `/fire/alarm`, …). |
+| `/v1/device/mode` | F1, GS005, HJ003, M1Ultra, DT001 | Mode switch unavailable — these models ride status pushes only. |
+| `/v1/processing/state` | DT001 | `/v1/processing/start`, `/v1/processing/pause`, `/v1/processing/stop` (three separate routes, no `action` param) |
+| `/v1/camera/snap` | P2S, P3 | `/v1/camera/image` (with `data:{stream:"0" \| "1"}` on P2S, `{stream:"near" \| "upside"}` on P3) |
+| `/v1/peripheral/param` (GET) | P3, DT001 | DT001 ships dedicated `/v1/peripheral/<type>` routes (`/v1/peripheral/fill_light`, `/v1/peripheral/ink_bottle`, `/v1/peripheral/heater_temp`, …) for the inkjet-specific sensors; P3 keeps the `/v1/peripheral/param` route but issues every state read as `PUT` with `data:{action:"get_…"}` rather than GET. |
+| `/v1/device/upgrade-mode` | (none — universal across V2 models) | — |
+| `/v1/filetransfer/{upload,download,finish}` | (none — universal) | — |
+| `/v1/parts/control` | (none — universal) | — |
+
+Newer firmware (Studio v1.7.23 ships M2 / JS002) introduces a
+parallel `/v1/platform/*` namespace covering the same surface
+(machine identity, state, config, capabilities, alarm, camera) plus
+a `/v1/project/*` namespace for per-peripheral / per-tool routes.
+See [M2 protocol](#m2-protocol) for the full URL set; the legacy
+`/v1/*` surface above remains live on every existing V2-firmware
+device (F1, F1 Ultra, F1 Lite, F2 family, M1 Ultra, P2S, P3,
+MetalFab, Apparel Printer).
+
 
 ---
 
