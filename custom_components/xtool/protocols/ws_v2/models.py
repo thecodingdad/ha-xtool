@@ -227,6 +227,40 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
 )
 
 
+# F2 Ultra UV Class 1 — same wire surface as the GS009-CLASS-4 model
+# above. The only practical difference is the laser power class
+# (Class 1 vs Class 4 per IEC 60825), reflected on the firmware
+# side by a separate content_id `xTool-f2-ultra-uv-class1-firmware`
+# (added in Studio v1.7.23). Discovery match uses the longer
+# "F2UltraUVClass1" suffix so a device that reports it ranks ahead
+# of the bare "F2UltraUV" entry; devices that only emit "F2UltraUV"
+# (existing Class 4) continue to match the entry above.
+XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
+    model_id="F2UltraUVClass1",
+    name="xTool F2 Ultra UV (Class 1)",
+    protocol_class=WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_beeper=True,
+    has_flame_alarm=True,
+    has_move_stop=True,
+    has_smoking_fan=True,
+    has_machine_lock=True,
+    has_mode_switch=True,
+    has_camera=True,
+    camera_names=("main", "deep"),
+    has_camera_exposure=True,
+    has_fill_light=True,
+    has_fill_light_dual=True,
+    has_device_sleep=True,
+    has_ir_led=True,
+    has_button_event=True,
+    firmware_content_id="xTool-f2-ultra-uv-class1-firmware",
+    firmware_machine_type="MXF",
+    protocol_version="V2",
+    discovery_match=("F2UltraUVClass1",),
+)
+
+
 XTOOL_M1_WSV2 = XtoolDeviceModel(
     model_id="M1",
     name="xTool M1",
@@ -399,6 +433,35 @@ XTOOL_METALFAB_WSV2 = XtoolDeviceModel(
 )
 
 
+# Retail Marker (GS008) — added in xTool Studio v1.7.23.
+# WS-V2 family, very similar capability set to the F2 family but
+# without the dual-channel fill-light and without the depth camera.
+# Capability flags conservative — bundle confirms camera (main only),
+# fill-light, flame alarm, beep, mode switch, laser_head, smokeFan,
+# airassistV2 BT accessory, machine_lock; everything else stays off
+# until a real device confirms.
+XTOOL_RETAIL_MARKER_WSV2 = XtoolDeviceModel(
+    model_id="RetailMarker",
+    name="xTool Retail Marker",
+    protocol_class=WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_beeper=True,
+    has_flame_alarm=True,
+    has_move_stop=True,
+    has_smoking_fan=True,
+    has_machine_lock=True,
+    has_mode_switch=True,
+    has_camera=True,
+    camera_names=("main",),
+    has_camera_exposure=True,
+    has_fill_light=True,
+    has_ir_led=True,  # single mention in bundle — leave on; entity is gated to a usable read
+    firmware_content_id="xTool-retail-marker-firmware",
+    protocol_version="V2",
+    discovery_match=("GS008", "RetailMarker"),
+)
+
+
 XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     model_id="DT001",
     name="xTool Apparel Printer",
@@ -425,6 +488,8 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_F2_ULTRA_WSV2,
     XTOOL_F2_ULTRA_SINGLE_WSV2,
     XTOOL_F2_ULTRA_UV_WSV2,
+    XTOOL_F2_ULTRA_UV_CLASS1_WSV2,
+    XTOOL_RETAIL_MARKER_WSV2,
     # XTOOL_M1_WSV2,
     XTOOL_M1_ULTRA_WSV2,
     XTOOL_P2_WSV2,
