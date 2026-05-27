@@ -20,6 +20,9 @@ from ..base import XtoolDeviceModel
 
 from .coordinator import WSV2Coordinator
 from .protocol import WSV2Protocol
+from .protocol_dt001 import DT001WSV2Protocol
+from .protocol_m2 import M2WSV2Protocol
+from .protocol_p2s import P2SWSV2Protocol
 
 
 XTOOL_F1_WSV2 = XtoolDeviceModel(
@@ -342,7 +345,7 @@ XTOOL_P2_WSV2 = XtoolDeviceModel(
 XTOOL_P2S_WSV2 = XtoolDeviceModel(
     model_id="P2S",
     name="xTool P2S",
-    protocol_class=WSV2Protocol,
+    protocol_class=P2SWSV2Protocol,
     coordinator_class=WSV2Coordinator,
     has_beeper=True,
     has_flame_alarm=True,
@@ -465,7 +468,7 @@ XTOOL_RETAIL_MARKER_WSV2 = XtoolDeviceModel(
 XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     model_id="DT001",
     name="xTool Apparel Printer",
-    protocol_class=WSV2Protocol,
+    protocol_class=DT001WSV2Protocol,
     coordinator_class=WSV2Coordinator,
     has_beeper=True,
     has_move_stop=True,
@@ -476,6 +479,45 @@ XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MDT",
     protocol_version="V2",
     discovery_match=("DT001",),
+)
+
+
+# xTool M2 (model_id JS002) — added in Studio v1.7.23.
+#
+# Multi-tool device: laser head + inkjet head (verified from
+# firmware manifest — 4 controllers: MR536 main MCU plus separate
+# InkjetController / LaserController / MotionController). The
+# inkjet entity surface is deferred until a real M2 retest
+# confirms ``/v1/project/inkjet/*`` response shapes — the bundle
+# strings list the routes but not the payload fields. v2.5.14
+# ships the core monitor + control surface (status, cover, camera,
+# job control) and leaves ``has_inkjet`` as a forward-compat
+# capability flag.
+XTOOL_M2_WSV2 = XtoolDeviceModel(
+    model_id="M2",
+    name="xTool M2",
+    protocol_class=M2WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_camera=True,
+    # JS002 bundle exposes ``far`` (global / overview), ``near``
+    # (local / close-up), and ``side`` (process-side view). Order
+    # is the Studio bundle order; UI lists them in this order too.
+    camera_names=("far", "near", "side"),
+    has_fill_light=True,
+    has_air_assist_state=True,
+    has_smoking_fan=True,
+    has_cover_sensor=True,
+    has_laser_head_position=True,
+    has_inkjet=True,
+    has_beeper=True,
+    has_flame_alarm=True,
+    firmware_content_id="xTool-m2-firmware",
+    firmware_machine_type="JS002",
+    # Studio's xcs-extension manifest classifies M2 as
+    # protocolVersion:"V2", channelType:"socket" — i.e. the
+    # standard V2 multi-channel WS framework on port 28900.
+    protocol_version="V2",
+    discovery_match=("JS002", "M2"),
 )
 
 
@@ -490,11 +532,12 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_F2_ULTRA_UV_WSV2,
     XTOOL_F2_ULTRA_UV_CLASS1_WSV2,
     XTOOL_RETAIL_MARKER_WSV2,
-    # XTOOL_M1_WSV2,
+    # XTOOL_M1_WSV2,  # M1 is V1-only per Studio v1.7.23 manifest
     XTOOL_M1_ULTRA_WSV2,
-    XTOOL_P2_WSV2,
+    # XTOOL_P2_WSV2,  # P2 is V1-only per Studio v1.7.23 manifest — V2 probe never succeeds against real P2 hardware
     XTOOL_P2S_WSV2,
     XTOOL_P3_WSV2,
     XTOOL_METALFAB_WSV2,
     XTOOL_APPAREL_PRINTER_WSV2,
+    XTOOL_M2_WSV2,
 )
