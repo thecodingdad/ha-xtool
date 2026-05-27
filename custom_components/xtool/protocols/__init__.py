@@ -38,6 +38,7 @@ from .rest import (
     XTOOL_P2S,
     XTOOL_P3,
 )
+from .m2 import M2WSV2Protocol, XTOOL_M2
 from .s1 import S1Protocol, XTOOL_S1
 from .ws_v2 import (
     WSV2_MODELS,
@@ -65,6 +66,7 @@ _ALL_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_M1, XTOOL_M1_ULTRA, XTOOL_METALFAB,
     XTOOL_P1, XTOOL_P2, XTOOL_P2S, XTOOL_P3,
     XTOOL_APPAREL_PRINTER,
+    XTOOL_M2,
     *WSV2_MODELS,
 )
 
