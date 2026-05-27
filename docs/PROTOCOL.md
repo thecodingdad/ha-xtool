@@ -1133,31 +1133,46 @@ disjoint from the user-request rotation (which wraps at 65500).
 
 ### V2 endpoint inventory
 
-All paths below are sent as the `url` field of a JSON request frame
-on the `instruction` WS, with the matching HTTP method in the
-`method` field. Replies come back tagged with the same numeric
-`transactionId` (see [Connection lifecycle](#connection-lifecycle-v2)
-above for the full envelope).
+All endpoints below are routed by the `url` field of a JSON request
+frame on the `instruction` WS — the URL is a **routing key**, not an
+HTTP path. The **Frame method** column is the directive carried in
+the frame's `method:` field (carried as `method:"GET" \| "POST" \|
+"PUT" \| "DELETE"`); **Params** is the frame's `params:{…}` object;
+**Request body** is the frame's `data:{…}` object. Replies come back
+tagged with the same numeric `transactionId` (see
+[Connection lifecycle](#connection-lifecycle-v2) above for the full
+envelope).
+
+Tables below are cross-checked against the xTool Studio v1.7.23
+per-model extension bundles (`exts.zip` shipped with the installer).
+Where a model's bundle defines a route with a specific shape, that
+shape is reflected in the **Frame method** / **Params** / **Request
+body** columns; route variants between bundles are called out
+inline. Studio v1.7.23 ships a new `/v1/platform/*` route family
+that mirrors much of the surface below for newer firmware (see
+[M2 protocol](#m2-protocol)); the legacy `/v1/*` surface remains
+live on every existing V2-firmware device.
 
 #### Device info / runtime
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/device/machineInfo` | GET | Device identity + firmware versions (returns `firmware.package_version`, `firmware.master_h3_laserservice`, …). |
-| `/v1/device/runtime-infos` | GET | Live state — `{curMode:{desc,mode,subMode,taskId}}`. `mode` is one of the `P_*` enum (see below). |
-| `/v1/device/configs` | GET / PUT | Persistent config blob. |
-| `/v1/device/statistics` | GET | Lifetime counters. |
-| `/v1/device/bind` | PUT | Pair/bind with the cloud account. |
-| `/v1/env/domain` | PUT | Switch device's cloud endpoint (`atomm` / `xcs` / regional). |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/device/machineInfo` | `GET` | — | — | `{deviceName, sn, mac, ip, machineSubType, deviceCode, firmware:{package_version, master_h3_laserservice, master_rk3568_mainservice, accessories:{…}}, laserPower:[…]}` |
+| `/v1/device/runtime-infos` | `GET` | — | — | `{curMode:{desc, mode, subMode, taskId}}` — `mode` is one of the `P_*` enum (see below). |
+| `/v1/device/configs` | `GET` | — | — | Full persistent config blob (`{kv:{…}}`). |
+| `/v1/device/configs` | `PUT` | — | `{alias:"config", type:"user", kv:{<key>:<value>}}` | `{result:"ok"}` |
+| `/v1/device/statistics` | `GET` | — | — | Model-specific keys (see [Statistics field aliases](#statistics-field-aliases)) — e.g. F1Ultra/GS003/P3: `{timeModeWorking, timeSystemWork, numOnlineWorking, numOfflineWorking, toolRuntime}`. |
+| `/v1/device/bind` | `PUT` | — | `{…}` | Bind device to cloud account. |
+| `/v1/env/domain` | `PUT` | — | `{domain}` | Switch device's cloud endpoint (`atomm` / `xcs` / regional). |
 
 #### Status / processing
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/processing/state` | GET | Current job state. |
-| `/v1/processing/progress` | GET | `{progress, workingTime, …}` for the active job. |
-| `/v1/processing/upload/config` | PUT | Apply config after pushing a G-code blob (`fileType, autoStart, taskId`). |
-| `/v1/processing/frame/replace` | PUT | Replace the currently-loaded framing G-code (`loopPrint, gcodeType, uMoveSpeed`). |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/processing/state` | `PUT` | `{action: "start" \| "pause" \| "stop"}` | — | Job control: `start` (also used for resume), `pause`, `stop` (also used for cancel). |
+| `/v1/processing/progress` | `GET` | — | — | `{progress, workingTime, totalTime, …}` for the active job. |
+| `/v1/processing/upload/config` | `PUT` | — | `{fileType:"txt", autoStart:0, taskId?}` | Apply config after pushing a G-code blob via `file_stream`. |
+| `/v1/processing/frame/replace` | `PUT` | — | `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Replace the currently-loaded framing G-code. |
 
 #### Peripherals (state via shared `/v1/peripheral/param`)
 
@@ -1175,54 +1190,58 @@ The V2 API consolidates all peripheral queries onto one path with a
 
 Standalone peripheral paths (mostly carried over from V1):
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/peripheral/param` | GET / PUT | Polymorphic peripheral query (typed by `params.type`). |
-| `/v1/laser-head/focus/parameter` | GET / PUT | Read/write laser-head focus parameters. |
-| `/v1/laser-head/focus/control` | POST | Trigger focus operation. |
-| `/v1/motion_control/paramter` | GET / PUT | Motion control (typo `paramter` is the actual server path). |
-| `/v1/extender/control` | POST | Toggle SafetyPro IF2 / AP2 / etc. extender. |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/peripheral/param` | `GET` | `{type:<X>}` | — (some types require `{action:"get_coord"}` / `{index:"global"}` — see [V2 control / state surface](#v2-control--state-surface)) | Polymorphic peripheral state typed by `params.type`. |
+| `/v1/peripheral/param` | `PUT` | `{type:<X>}` | `{action:<verb>, …}` (`set_bri`, `go_home`, `go_to`, `on`/`off`, …) | Actuate the peripheral. |
+| `/v1/laser-head/focus/parameter` | `GET` / `PUT` | — | `{…}` on PUT | Read/write laser-head focus parameters. |
+| `/v1/laser-head/focus/control` | `POST` | — | `{action:"start" \| "stop" \| "goTo" \| "auto_start" \| "auto_stop", autoHome?, stopFirst?, Z?}` | Trigger focus operation. **POST only** — PUT returns code 404 on F2 family V2 firmware. |
+| `/v1/laser-head/parameter` | `GET` / `PUT` | — | `{…}` on PUT (long timeout — `600s`) | Laser-head-wide tuning parameters (power curve, focus offsets, …). |
+| `/v1/motion_control/paramter` | `GET` / `PUT` | — | `{…}` on PUT | Motion control (typo `paramter` is the actual server path). |
+| `/v1/extender/control` | `POST` | — | `{action, …}` | Toggle SafetyPro IF2 / AP2 / etc. extender. |
 
 #### Net / Wi-Fi
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/wifi/ap-list` | GET | List nearby SSIDs. |
-| `/v1/wifi/connected-ssid` | GET | Current SSID. |
-| `/v1/wifi/credentials` | PUT | Set credentials (replaces V1 `M2001`). |
-| `/v1/wifi/interfaces` | GET | List interfaces. |
-| `/v1/net/wifi_signal_strength` | POST `{name:"wlan0"}` | Live RSSI for a named iface. |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/wifi/ap-list` | `GET` | — | — | Array of visible APs (de-duplicated by SSID, kept by highest `level`). |
+| `/v1/wifi/connected-ssid` | `GET` | — | — | `{ssid}` — currently-joined SSID. |
+| `/v1/wifi/credentials` | `PUT` | — | `{ssid, psk}` | Set credentials (replaces V1 `M2001`). |
+| `/v1/wifi/interfaces` | `GET` | — | — | Array of interfaces (`[{iface:"wlan0", ip, …}]`). |
+| `/v1/net/wifi_signal_strength` | `POST` | — | `{name:"wlan0"}` | `{wifi_signal_strength:<rssi-int>}` |
 
 #### BLE accessories (parts / dongle)
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/parts/control` | POST `{link:"uart485", data_b64:<F0F7-encoded M-code>}` | Send raw M-code (`M9091`–`M9098`, `M9032`–`M9085` …) to a BLE accessory tunneled through the dongle. |
-| `/v1/parts/firmware/upgrade` | POST | Push firmware to an attached accessory. |
-| `/v1/parts/firmware/upgrade-progress` | GET | Poll accessory-flash progress. |
-| `/v1/platform/accessories/list` | GET | Platform accessory list (newer V2-firmware API; replaces `M9098` enumeration). |
-| `/v1/platform/accessories/control` | POST `{id:<n>, command:"<M-code>"}` | Higher-level control wrapper (newer V2-firmware API). |
-| `/v1/platform/accessories/upgrade` | POST `{params:{id:<type-id>}, data:{filename:<md5>}}` | Trigger accessory firmware flash. Studio two-step flow: (1) upload blob via `file_stream` channel with `params:{fileType:2, fileName:<md5>}`, (2) POST here with the accessory's numeric `Te` type-id + the upload's md5. Device then F0F7-tunnels the firmware to the BT accessory and emits progress via the `accessory.upgradeProgressInfo` push frame. |
-| `/v1/platform/device/config` | GET / PUT | Platform device config. |
-| `/v1/project/accessory/list` | GET | Project-scoped accessory list. |
-| `/v1/project/api/mcode` | POST | Send a raw M-code via the project API. |
-| `/v1/project/device/accessory/control` | POST `{level:1\|2}` | Set accessory power level. |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/parts/control` | `POST` | — | `{link:"uart485", data_b64:<F0F7-encoded M-code>}` | Send raw M-code (`M9091`–`M9098`, `M9032`–`M9085` …) to a BLE accessory tunneled through the dongle. Response `{data_b64}` carries the F0F7-framed reply. |
+| `/v1/parts/firmware/upgrade` | `POST` | — | `{…}` (10-min timeout) | Push firmware to an attached accessory. |
+| `/v1/parts/firmware/upgrade-progress` | `GET` | — | — | Poll accessory-flash progress. |
+| `/v1/platform/accessories/list` | `GET` | — | — | Platform accessory list (newer V2-firmware API; replaces `M9098` enumeration). Returns `{[id]:{status, version:{app_version, boot_version}, bootloader_status, …}}`. |
+| `/v1/platform/accessories/control` | `POST` | `{id:<numeric-type-id>}` | `{command:"<M-code>"}` | Higher-level control wrapper. Response `{result:"<M-code reply>"}`. |
+| `/v1/platform/accessories/upgrade` | `POST` | `{id:<type-id>}` | `{filename:<md5>}` | Trigger accessory firmware flash. Studio two-step flow: (1) upload blob via `file_stream` channel with `params:{fileType:2, fileName:<md5>}`, (2) POST here with the accessory's numeric type-id + the upload's md5. Device then F0F7-tunnels the firmware to the BT accessory and emits progress via the `accessory.upgradeProgressInfo` push frame. |
+| `/v1/platform/device/config` | `GET` / `PUT` | — | `{…}` on PUT | Platform device config. |
+| `/v1/project/accessory/list` | `GET` | — | — | Project-scoped accessory list. |
+| `/v1/project/api/mcode` | `POST` | — | `{…}` | Send a raw M-code via the project API. |
+| `/v1/project/device/accessory/control` | `POST` | — | `{level:1\|2}` | Set accessory power level. |
 
 #### File transfer (WS-V2)
 
 File uploads + downloads happen on the **`function=file_stream`** WS,
-not on the `instruction` channel:
+not on the `instruction` channel. The table below lists the
+`instruction`-channel routes that bracket the binary transfer; the
+binary frames themselves flow on `file_stream`:
 
-| API | Method | `params` | Purpose |
-|---|---|---|---|
-| `/v1/filetransfer/upload` | PUT | — | Initiate upload — returns a transfer handle. |
-| `/v1/filetransfer/download` | PUT | — | Initiate download. |
-| `/v1/filetransfer/finish` | PUT | — | Acknowledge end-of-stream. |
-| `uploadGcode` | POST blob, then PUT `/v1/processing/upload/config` | `fileType:1, fileName:"tmp.gcode"` | Upload G-code job (sequential 2-step). |
-| `uploadWalkBorder` | POST blob, then PUT `/v1/processing/upload/config` | `fileType:1, fileName:"tmpFrame.gcode"` | Upload framing G-code. |
-| `replaceWalkBorder` | POST blob, then PUT `/v1/processing/frame/replace` | `fileType:1, fileName:"tmpFrameNew.gcode"` | Replace framing G-code in-flight. |
-| `updateFirmware` | POST blob | `fileType:2, fileName:"package.img"` | Upload firmware image. |
-| `exportLog` | GET `/v1/log` then file download | `filetype:5` | Pull device log. |
+| Endpoint / API name | Channel | Frame method | Params | Request body | Response |
+|---|---|---|---|---|---|
+| `/v1/filetransfer/upload` | `instruction` | `PUT` | — | — | Initiate upload — returns a transfer handle. |
+| `/v1/filetransfer/download` | `instruction` | `PUT` | — | `{filename, fileType:5}` | Initiate download. Studio skips this on F2 Ultra UV (rejected with `code -99`). |
+| `/v1/filetransfer/finish` | `instruction` | `PUT` | — | `{filename}` | Acknowledge end-of-stream. |
+| `uploadGcode` | `file_stream` → `instruction` | `POST` blob, then `PUT /v1/processing/upload/config` | `{fileType:1, fileName:"tmp.gcode"}` | `Blob(<gcode>)`, then `{fileType:"txt", autoStart:0}` | Upload G-code job (sequential 2-step). |
+| `uploadWalkBorder` | `file_stream` → `instruction` | `POST` blob, then `PUT /v1/processing/upload/config` | `{fileType:1, fileName:"tmpFrame.gcode"}` | `Blob(<gcode>)`, then `{fileType:"txt", autoStart:0}` | Upload framing G-code. |
+| `replaceWalkBorder` | `file_stream` → `instruction` | `POST` blob, then `PUT /v1/processing/frame/replace` | `{fileType:1, fileName:"tmpFrameNew.gcode"}` | `Blob(<gcode>)`, then `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Replace framing G-code in-flight. |
+| `updateFirmware` | `file_stream` | `POST` blob | `{fileType:2, fileName:"package.img"}` | `Blob(<firmware>)` | Upload firmware image. |
+| `exportLog` | `instruction` → `file_stream` | `GET /v1/log`, then file_stream descriptor | `{filetype:5}` on download | — | Pull device log. |
 
 The WS-V2 firmware update is itself a 3-step API:
 
@@ -1235,9 +1254,9 @@ The WS-V2 firmware update is itself a 3-step API:
 
 #### Logging / debug
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/log` | GET | Returns `{filename}` of the next available log archive (paired with a download via `file_stream`). |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/log` | `GET` | — | — | `{filename}` of the next available log archive (paired with a `file_stream` download keyed by that filename + `filetype:5`). |
 
 #### Camera capture (WS-V2 still images)
 
@@ -1247,12 +1266,12 @@ Studio's `captureGlobalImage` (and per-model siblings
 channel returns a filename handle; `file_stream` delivers the
 raw JPEG.
 
-| Step | Channel | Method | Path | Body | Purpose |
-|---|---|---|---|---|---|
-| 1 | `instruction` | GET | `/v1/camera/snap?name=<camera-name>` (or `/v1/camera/image` with `data:{stream:"0"\|"1"\|"near"\|"upside"}` on P2S/P3) | — | Capture frame on device → returns `{filename:"<uuid>"}`. `name` is firmware-specific (`main` / `deep` / `overview` / `closeup` / `fireRecord`); see the per-model table below. |
-| 2 | `instruction` | PUT | `/v1/filetransfer/download` | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). **F2 Ultra UV firmware 40.130.021 rejects this step with `code -99: error parameters`** — proceed to step 3 anyway; the `file_stream` descriptor still works without the PUT (Studio itself skips step 2 on this firmware). |
-| 3 | `file_stream` | n/a | (open fresh WS, send descriptor `{fileType:5, fileName:"<uuid>"}`) | binary frames | Receive raw JPEG bytes; terminate on `{"transferFinish":true}` TEXT or WS close. The same descriptor + the firmware's native MJPEG continuation also drives the live-stream path — one entity per physical lens can serve both still-snap and live MJPEG without separate wire setups. |
-| 4 | `instruction` | PUT | `/v1/filetransfer/finish` | `{filename}` | Best-effort end-of-transfer ack — some firmware skips this and closes the WS instead. |
+| Step | Channel | Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|---|---|
+| 1 | `instruction` | `/v1/camera/snap` (or `/v1/camera/image` on P2S/P3) | `GET` | `{name:"main" \| "deep" \| "overview" \| "closeup" \| "fireRecord"}` (P2S/P3 use `data:{stream:"0" \| "1" \| "near" \| "upside"}` instead of `params`) | — | `{filename:"<uuid>"}` |
+| 2 | `instruction` | `/v1/filetransfer/download` | `PUT` | — | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). **F2 Ultra UV firmware 40.130.021 rejects this step with `code -99: error parameters`** — proceed to step 3 anyway; the `file_stream` descriptor still works without the PUT (Studio itself skips step 2 on this firmware). |
+| 3 | `file_stream` | (fresh WS descriptor) | — | — | `{fileType:5, fileName:"<uuid>"}` then receive binary frames | Raw JPEG bytes; terminates on `{"transferFinish":true}` TEXT or WS close. The same descriptor + the firmware's native MJPEG continuation also drives the live-stream path — one entity per physical lens can serve both still-snap and live MJPEG without separate wire setups. |
+| 4 | `instruction` | `/v1/filetransfer/finish` | `PUT` | — | `{filename}` | Best-effort end-of-transfer ack — some firmware skips this and closes the WS instead. |
 
 Studio uses this on demand only — there is no Studio-driven
 camera-refresh interval. Implementations that want a "live preview"
@@ -1304,11 +1323,11 @@ class `streamService` + `rtc::impl::PeerConnection`):
 
 **Signaling endpoints** (firmware string table):
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/signaling/offer` | POST `{id, sdp, deviceID, mid, iceServers}` | Send WebRTC SDP offer + ICE servers list. |
-| `/v1/signaling/answer` | POST `{id, sdp}` | Receive SDP answer from the device. |
-| `/v1/signaling/candidate` | POST `{id, candidate, deviceID, mid}` | Trickle ICE candidates both directions. |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/signaling/offer` | `POST` | — | `{id, sdp, deviceID, mid, iceServers}` | Send WebRTC SDP offer + ICE servers list. |
+| `/v1/signaling/answer` | `POST` | — | `{id, sdp}` | Receive SDP answer from the device. |
+| `/v1/signaling/candidate` | `POST` | — | `{id, candidate, deviceID, mid}` | Trickle ICE candidates both directions. |
 
 Failure modes from `hostApi::send_signaling_*`:
 `"send_signaling_offer failed, type is not offer"`,
@@ -1339,27 +1358,27 @@ The namespace mixes two concerns:
   generation, served over the **same** local TLS WS as the
   older `/v1/...` calls.
 
-| Path | Method | Purpose |
-|---|---|---|
-| `/v1/platform/camera/list` | GET | Enumerate device cameras. |
-| `/v1/platform/camera/live` | POST `{action:"start"\|"stop", name:"<camera>"}` | Start / stop the live RTC stream. |
-| `/v1/platform/camera/snap` | POST | Snap equivalent of `/v1/camera/snap`. |
-| `/v1/platform/camera/calibration/params` | GET | Calibration metadata. |
-| `/v1/platform/device/bind` | POST | Bind device → user account. |
-| `/v1/platform/device/bind-user` | POST | Reverse bind (user → device). |
-| `/v1/platform/device/dev-bind-code` | POST | Issue pairing code. |
-| `/v1/platform/device/sign` | POST | Authenticate request signature. |
-| `/v1/platform/device/timestamp` | GET | Time-sync for signature freshness (cloud-account flow). |
-| `/v1/platform/device/register` | POST | Register device with xTool cloud. |
-| `/v1/platform/device/state/sync` | POST | Push runtime state to cloud. |
-| `/v1/platform/device/upgrade*` | various | Cloud-mediated firmware update path. |
-| `/v1/platform/filetransfer/{upload,download,finish}` | PUT | File transfer (mirrors `/v1/filetransfer/*`). |
-| `/v1/platform/log` | GET | Log fetch. |
-| `/v1/platform/wifi/{ap-list,connected-info,credentials}` | various | Wi-Fi provisioning. |
-| `/v1/platform/env/domain` | GET | Studio backend region hint — returns the URL the Studio desktop app uses to fetch its own runtime config (material database, AP2 filter-life curves, localization, etc.). Device-side it's purely a region resolver; the device itself doesn't consume this URL. |
-| `/v1/platform/factory/sign-data` | POST | Factory-signing helper. |
-| `/v1/platform/user/{parity,ping}` | various | Account session keep-alive. |
-| `/v1/atomm-api/v1/device/{bind-user,dev-bind-code,register,sign,timestamp}` | various | Atomm-namespaced bind + sign endpoints (xTool's internal cloud SDK). |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/platform/camera/list` | `GET` | — | — | Enumerate device cameras. |
+| `/v1/platform/camera/live` | `POST` | — | `{action:"start" \| "stop", name:"<camera>"}` | Start / stop the live RTC stream. |
+| `/v1/platform/camera/snap` | `POST` | — | `{name:"<camera>"}` | Snap equivalent of `/v1/camera/snap`. |
+| `/v1/platform/camera/calibration/params` | `GET` | — | — | Calibration metadata. |
+| `/v1/platform/device/bind` | `POST` | — | `{…}` | Bind device → user account. |
+| `/v1/platform/device/bind-user` | `POST` | — | `{…}` | Reverse bind (user → device). |
+| `/v1/platform/device/dev-bind-code` | `POST` | — | `{…}` | Issue pairing code. |
+| `/v1/platform/device/sign` | `POST` | — | `{…}` | Authenticate request signature. |
+| `/v1/platform/device/timestamp` | `GET` | — | — | Time-sync for signature freshness (cloud-account flow). |
+| `/v1/platform/device/register` | `POST` | — | `{…}` | Register device with xTool cloud. |
+| `/v1/platform/device/state/sync` | `POST` | — | — | Push runtime state to cloud. |
+| `/v1/platform/device/upgrade*` | various | — | varies | Cloud-mediated firmware update path. |
+| `/v1/platform/filetransfer/{upload,download,finish}` | `PUT` | — | varies (mirrors `/v1/filetransfer/*`) | File transfer. |
+| `/v1/platform/log` | `GET` | — | — | Log fetch. |
+| `/v1/platform/wifi/{ap-list,connected-info,credentials}` | various | — | varies | Wi-Fi provisioning. |
+| `/v1/platform/env/domain` | `GET` | — | — | Studio backend region hint — returns the URL the Studio desktop app uses to fetch its own runtime config (material database, AP2 filter-life curves, localization, etc.). Device-side it's purely a region resolver; the device itself doesn't consume this URL. |
+| `/v1/platform/factory/sign-data` | `POST` | — | `{…}` | Factory-signing helper. |
+| `/v1/platform/user/{parity,ping}` | various | — | varies | Account session keep-alive. |
+| `/v1/atomm-api/v1/device/{bind-user,dev-bind-code,register,sign,timestamp}` | various | — | varies | Atomm-namespaced bind + sign endpoints (xTool's internal cloud SDK). |
 
 **Studio's actual usage:** zero. A `grep -c
 "RTCPeerConnection\|webrtc\|signaling\|mediasoup\|iceServer"` over
@@ -1450,14 +1469,14 @@ The `instruction` channel covers the full live surface of the device.
 A typical client polls this set, with the cadences shown reflecting
 the rate at which the underlying values change on the device:
 
-| Endpoint | Method | Typical cadence | Purpose |
-|---|---|---|---|
-| `/v1/device/runtime-infos` | GET | every tick | `curMode.{mode,subMode,taskId}` → live status |
-| `/v1/device/configs` | GET | minute-scale | full persistent config blob |
-| `/v1/device/statistics` | GET | minute-to-hour scale | lifetime counters (`working_seconds`, `session_count`, `standby_seconds`, `tool_runtime`) |
-| `/v1/processing/progress` | GET | only while status ∈ {`P_WORKING`, framing} | active-job `progress`, `workingTime` |
-| `/v1/device/alarms` | GET | every tick | active alarm list |
-| `/v1/peripheral/param?type=<X>` | GET | every tick (per type) | live state for one peripheral |
+| Endpoint | Frame method | Params | Request body | Typical cadence | Response |
+|---|---|---|---|---|---|
+| `/v1/device/runtime-infos` | `GET` | — | — | every tick | `{curMode:{desc, mode, subMode, taskId}}` → live status |
+| `/v1/device/configs` | `GET` | — | — | minute-scale | full persistent config blob (`{kv:{…}}`) |
+| `/v1/device/statistics` | `GET` | — | — | minute-to-hour scale | lifetime counters (`timeModeWorking`, `timeSystemWork`, `numOnlineWorking`, `numOfflineWorking`, `toolRuntime`) |
+| `/v1/processing/progress` | `GET` | — | — | only while status ∈ {`P_WORKING`, framing} | active-job `{progress, workingTime, totalTime}` |
+| `/v1/device/alarms` | `GET` | — | — | every tick | active alarm list (`{alarms:[…]}`) |
+| `/v1/peripheral/param` | `GET` | `{type:<X>}` | — (some types require `{action:"get_coord"}` / `{index:"global"}`) | every tick (per type) | live state for one peripheral |
 
 Per-peripheral `type` values (each typically applicable only when the
 device model exposes the peripheral):
@@ -1484,50 +1503,51 @@ device model exposes the peripheral):
 
 Action paths:
 
-| Path | Method | Body | Purpose |
-|---|---|---|---|
-| `/v1/device/configs` | PUT | `{kv:{<key>:<value>}}` | Set a single config key (toggles, timeouts, levels, gear). |
-| `/v1/device/configs/backup` | GET / PUT | — | Export the full config blob (GET) or apply a previously-exported one (PUT). |
-| `/v1/device/configs/restore` | PUT | — | Reset device configs to factory defaults. |
-| `/v1/device/operate-log` | GET | — | Documented in Studio's route table (backed by the `/dev/operateRecord` firmware path) but **returns `code -2: invalid request` on F2 Ultra UV firmware 40.130.021** — not exposed on every model. Use with caution. |
-| `/v1/device/connect` | PUT | `{action}` | Explicit transport-level connect/disconnect verb. Studio uses it during handover. |
-| `/v1/peripheral/control` | PUT | `{type, action, …}` | Actuate a peripheral (turn on/off, set brightness, set speed, home, measure). |
-| `/v1/peripherals` | GET | — | List of peripherals currently advertised by the controller. |
-| `/v1/device/mode` | PUT | `{mode:"<P_*>"}` | Switch processing mode (`P_PAUSE` / `P_RESUME` / `P_IDLE` / …). |
-| `/v1/camera/snap?name=<camera-name>` | GET | — | Single JPEG snapshot. Returns `{filename:"<uuid>"}` over `instruction`; the JPEG arrives on the `file_stream` channel (`fileType:5`). `name` is firmware-specific (`main` / `deep` / `overview` / `closeup` / `fireRecord`). |
-| `/v1/camera/image` | GET | — | Legacy P2S/P3 snap variant (body carries `data:{stream:"0"\|"1"}`). |
-| `/v1/camera/power` | PUT | `{action:"on"\|"off"}` | Power-cycle the on-board camera. Same surface is also reachable through `/v1/peripheral/control` with `type:"camera_power"`. Camera is on by default after boot — Studio never calls this and `/v1/camera/snap` works without an explicit power-on. Useful for privacy or to reset a wedged stream. |
-| `/v1/camera/params` | GET / PUT | — | Camera-wide parameter group (exposure, gain, white-balance — full param surface; live-tuning Studio does not expose). |
-| `/v1/camera/fire-record` | GET | — | Most recent flame-detection frame (the snapshot also reachable as `camera_fire_record` via the `?name=fireRecord` snap path). |
-| `/v1/camera/fire-record/clear` | PUT | — | Discard the cached flame-detection frame. |
-| `/v1/platform/camera/snap` | POST | — | `/v1/platform/*` equivalent of `/v1/camera/snap`. |
-| `/v1/laser-head/control` | PUT | `{action, …}` | Laser-head verbs (move, jog, calibrate). |
-| `/v1/laser-head/parameter` | GET / PUT | — | Laser-head-wide tuning parameters (power curve, focus offsets, …). |
-| `/v1/laser-head/focus/control` | POST | `{action:"start"\|"stop"\|"goTo"\|"auto_start"\|"auto_stop"}` | Autofocus run or explicit Z move. Studio's z-axis-homing button sends `{action:"goTo", autoHome:1, stopFirst:1, Z:0}` to home the Z axis on F2 Ultra UV. **POST only** — PUT returns code 404 on F2 family V2 firmware. |
-| `/v1/laser-head/focus/parameter` | GET / PUT | — | Autofocus configuration (search range, step size, dwell). |
-| `/v1/motion_control/paramter` | GET / PUT | — | Motion-controller-wide tuning (acceleration, max speed). **Note**: the spelling `paramter` is firmware-canonical (typo in the route table — verified across GS003/GS005/GS006/GS007/HJ003). |
-| `/v1/extender/control` | PUT | `{action, …}` | Extender-attachment control (conveyor / rotary table). Paired with the `/conveyor/alarm` push. |
-| `/v1/processing/state` | GET | — | Current processing state snapshot (mode + job descriptor). |
-| `/v1/processing/progress` | GET | — | Current job progress (`{percent, time_used_s}` — `time_used_s` increments live during a run). |
-| `/v1/processing/worktime` | GET | — | Per-job work-time stats. Surface not fully audited; appears to return cumulative durations rather than a live remaining-time estimate. |
-| `/v1/processing/type` | GET | — | Job-type discriminator (`engrave`, `cut`, `score`, …). |
-| `/v1/processing/batch` | GET / PUT | — | Batch-production mode (run the same job N times). Paired with `/batch/status` push. |
-| `/v1/processing/frame/replace` | PUT | — | Swap the framing rectangle mid-job (Studio's "adjust framing" flow). |
-| `/v1/processing/upload/config` | PUT | — | Upload a job-config blob to the device (separate from the file-stream payload). |
-| `/v1/processing/powerResume` | GET / PUT | `{action:"query"\|"start"}` | Power-loss recovery — query whether a paused job exists from before a power outage, or resume it. |
-| `/v1/parts/control` | PUT | `{link, data_b64}` | F0F7-tunnelled M-code to a BT-paired accessory (`M9091`–`M9098`, `M9032`–`M9085`). |
-| `/v1/parts/firmware/upgrade` | PUT | — | Push a firmware blob to a paired accessory. |
-| `/v1/parts/firmware/upgrade-progress` | GET | — | Poll the in-progress accessory flash. |
-| `/v1/file-backups` | GET | — | List the file-backups stored on the device (project storage). |
-| `/v1/net/ssid` | GET | — | Currently-joined SSID. |
-| `/v1/net/wifi_signal_strength` | GET | — | Current WiFi RSSI as a small integer. |
-| `/v1/net/clear-wifi` | PUT | — | Drop stored WiFi credentials. |
-| `/v1/wifi/ap-list` | GET | — | Scan result (visible APs). |
-| `/v1/wifi/connected-ssid` | GET | — | Same as `/v1/net/ssid` (legacy alias). |
-| `/v1/wifi/credentials` | PUT | `{ssid, psk}` | Set new WiFi credentials. |
-| `/v1/wifi/interfaces` | GET | — | List network interfaces. |
-| `/v1/display/control` | PUT | `{action}` | Front-panel display control (brightness / wake / sleep). |
-| `/v1/device/alarms` | GET | — | Currently-active alarm list. |
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/device/configs` | `PUT` | — | `{alias:"config", type:"user", kv:{<key>:<value>}}` | Set a single config key (toggles, timeouts, levels, gear). |
+| `/v1/device/configs/backup` | `GET` / `PUT` | — | `{…}` on PUT | Export the full config blob (GET) or apply a previously-exported one (PUT). |
+| `/v1/device/configs/restore` | `PUT` | — | — | Reset device configs to factory defaults. |
+| `/v1/device/operate-log` | `GET` | — | — | Documented in Studio's route table (backed by the `/dev/operateRecord` firmware path) but **returns `code -2: invalid request` on F2 Ultra UV firmware 40.130.021** — not exposed on every model. Use with caution. |
+| `/v1/device/connect` | `PUT` | — | `{action}` | Explicit transport-level connect/disconnect verb. Studio uses it during handover. |
+| `/v1/peripheral/param` | `PUT` | `{type:<X>}` | `{action:<verb>, …}` | Actuate a peripheral (turn on/off, set brightness, set speed, home, measure). There is no `/v1/peripheral/control` route on V2 firmware — every peripheral write rides `/v1/peripheral/param` with `params:{type}` + `data:{action, …}`. |
+| `/v1/peripherals` | `GET` | — | — | List of peripherals currently advertised by the controller. |
+| `/v1/device/mode` | `PUT` | — | `{mode:"<P_*>"}` | Switch processing mode (`P_IDLE` / `P_AUTOFOCUS` / `P_MEASURE` / …). Reserved for non-job mode transitions — job control (pause / resume / cancel) uses `/v1/processing/state` instead. |
+| `/v1/camera/snap` | `GET` | `{name:"main" \| "deep" \| "overview" \| "closeup" \| "fireRecord"}` | — | Single JPEG snapshot. Returns `{filename:"<uuid>"}` over `instruction`; the JPEG arrives on the `file_stream` channel (`fileType:5`). |
+| `/v1/camera/image` | `GET` | — | `{stream:"0" \| "1"}` (P2S) or `{stream:"near" \| "upside"}` (P3) | Legacy P2S/P3 snap variant. |
+| `/v1/camera/power` | `PUT` | — | `{action:"on" \| "off"}` | Power-cycle the on-board camera. Same surface is also reachable through `/v1/peripheral/param?type=camera_power`. Camera is on by default after boot — Studio never calls this and `/v1/camera/snap` works without an explicit power-on. Useful for privacy or to reset a wedged stream. |
+| `/v1/camera/params` | `GET` / `PUT` | — | `{…}` on PUT | Camera-wide parameter group (exposure, gain, white-balance — full param surface; live-tuning Studio does not expose). |
+| `/v1/camera/fire-record` | `GET` | — | — | Most recent flame-detection frame (the snapshot also reachable as `camera_fire_record` via the `?name=fireRecord` snap path). |
+| `/v1/camera/fire-record/clear` | `PUT` | — | — | Discard the cached flame-detection frame. |
+| `/v1/platform/camera/snap` | `POST` | `{name:"<camera>"}` | — | `/v1/platform/*` equivalent of `/v1/camera/snap`. |
+| `/v1/laser-head/control` | `PUT` | — | `{action, …}` | Laser-head verbs (move, jog, calibrate). |
+| `/v1/laser-head/parameter` | `GET` / `PUT` | — | `{…}` on PUT (long timeout — `600s`) | Laser-head-wide tuning parameters (power curve, focus offsets, …). |
+| `/v1/laser-head/focus/control` | `POST` | — | `{action:"start" \| "stop" \| "goTo" \| "auto_start" \| "auto_stop", autoHome?, stopFirst?, Z?}` | Autofocus run or explicit Z move. Studio's z-axis-homing button sends `{action:"goTo", autoHome:1, stopFirst:1, Z:0}` to home the Z axis on F2 Ultra UV. **POST only** — PUT returns code 404 on F2 family V2 firmware. |
+| `/v1/laser-head/focus/parameter` | `GET` / `PUT` | — | `{…}` on PUT | Autofocus configuration (search range, step size, dwell). |
+| `/v1/motion_control/paramter` | `GET` / `PUT` | — | `{…}` on PUT | Motion-controller-wide tuning (acceleration, max speed). **Note**: the spelling `paramter` is firmware-canonical (typo in the route table — verified across GS003/GS005/GS006/GS007/HJ003). |
+| `/v1/extender/control` | `POST` | — | `{action, …}` | Extender-attachment control (conveyor / rotary table). Paired with the `/conveyor/alarm` push. |
+| `/v1/processing/state` | `PUT` | `{action: "start" \| "pause" \| "stop"}` | — | Job control: `start` (also used for resume), `pause`, `stop` (also used for cancel). |
+| `/v1/processing/progress` | `GET` | — | — | Current job progress (`{progress, workingTime, totalTime}` — `workingTime` increments live during a run). |
+| `/v1/processing/worktime` | `GET` | — | — | Per-job work-time stats. Surface not fully audited; appears to return cumulative durations rather than a live remaining-time estimate. |
+| `/v1/processing/type` | `GET` | — | — | Job-type discriminator (`engrave`, `cut`, `score`, …). |
+| `/v1/processing/batch` | `GET` / `PUT` | — | `{…}` on PUT | Batch-production mode (run the same job N times). Paired with `/batch/status` push. |
+| `/v1/processing/frame/replace` | `PUT` | — | `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Swap the framing rectangle mid-job (Studio's "adjust framing" flow). |
+| `/v1/processing/upload/config` | `PUT` | — | `{fileType:"txt", autoStart:0, taskId?}` | Apply a job-config blob to the device (separate from the file-stream payload). |
+| `/v1/processing/powerResume` | `GET` / `PUT` | — | `{action:"query" \| "start"}` | Power-loss recovery — query whether a paused job exists from before a power outage, or resume it. |
+| `/v1/parts/control` | `POST` | — | `{link:"uart485", data_b64:<F0F7-encoded M-code>}` | F0F7-tunnelled M-code to a BT-paired accessory (`M9091`–`M9098`, `M9032`–`M9085`). Response `{data_b64}` carries the F0F7-framed reply. |
+| `/v1/parts/firmware/upgrade` | `POST` | — | `{…}` (10-min timeout) | Push a firmware blob to a paired accessory. |
+| `/v1/parts/firmware/upgrade-progress` | `GET` | — | — | Poll the in-progress accessory flash. |
+| `/v1/file-backups` | `POST` | — | `{…}` | Trigger a backup of the device's project storage. |
+| `/v1/net/ssid` | `GET` | — | — | Currently-joined SSID. |
+| `/v1/net/wifi_signal_strength` | `POST` | — | `{name:"wlan0"}` | `{wifi_signal_strength:<rssi-int>}` |
+| `/v1/net/clear-wifi` | `PUT` | — | — | Drop stored WiFi credentials. |
+| `/v1/wifi/ap-list` | `GET` | — | — | Scan result (visible APs). |
+| `/v1/wifi/connected-ssid` | `GET` | — | — | Same as `/v1/net/ssid` (legacy alias). |
+| `/v1/wifi/credentials` | `PUT` | — | `{ssid, psk}` | Set new WiFi credentials. |
+| `/v1/wifi/interfaces` | `GET` | — | — | List network interfaces (`[{iface, ip, …}]`). |
+| `/v1/display/control` | `POST` | — | `{action}` | Front-panel display control (brightness / wake / sleep). |
+| `/v1/device/alarms` | `GET` | — | — | Currently-active alarm list. |
+| `/v1/device/upgrade-mode` | `PUT` | `{mode:"ready" \| "upgrade"}` | `{machine_type:"MXF"}` on `ready`; `{force_upgrade:1, action:"burn", atomm:1}` on `upgrade` | Firmware-update handshake (3-step flow — see [File transfer](#file-transfer-ws-v2)). |
 
 #### Push events (full table)
 
