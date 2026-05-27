@@ -160,11 +160,15 @@ class M2WSV2Protocol(WSV2Protocol):
         if not self._connected:
             await self.connect()
 
-        # Status — /v1/platform/device/state returns {curMode:{mode,...}}
+        # Status — /v1/platform/device/state is a push-event URL key
+        # only (DEVICE_STATE NOTIFY frames keyed by it). Actively
+        # pulling a snapshot goes via Studio's ``syncDeviceState``
+        # → POST /v1/platform/device/state/sync. Response payload
+        # is the same shape as the push: ``{curMode:{mode,desc,subMode,taskId}}``.
         try:
-            s = await self.request(M2_PATH_STATE, "GET")
+            s = await self.request(M2_PATH_STATE_SYNC, method="POST")
         except Exception as err:
-            _LOGGER.debug("M2 %s failed: %s", M2_PATH_STATE, err)
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_STATE_SYNC, err)
             s = {}
         if isinstance(s, dict):
             cur = s.get("curMode") or {}
