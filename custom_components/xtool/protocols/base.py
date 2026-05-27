@@ -164,6 +164,7 @@ class XtoolDeviceModel:
     has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
     # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
     has_button_event: bool = False  # WS-V2: /button/status push fires
+    has_inkjet: bool = False  # M2: inkjet head + /v1/project/inkjet/*
     # BT accessory subsystem. Default True — every Studio bundle (S1
     # / D-series / REST / WS-V2) defines ``getAllDangleConnectList``
     # (M9098), and the firmware returns an empty list when no dongle
