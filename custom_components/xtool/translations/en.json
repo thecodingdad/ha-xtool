@@ -355,6 +355,15 @@
       "camera_deep": {
         "name": "Deep camera"
       },
+      "camera_far": {
+        "name": "Global camera"
+      },
+      "camera_near": {
+        "name": "Local camera"
+      },
+      "camera_side": {
+        "name": "Side camera"
+      },
       "camera_fire_record": {
         "name": "Flame record"
       }

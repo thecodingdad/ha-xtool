@@ -355,6 +355,15 @@
       "camera_deep": {
         "name": "Tiefenkamera"
       },
+      "camera_far": {
+        "name": "Übersichtskamera"
+      },
+      "camera_near": {
+        "name": "Nahkamera"
+      },
+      "camera_side": {
+        "name": "Seitenkamera"
+      },
       "camera_fire_record": {
         "name": "Flammen-Aufnahme"
       }
