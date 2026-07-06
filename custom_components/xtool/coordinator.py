@@ -133,6 +133,10 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.stats_poll_interval = max(int(stats_poll_interval), 1)
         self.dongle_poll_interval = max(int(dongle_poll_interval), 1)
         self._device_info_fetched = False
+        # Counter for the periodic device-info re-fetch. Bumped on every
+        # poll that skips the re-fetch; reset back to zero when a
+        # re-fetch actually runs. See :meth:`_should_fetch_device_info`.
+        self._device_info_refresh_counter = 0
 
         # mac_address is populated by S1/D-series/REST. F1 V2 leaves it empty.
         # entity.py reads it to add CONNECTION_NETWORK_MAC.
@@ -163,6 +167,35 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         if self.data is None or self.data.status is None:
             return XtoolStatus.UNKNOWN
         return self.data.status
+
+    # Re-run ``_fetch_device_info`` every N polls so a swapped laser
+    # module (M116 identity blob), a swapped tool head, or a firmware
+    # upgrade surfaces in HA without an integration reload. 60 polls ≈
+    # 5 min at the 5 s base interval — cheap (one identity call) and
+    # catches all hardware-swap cases, including the ones where the
+    # WS / REST connection stayed up across the swap.
+    DEVICE_INFO_REFRESH_EVERY_POLLS = 60
+
+    def _should_fetch_device_info(self) -> bool:
+        """Return True when the poll loop should re-fetch identity info.
+
+        Returns True on the very first poll (before identity was ever
+        fetched) and every ``DEVICE_INFO_REFRESH_EVERY_POLLS`` polls
+        after. Bumps the counter on every skipped poll and resets it
+        when a re-fetch fires — callers should invoke this exactly
+        once per poll cycle and dispatch to ``_fetch_device_info``
+        when it returns True.
+        """
+        if not self._device_info_fetched:
+            return True
+        if (
+            self._device_info_refresh_counter
+            >= self.DEVICE_INFO_REFRESH_EVERY_POLLS
+        ):
+            self._device_info_refresh_counter = 0
+            return True
+        self._device_info_refresh_counter += 1
+        return False
 
     # --- Polling (per-family override required by HA) -----------------------
 

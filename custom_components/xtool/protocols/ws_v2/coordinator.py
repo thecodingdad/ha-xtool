@@ -116,7 +116,7 @@ class WSV2Coordinator(XtoolCoordinator):
             # populates after the `/device/info MACHINE_INFO INFO`
             # push lands a few hundred ms into the connection.
             if (
-                not self._device_info_fetched
+                self._should_fetch_device_info()
                 or not self.serial_number
                 or not self.firmware_version
             ):

@@ -39,7 +39,7 @@ class DSeriesCoordinator(XtoolCoordinator):
             if not self.protocol.connected:
                 await self.protocol.connect()
 
-            if not self._device_info_fetched:
+            if self._should_fetch_device_info():
                 await self._fetch_device_info()
                 self._device_info_fetched = True
 

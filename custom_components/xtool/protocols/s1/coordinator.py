@@ -247,7 +247,7 @@ class S1Coordinator(XtoolCoordinator):
             if not self.xcs_compatibility_mode and not self.protocol.connected:
                 await self.protocol.connect()
 
-            if not self._device_info_fetched:
+            if self._should_fetch_device_info():
                 await self._fetch_device_info()
                 self._device_info_fetched = True
 
