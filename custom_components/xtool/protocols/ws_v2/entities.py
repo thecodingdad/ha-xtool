@@ -305,6 +305,27 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
 # --- Binary sensors ----------------------------------------------------
 
 
+class _WSV2CoverSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
+    """Cover/lid open sensor for WS-V2 family models."""
+
+    _attr_translation_key = "cover_open"
+    _attr_device_class = BinarySensorDeviceClass.OPENING
+    _attr_icon = "mdi:window-shutter-open"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("cover_open")
+
+    @property
+    def is_on(self) -> bool | None:
+        live: bool | None
+        if self.coordinator.data is None:
+            live = None
+        else:
+            live = self.coordinator.data.cover_open
+        return self._is_on_or_restored(live)
+
+
 class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
     """Generic V2 binary sensor — reads a boolean from ``state.<attr>``."""
 
@@ -1113,12 +1134,7 @@ def build_wsv2_binary_sensors(
     model = coordinator.model
 
     if model.has_lid_sensor or model.has_cover_sensor:
-        entities.append(
-            _bool_sensor_factory(
-                "cover_open", "cover_open",
-                BinarySensorDeviceClass.DOOR,
-            )(coordinator)
-        )
+        entities.append(_WSV2CoverSensor(coordinator))
     if model.has_drawer:
         entities.append(
             _bool_sensor_factory(

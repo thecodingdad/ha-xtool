@@ -643,9 +643,32 @@ class XtoolAirAssistConnected(XtoolRestoringBinarySensor, BinarySensorEntity):
         return self._is_on_or_restored(live)
 
 
+class _RestCoverSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
+    """Cover/lid open sensor for REST family models."""
+
+    _attr_translation_key = "cover_open"
+    _attr_device_class = BinarySensorDeviceClass.OPENING
+    _attr_icon = "mdi:window-shutter-open"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("cover_open")
+
+    @property
+    def is_on(self) -> bool | None:
+        live: bool | None
+        if self.coordinator.data is None:
+            live = None
+        else:
+            live = self.coordinator.data.cover_open
+        return self._is_on_or_restored(live)
+
+
 def build_rest_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorEntity]:
     entities: list[BinarySensorEntity] = []
     model = coordinator.model
+    if model.has_lid_sensor or model.has_cover_sensor:
+        entities.append(_RestCoverSensor(coordinator))
     if model.has_air_assist_state:
         entities.append(XtoolAirAssistConnected(coordinator))
     # M1 firmware doesn't push ``cooling_fan_running`` /
