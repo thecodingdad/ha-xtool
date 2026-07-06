@@ -129,7 +129,20 @@ AP2_POLL_INTERVAL = 30  # seconds between explicit M9039 queries when AP2 is ena
 # Job control / homing
 CMD_PAUSE_JOB = "M22 S1"
 CMD_RESUME_JOB = "M22 S0"
+# Upgrade-mode M-code — kept as a documentation constant, not on the
+# happy path. Studio v1.6.8 sniff + Studio v1.7.23 `enterUpgradeMode`
+# bundle definition confirm this M-code is only issued as a recovery
+# step by `handleUploadError`, never as a pre-upload trigger. The
+# actual pre-upload check Studio sends is ``M322 <model_id>`` (see
+# ``CMD_CAN_WRITE_DATA_PREFIX`` below).
 CMD_ENTER_UPGRADE_MODE = "M22 S3"
+
+# Pre-upload firmware-write permission query. Studio's `canWriteData`
+# route: ``M322`` with the device model_id ("S1") as the sole
+# argument. Response ``R1`` = write blocked; anything else = OK to
+# proceed. Studio silently ignores a timeout on this query and moves
+# straight to the upload — we mirror that: the query is best-effort.
+CMD_CAN_WRITE_DATA_PREFIX = "M322"
 
 # Per-board firmware filenames matching XCS / xTool Studio params.filename.
 # The S1 firmware routes based on this path during the /upload step.
@@ -929,46 +942,68 @@ class S1Protocol(XtoolProtocol):
     ) -> None:
         """Multi-board flash: per-board upload + burn trigger + progress poll.
 
-        Mirrors the actual XCS / xTool Studio flow exactly. For each board
-        in turn:
+        Wire-shape verified against a Studio v1.6.8 packet capture of a
+        real S1 laser-MCU firmware update (see the sniff findings in
+        docs/PROTOCOL.md, S1 section). For each board in turn:
 
-        1. ``M22 S3`` — enterUpgradeMode
-        2. ``POST /upload?filename=<path>&md5=<md5>`` — multipart with the
-           firmware blob in field ``file``. The S1 buffers the bytes
-           internally and returns ``{"result":"ok"}`` once accepted.
-        3. wait ~3 s (XCS does the same)
-        4. ``GET /burn?code=<burnType>`` — triggers the actual flash from
-           the previously uploaded file. Returns ``{"result":"ok"}``.
-        5. wait ~3 s, then poll ``/system?action=get_upgrade_progress``
-           for the live percentage; release once ``curr_progress >= total``.
+        1. ``M322 S1`` — canWriteData pre-check (best-effort; Studio
+           ignores a timeout and moves on).
+        2. ``POST /upload?filename=<path>&md5=<md5>`` — **raw firmware
+           bytes as body**, ``Content-Type: multipart/form-data``
+           (mislabeled by Studio itself, no boundary — S1 firmware
+           reads the body as raw bytes matching Content-Length).
+        3. ``GET /burn?code=<burnType>`` fires roughly 3 s after the
+           /upload starts (Studio pipelines burn onto the same TCP
+           keep-alive connection before /upload finishes). S1 replies
+           ``{"result":"ok"}``.
+        4. Poll ``/system?action=get_upgrade_progress`` every ~5 s.
+           Response ``{"curr_progress":"<str>","total_progress":"<str>"}``
+           — string-typed values, released once ``curr >= total``.
 
-        ``burnType`` is ``1`` for the main MCU (0x20), ``2`` for the laser
-        controller (0x21), ``3`` for the WiFi/network MCU (0x22).
+        Studio's ``enterUpgradeMode`` (``M22 S3``) is **not** issued on
+        the happy path — the bundle wires it only into
+        ``handleUploadError`` as a recovery step, verified against
+        both Studio v1.6.8 and v1.7.23 S1 bundles.
+
+        ``burnType`` is ``1`` for the main MCU (0x20), ``2`` for the
+        laser controller (0x21), ``3`` for the WiFi/network MCU
+        (0x22).
         """
         upload_url = f"http://{self.host}:{self._http_port}/upload"
         burn_url = f"http://{self.host}:{self._http_port}/burn"
 
         async with aiohttp.ClientSession() as session:
             for idx, (fw_file, data) in enumerate(zip(files, blobs)):
-                # 1. enter upgrade mode
-                await self.send_command(CMD_ENTER_UPGRADE_MODE)
+                # 1. canWriteData pre-check. Fire-and-forget: Studio's
+                # `dataTransform` discards the response unless it's
+                # literally ``R1`` (write blocked). We short-circuit
+                # the same way — best-effort, don't gate the upload.
+                try:
+                    await self.send_command(
+                        f"{CMD_CAN_WRITE_DATA_PREFIX} S1"
+                    )
+                except Exception as err:
+                    _LOGGER.debug("S1 canWriteData pre-check: %s", err)
 
-                # 2. upload the firmware blob to /upload with filename + md5
                 filename = S1_FLASH_FILENAMES.get(
                     fw_file.board_id, "mcu_firmware.bin"
                 )
                 md5 = fw_file.md5 or hashlib.md5(data).hexdigest()
-                form = aiohttp.FormData()
-                form.add_field(
-                    "file", data,
-                    filename=filename,
-                    content_type="application/octet-stream",
-                )
 
+                # 2. upload the firmware blob as raw body. Studio's
+                # bundle declares ``Content-Type: multipart/form-data``
+                # but axios sends the Blob directly (no boundary, no
+                # form-data field wrapping) — the S1 firmware reads
+                # the body as ``Content-Length`` raw bytes. Sending a
+                # real multipart-encoded body writes the boundary
+                # markers + Content-Disposition header bytes into
+                # flash memory and bricks the MCU. Match Studio
+                # exactly.
                 async with session.post(
                     upload_url,
-                    data=form,
+                    data=data,
                     params={"filename": filename, "md5": md5},
+                    headers={"Content-Type": "multipart/form-data"},
                     timeout=aiohttp.ClientTimeout(total=600),
                 ) as resp:
                     if resp.status != 200:
@@ -987,10 +1022,14 @@ class S1Protocol(XtoolProtocol):
                             f"{fw_file.board_id}: {body!r}"
                         )
 
-                # XCS waits 3 s between upload and burn trigger.
+                # 3. wait 3s before triggering burn — matches the
+                # Studio packet-capture timing exactly (Studio starts
+                # /burn 3 s after /upload begins; we wait for /upload
+                # to complete first then sleep 3 s, giving the S1
+                # firmware time to finish buffering).
                 await asyncio.sleep(3)
 
-                # Per-board progress scaling for the burn phase
+                # Per-board progress scaling for the burn phase.
                 board_count = max(len(files), 1)
                 base = idx / board_count
                 step = 1.0 / board_count
@@ -999,7 +1038,7 @@ class S1Protocol(XtoolProtocol):
                     if progress_cb is not None:
                         progress_cb(min(base + f * step, 1.0))
 
-                # 3. trigger flash via GET /burn?code=<burnType>
+                # 4. trigger flash via GET /burn?code=<burnType>
                 async with session.get(
                     burn_url,
                     params={"code": fw_file.burn_type},
@@ -1021,10 +1060,8 @@ class S1Protocol(XtoolProtocol):
                             f"{fw_file.board_id}: {body!r}"
                         )
 
-                # XCS waits 3 s after burn trigger before polling progress.
+                # 5. wait 3s after burn trigger, then poll progress.
                 await asyncio.sleep(3)
-
-                # 4. poll progress until done
                 await self._poll_flash_progress(_scaled_cb)
 
                 if progress_cb is not None:
