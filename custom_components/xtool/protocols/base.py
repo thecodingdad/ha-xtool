@@ -35,9 +35,12 @@ class LaserInfo:
     laser_producer: int = 0
     process_type: int = 0
     laser_tube: int = 0
+    laser_type_name: str = ""  # explicit string from machineInfo (e.g. "CO2")
 
     @property
     def type_name(self) -> str:
+        if self.laser_type_name:
+            return self.laser_type_name
         # Lazy import — laser type names live in the S1 module.
         from .s1 import get_laser_type_name
 
@@ -61,6 +64,7 @@ class DeviceInfo:
     laser_firmware: str = ""
     wifi_firmware: str = ""
     mac_address: str = ""
+    hardware_version: str = ""
     workspace_x: float = 0.0
     workspace_y: float = 0.0
     workspace_z: float = 0.0
@@ -165,6 +169,7 @@ class XtoolDeviceModel:
     # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
     has_button_event: bool = False  # WS-V2: /button/status push fires
     has_inkjet: bool = False  # M2: inkjet head + /v1/project/inkjet/*
+    has_inkjet_sensors: bool = False  # DT001: ink/water bottles, heater, film sensors
     # BT accessory subsystem. Default True — every Studio bundle (S1
     # / D-series / REST / WS-V2) defines ``getAllDangleConnectList``
     # (M9098), and the firmware returns an empty list when no dongle
@@ -248,6 +253,22 @@ class XtoolDeviceState:
     purifier_continue: bool | None = None  # /getpurifiercontinue
     print_tool_type: str = ""  # /getprintToolType
     hardware_type: str = ""  # /gethardwaretype
+    # DT001 inkjet-specific
+    cpu_temp: int | None = None
+    ambient_temp: float | None = None
+    ambient_humidity: float | None = None
+    heating_status: int | None = None
+    film_buffer_ready: bool | None = None
+    film_position_ready: bool | None = None
+    powder_loop_running: bool | None = None
+    ink_cyan: str | None = None
+    ink_black: str | None = None
+    ink_magenta: str | None = None
+    ink_white: str | None = None
+    ink_yellow: str | None = None
+    clean_water: str | None = None
+    waste_water: str | None = None
+    heater_connected: bool | None = None
     water_temperature: float | None = None  # F1 Ultra
     water_flow: float | None = None  # F1 Ultra
     z_temperature: float | None = None  # M1 Ultra

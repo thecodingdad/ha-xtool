@@ -261,6 +261,39 @@
       "hardware_type": {
         "name": "Hardware type"
       },
+      "cpu_temp": {
+        "name": "CPU temperature"
+      },
+      "ambient_temp": {
+        "name": "Ambient temperature"
+      },
+      "ambient_humidity": {
+        "name": "Ambient humidity"
+      },
+      "heating_status": {
+        "name": "Heating status"
+      },
+      "ink_cyan": {
+        "name": "Ink cyan"
+      },
+      "ink_black": {
+        "name": "Ink black"
+      },
+      "ink_magenta": {
+        "name": "Ink magenta"
+      },
+      "ink_white": {
+        "name": "Ink white"
+      },
+      "ink_yellow": {
+        "name": "Ink yellow"
+      },
+      "clean_water": {
+        "name": "Cleaning fluid"
+      },
+      "waste_water": {
+        "name": "Waste fluid"
+      },
       "gyro_x": {
         "name": "Gyro X"
       },
@@ -337,6 +370,18 @@
       },
       "water_line_ok": {
         "name": "Water line"
+      },
+      "film_buffer_ready": {
+        "name": "Film buffer ready"
+      },
+      "film_position_ready": {
+        "name": "Film position ready"
+      },
+      "powder_loop_running": {
+        "name": "Powder loop running"
+      },
+      "heater_connected": {
+        "name": "Heater connected"
       },
       "flame_alarm_enabled": {
         "name": "Flame alarm enabled"

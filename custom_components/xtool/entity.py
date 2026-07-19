@@ -72,6 +72,7 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
             model=self.coordinator.model.name,
             serial_number=self.coordinator.serial_number,
             sw_version=self.coordinator.firmware_version,
+            hw_version=self.coordinator._hardware_version or None,
         )
 
     @property

@@ -69,6 +69,11 @@ class RestCoordinator(XtoolCoordinator):
             state.firmware_version = self.firmware_version
             state.laser = self.laser
 
+            # Fallback: if /gethardwaretype returned nothing useful,
+            # use the board revision parsed from /device/machineInfo.
+            if not state.hardware_type and getattr(self, "_hardware_version", ""):
+                state.hardware_type = self._hardware_version
+
             self._emit_status_transition_events(prev_status, state)
             self._emit_button_event_if_changed(prev_button, state.last_button_event)
             self._emit_fire_warning_if_status_changed(prev_status, state.status)
@@ -94,6 +99,8 @@ class RestCoordinator(XtoolCoordinator):
                 self.laser = info.laser
             if info.main_firmware:
                 self.firmware_version = info.main_firmware
+            if info.hardware_version:
+                self._hardware_version = info.hardware_version
             if info.mac_address:
                 self.mac_address = info.mac_address
         except Exception as err:

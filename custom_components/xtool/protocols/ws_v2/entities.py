@@ -113,7 +113,19 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda state, _: state.session_count,
     ),
+    XtoolSensorEntityDescription(
+        key="cpu_temp",
+        translation_key="cpu_temp",
+        icon="mdi:cpu-64-bit",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda state, _: state.cpu_temp,
+    ),
 )
+
+_INKJET_STATUS_OPTIONS = ["normal", "low", "empty"]
 
 # Sensors that are gated by capability flags
 _GATED_SENSOR_DESCRIPTIONS: tuple[
@@ -378,6 +390,118 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             value_fn=lambda state, _: state.inkjet_toner_sn or None,
         ),
         "has_inkjet",
+    ),
+    # --- Apparel Printer inkjet sensors (gated on has_inkjet_sensors) ----
+    (
+        XtoolSensorEntityDescription(
+            key="ambient_temp",
+            translation_key="ambient_temp",
+            icon="mdi:thermometer",
+            device_class=SensorDeviceClass.TEMPERATURE,
+            native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.ambient_temp,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="ambient_humidity",
+            translation_key="ambient_humidity",
+            icon="mdi:water-percent",
+            device_class=SensorDeviceClass.HUMIDITY,
+            native_unit_of_measurement=PERCENTAGE,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.ambient_humidity,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="heating_status",
+            translation_key="heating_status",
+            icon="mdi:radiator",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.heating_status,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="ink_cyan",
+            translation_key="ink_cyan",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.ink_cyan,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="ink_black",
+            translation_key="ink_black",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.ink_black,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="ink_magenta",
+            translation_key="ink_magenta",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.ink_magenta,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="ink_white",
+            translation_key="ink_white",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.ink_white,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="ink_yellow",
+            translation_key="ink_yellow",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.ink_yellow,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="clean_water",
+            translation_key="clean_water",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.clean_water,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="waste_water",
+            translation_key="waste_water",
+            icon="mdi:water",
+            device_class=SensorDeviceClass.ENUM,
+            options=_INKJET_STATUS_OPTIONS,
+            value_fn=lambda state, _: state.waste_water,
+        ),
+        "has_inkjet_sensors",
     ),
 )
 
@@ -1258,6 +1382,23 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.RUNNING,
             )(coordinator)
         )
+    if model.has_inkjet_sensors:
+        entities.extend([
+            _bool_sensor_factory(
+                "film_buffer_ready", "film_buffer_ready",
+            )(coordinator),
+            _bool_sensor_factory(
+                "film_position_ready", "film_position_ready",
+            )(coordinator),
+            _bool_sensor_factory(
+                "powder_loop_running", "powder_loop_running",
+                BinarySensorDeviceClass.RUNNING,
+            )(coordinator),
+            _bool_sensor_factory(
+                "heater_connected", "heater_connected",
+                BinarySensorDeviceClass.CONNECTIVITY,
+            )(coordinator),
+        ])
 
     # Always-on binary sensors (V2 baseline)
     entities.append(

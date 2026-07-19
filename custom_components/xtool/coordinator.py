@@ -142,6 +142,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         # entity.py reads it to add CONNECTION_NETWORK_MAC.
         self.mac_address: str = ""
 
+        # Hardware board revision (e.g. "V1", "V8") from machineInfo.
+        self._hardware_version: str = ""
+
         # BT-accessory dynamic-add: each per-platform setup_entry stashes its
         # ``async_add_entities`` callback here so :meth:`_dispatch_new_accessories`
         # can register newly-paired accessory entities without a config-entry
