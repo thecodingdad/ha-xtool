@@ -299,6 +299,86 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         ),
         "has_runtime_stats",
     ),
+    # --- Inkjet sensors (M2, gated on has_inkjet) ------------------------
+    #
+    # Ink-volume value range is raw numeric — Studio's bundle exposes
+    # the field without an explicit ceiling. Rendered as PERCENT
+    # (best guess; a live M2 reading will confirm/refute). Icon
+    # tinted per CMYK channel.
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_ink_c",
+            translation_key="inkjet_ink_c",
+            icon="mdi:water",
+            native_unit_of_measurement=PERCENTAGE,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.inkjet_ink_c,
+        ),
+        "has_inkjet",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_ink_m",
+            translation_key="inkjet_ink_m",
+            icon="mdi:water",
+            native_unit_of_measurement=PERCENTAGE,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.inkjet_ink_m,
+        ),
+        "has_inkjet",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_ink_y",
+            translation_key="inkjet_ink_y",
+            icon="mdi:water",
+            native_unit_of_measurement=PERCENTAGE,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.inkjet_ink_y,
+        ),
+        "has_inkjet",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_ink_k",
+            translation_key="inkjet_ink_k",
+            icon="mdi:water",
+            native_unit_of_measurement=PERCENTAGE,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.inkjet_ink_k,
+        ),
+        "has_inkjet",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_sn",
+            translation_key="inkjet_sn",
+            icon="mdi:identifier",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.inkjet_sn or None,
+        ),
+        "has_inkjet",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_version",
+            translation_key="inkjet_version",
+            icon="mdi:tag",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.inkjet_version or None,
+        ),
+        "has_inkjet",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="inkjet_toner_sn",
+            translation_key="inkjet_toner_sn",
+            icon="mdi:identifier",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.inkjet_toner_sn or None,
+        ),
+        "has_inkjet",
+    ),
 )
 
 
@@ -1215,6 +1295,24 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.RUNNING,
             )(coordinator)
         )
+    # M2 inkjet head — read-only status from
+    # ``/v1/project/inkjet/{cap-status,ink-status,info}``.
+    if model.has_inkjet:
+        entities.extend([
+            _bool_sensor_factory(
+                "inkjet_head_capped", "inkjet_head_capped",
+                BinarySensorDeviceClass.LOCK,
+            )(coordinator),
+            _bool_sensor_factory(
+                "inkjet_toner_installed", "inkjet_toner_installed",
+                BinarySensorDeviceClass.PLUG,
+            )(coordinator),
+            _bool_sensor_factory(
+                "inkjet_calibrated", "inkjet_calibrated",
+                None,
+                EntityCategory.DIAGNOSTIC,
+            )(coordinator),
+        ])
     return entities
 
 

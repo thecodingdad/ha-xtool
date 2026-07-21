@@ -275,6 +275,27 @@
       },
       "accessory_airpumpv2_gear": {
         "name": "Gear"
+      },
+      "inkjet_ink_c": {
+        "name": "Ink level cyan"
+      },
+      "inkjet_ink_m": {
+        "name": "Ink level magenta"
+      },
+      "inkjet_ink_y": {
+        "name": "Ink level yellow"
+      },
+      "inkjet_ink_k": {
+        "name": "Ink level black"
+      },
+      "inkjet_sn": {
+        "name": "Inkjet head serial"
+      },
+      "inkjet_version": {
+        "name": "Inkjet head firmware"
+      },
+      "inkjet_toner_sn": {
+        "name": "Toner serial"
       }
     },
     "binary_sensor": {
@@ -328,6 +349,15 @@
       },
       "machine_lock_check_enabled": {
         "name": "Lock check enabled"
+      },
+      "inkjet_head_capped": {
+        "name": "Inkjet head capped"
+      },
+      "inkjet_toner_installed": {
+        "name": "Toner installed"
+      },
+      "inkjet_calibrated": {
+        "name": "Inkjet head calibrated"
       },
       "accessory_airpump_running": {
         "name": "Running"

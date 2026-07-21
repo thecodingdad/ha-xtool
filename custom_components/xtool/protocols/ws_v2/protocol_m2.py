@@ -75,6 +75,12 @@ M2_PATH_PERIPHERAL_FILL_LIGHT = "/v1/project/peripheral/fill-light"
 M2_PATH_PERIPHERAL_AIR_PUMP = "/v1/project/peripheral/airPump-control"
 M2_PATH_PERIPHERAL_SMOKE_FAN = "/v1/project/peripheral/smokeFan-control"
 
+# Inkjet (read-only surface — actions cap/clean deferred).
+M2_PATH_INKJET_INK_VOLUME = "/v1/project/inkjet/ink-volume"
+M2_PATH_INKJET_CAP_STATUS = "/v1/project/inkjet/cap-status"
+M2_PATH_INKJET_INK_STATUS = "/v1/project/inkjet/ink-status"
+M2_PATH_INKJET_INFO = "/v1/project/inkjet/info"
+
 # Job-control action labels carried in the ``params`` field.
 M2_ACTION_START = "START"
 M2_ACTION_PAUSE = "PAUSE"
@@ -141,6 +147,20 @@ class M2WSV2Protocol(WSV2Protocol):
 
     PATH_DEVICE_INFO = M2_PATH_MACHINE_INFO
     PATH_CAMERA_SNAP = M2_PATH_CAMERA_SNAP
+
+    # Slow-cadence poll counter for the inkjet block — inkjet
+    # sensors don't need to refresh every tick; every 6 polls
+    # (~30 s at 5 s base interval) matches the F-family's
+    # config-blob cadence.
+    _INKJET_POLL_EVERY = 6
+
+    def __init__(self, host: str, port: int | None = None) -> None:
+        # Match base signature (port has a default in the base).
+        if port is None:
+            super().__init__(host)
+        else:
+            super().__init__(host, port)
+        self._m2_poll_counter = 0
 
     # --- Status (overrides base _poll_runtime_status) ----------------------
 
@@ -217,8 +237,97 @@ class M2WSV2Protocol(WSV2Protocol):
                 if isinstance(v, (int, float)):
                     setattr(state, dst, float(v))
 
+        # 4. Inkjet block — slow cadence, gated on model.has_inkjet.
+        model = getattr(self, "_model", None)
+        if (
+            model is not None
+            and getattr(model, "has_inkjet", False)
+            and self._m2_poll_counter % self._INKJET_POLL_EVERY == 0
+        ):
+            await self._poll_inkjet(state)
+        self._m2_poll_counter += 1
+
         # Drain push-cached fields exactly like the base class does.
         self._apply_latest_to_state(state)
+
+    async def _poll_inkjet(self, state: XtoolDeviceState) -> None:
+        """Refresh the inkjet read-only surface on the M2.
+
+        Endpoints (all GET, response shapes taken from Studio
+        v1.7.23 JS002 bundle ``transformResult`` clauses):
+
+        - ``/v1/project/inkjet/ink-volume`` → ``{C, M, Y, K}`` raw
+          numeric levels per ink channel.
+        - ``/v1/project/inkjet/cap-status`` → ``{status: 0|1}``
+          (0=CLOSE, 1=OPEN per bundle enum ``d4``).
+        - ``/v1/project/inkjet/ink-status`` → ``{status: 0|1}``
+          (0=UNINSTALLED, 1=INSTALLED per bundle enum ``f4``).
+        - ``/v1/project/inkjet/info`` → ``{Calibrated, SN, Version,
+          TonerSN}`` identity + calibration blob.
+
+        Any endpoint erroring (e.g. head not installed on this
+        specific M2 hardware) leaves the corresponding state
+        field at its previous value.
+        """
+        # Ink volumes (C/M/Y/K).
+        try:
+            vol = await self.request(M2_PATH_INKJET_INK_VOLUME, "GET")
+        except Exception as err:
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_INKJET_INK_VOLUME, err)
+            vol = {}
+        if isinstance(vol, dict):
+            for src, dst in (
+                ("C", "inkjet_ink_c"),
+                ("M", "inkjet_ink_m"),
+                ("Y", "inkjet_ink_y"),
+                ("K", "inkjet_ink_k"),
+            ):
+                v = vol.get(src)
+                if isinstance(v, (int, float)):
+                    setattr(state, dst, int(v))
+
+        # Cap status (head cover open/closed).
+        try:
+            cap = await self.request(M2_PATH_INKJET_CAP_STATUS, "GET")
+        except Exception as err:
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_INKJET_CAP_STATUS, err)
+            cap = {}
+        if isinstance(cap, dict):
+            status = cap.get("status")
+            if isinstance(status, (int, bool)):
+                # 0 = CLOSE (capped), 1 = OPEN (uncapped). Entity
+                # surface: ``inkjet_head_capped`` = True when
+                # capped.
+                state.inkjet_head_capped = int(status) == 0
+
+        # Toner install status.
+        try:
+            tone = await self.request(M2_PATH_INKJET_INK_STATUS, "GET")
+        except Exception as err:
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_INKJET_INK_STATUS, err)
+            tone = {}
+        if isinstance(tone, dict):
+            status = tone.get("status")
+            if isinstance(status, (int, bool)):
+                # 0 = UNINSTALLED, 1 = INSTALLED.
+                state.inkjet_toner_installed = int(status) == 1
+
+        # Identity + calibration.
+        try:
+            info = await self.request(M2_PATH_INKJET_INFO, "GET")
+        except Exception as err:
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_INKJET_INFO, err)
+            info = {}
+        if isinstance(info, dict):
+            if info.get("SN") is not None:
+                state.inkjet_sn = str(info.get("SN"))
+            if info.get("Version") is not None:
+                state.inkjet_version = str(info.get("Version"))
+            if info.get("TonerSN") is not None:
+                state.inkjet_toner_sn = str(info.get("TonerSN"))
+            calibrated = info.get("Calibrated")
+            if isinstance(calibrated, (int, bool)):
+                state.inkjet_calibrated = bool(calibrated)
 
     # --- Device identity --------------------------------------------------
 

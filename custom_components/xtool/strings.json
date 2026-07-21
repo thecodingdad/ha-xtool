@@ -131,7 +131,14 @@
       "filter_dense_carbon": { "name": "Ultra dense carbon mesh filter remaining" },
       "filter_hepa": { "name": "HEPA filter remaining" },
       "purifier_sensor_d": { "name": "Purifier sensor D" },
-      "purifier_sensor_s": { "name": "Purifier sensor S" }
+      "purifier_sensor_s": { "name": "Purifier sensor S" },
+      "inkjet_ink_c": { "name": "Ink level cyan" },
+      "inkjet_ink_m": { "name": "Ink level magenta" },
+      "inkjet_ink_y": { "name": "Ink level yellow" },
+      "inkjet_ink_k": { "name": "Ink level black" },
+      "inkjet_sn": { "name": "Inkjet head serial" },
+      "inkjet_version": { "name": "Inkjet head firmware" },
+      "inkjet_toner_sn": { "name": "Toner serial" }
     },
     "binary_sensor": {
       "accessories": { "name": "Accessories" },
@@ -143,7 +150,10 @@
       "flame_alarm_enabled": { "name": "Flame alarm enabled" },
       "beep_enabled": { "name": "Beep enabled" },
       "gap_check_enabled": { "name": "Cover check enabled" },
-      "machine_lock_check_enabled": { "name": "Lock check enabled" }
+      "machine_lock_check_enabled": { "name": "Lock check enabled" },
+      "inkjet_head_capped": { "name": "Inkjet head capped" },
+      "inkjet_toner_installed": { "name": "Toner installed" },
+      "inkjet_calibrated": { "name": "Inkjet head calibrated" }
     },
     "camera": {
       "camera_overview": { "name": "Overview camera" },
