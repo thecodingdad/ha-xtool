@@ -614,37 +614,47 @@ class M2WSV2Protocol(WSV2Protocol):
     # --- Camera snap ------------------------------------------------------
 
     async def camera_snap(self, camera_name: str = "far") -> bytes | None:
-        """M2 camera-snap differs from the F-family base.
+        """Two-step snap: instruction POST returns filename, file_stream delivers blob.
 
-        Studio's `cameraSnap` route is
-        ``POST /v1/platform/camera/snap`` with
-        ``params:{name:"far" | "near" | "side"}``. Response shape
-        unverified without test hardware — the M2 firmware likely
-        returns image bytes either inline (base64 in the JSON reply)
-        or via a follow-up file_stream pull. For v2.5.14 we issue
-        the POST so the entity wiring is in place; actual image
-        decoding will land once a real device exposes the wire
-        shape.
+        Verified against Studio v1.7.23 JS002 bundle. Studio's
+        ``captureGlobalImage`` route only issues the POST — the
+        actual JPEG blob is fetched via a companion
+        ``downloadImage`` call flagged ``isFileTransfer:!0,
+        responseType:"blob"``, which routes to the ``file_stream``
+        WS descriptor ``{fileType:5, fileName:<uuid>}``.
+
+        Same two-step shape as the F-family camera_snap, only
+        difference is the instruction URL + POST/GET method — so
+        we can reuse the inherited ``_download_file_stream``
+        helper verbatim.
         """
         try:
             reply = await self.request(
                 M2_PATH_CAMERA_SNAP,
                 method="POST",
                 params={"name": camera_name},
+                timeout=15.0,
             )
         except Exception as err:
             _LOGGER.debug("M2 camera snap %s failed: %s", camera_name, err)
             return None
-        _LOGGER.debug("M2 camera snap %s reply: %r", camera_name, reply)
-        if isinstance(reply, dict):
-            data = reply.get("data") or reply.get("image")
-            if isinstance(data, str):
-                import base64
-                try:
-                    return base64.b64decode(data)
-                except Exception:
-                    return None
-        return None
+        if not isinstance(reply, dict):
+            return None
+        filename = reply.get("filename")
+        if not isinstance(filename, str) or not filename:
+            _LOGGER.debug(
+                "M2 camera snap %s: no filename in reply %r",
+                camera_name, reply,
+            )
+            return None
+        try:
+            return await self._download_file_stream(filename, file_type=5)
+        except Exception as err:
+            _LOGGER.debug(
+                "M2 camera snap %s file_stream download failed: %s",
+                camera_name, err,
+            )
+            return None
 
     # --- Firmware update --------------------------------------------------
 
