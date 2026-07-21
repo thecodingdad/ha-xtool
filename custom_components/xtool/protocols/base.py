@@ -317,6 +317,23 @@ class XtoolDeviceState:
     # Cover/lid (F1 V2 push events + REST /peripheral/gap)
     cover_open: bool | None = None
     cover_locked: bool | None = None
+
+    # M2 inkjet head — populated by ``M2WSV2Protocol.poll_state`` on
+    # models with ``has_inkjet=True``. Read-only surface pulled from
+    # ``/v1/project/inkjet/{ink-volume,cap-status,ink-status,info}``.
+    # Ink-volume value range is raw numeric until a live device
+    # confirms the unit (0-100 percent likely, but bundle lacks an
+    # explicit ceiling).
+    inkjet_ink_c: int | None = None
+    inkjet_ink_m: int | None = None
+    inkjet_ink_y: int | None = None
+    inkjet_ink_k: int | None = None
+    inkjet_head_capped: bool | None = None
+    inkjet_toner_installed: bool | None = None
+    inkjet_sn: str = ""
+    inkjet_version: str = ""
+    inkjet_toner_sn: str = ""
+    inkjet_calibrated: bool | None = None
     machine_lock: bool | None = None
 
     # REST IR LEDs
