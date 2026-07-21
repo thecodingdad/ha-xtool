@@ -511,6 +511,12 @@ XTOOL_M2_WSV2 = XtoolDeviceModel(
     has_inkjet=True,
     has_beeper=True,
     has_flame_alarm=True,
+    # M2's accessory topology is /v1/platform/accessories/list, not
+    # the F-family's /v1/parts/control passthrough. Until the M2
+    # accessory listing is wired properly the coordinator's
+    # generic M9098 poll would 404 every tick — skip it entirely
+    # by opting out of the F-family accessory poll.
+    has_bt_accessories=False,
     firmware_content_id="xTool-m2-firmware",
     firmware_machine_type="JS002",
     # Studio's xcs-extension manifest classifies M2 as

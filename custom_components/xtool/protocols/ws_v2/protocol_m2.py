@@ -21,11 +21,18 @@ F1/F2 family. The wire surface diverges in URL set:
   only; an active snapshot pull uses the ``/state/sync`` POST).
 - Camera snap: ``POST /v1/platform/camera/snap?name=far | near |
   side`` (not the F-family's GET ``/v1/camera/snap``).
+- Configs: ``PUT /v1/platform/device/config`` with a **flat** body
+  (``{key: value}``, no ``alias/type/kv`` envelope like the F
+  family).
+- Push events arrive as ``{method:"REPORT", data:{"<url>":<payload>,
+  …}}`` — one REPORT frame can carry multiple URL→payload pairs
+  instead of the F family's single ``{url:…, data:{module,type,info}}``
+  shape.
 
-22 URLs are shared with the F-family — all transport-layer routes
-(BT accessory passthrough via ``/v1/parts/control`` + M9098/M9082/
-M9033, ``/v1/filetransfer/*``, OTA upgrade, log packaging) — M2
-inherits those verbatim by extending :class:`WSV2Protocol`.
+The transport-layer plumbing (channels, CRC framing, transaction-id
+correlation, file_stream, OTA) is unchanged from :class:`WSV2Protocol`
+so this subclass overrides only the diverging URL-specific methods
+plus the push-frame dispatcher.
 """
 
 from __future__ import annotations
@@ -56,6 +63,8 @@ M2_PATH_CAMERA_LIVE = "/v1/platform/camera/live"
 M2_PATH_DEVICE_CONTROL = "/v1/project/device/control"
 M2_PATH_COORDINATE = "/v1/project/device/coordinate"
 M2_PATH_CONTROL_HOME = "/v1/project/control/home"
+M2_PATH_ABSOLUTE_MOVE = "/v1/project/control/absolute-move"
+M2_PATH_MEASURE_EXECUTE = "/v1/project/measure/execute"
 M2_PATH_RUNNING_STATUS = "/v1/project/running/status"
 M2_PATH_LASER_HEAD_INFO = "/v1/project/laser-head/info"
 M2_PATH_LASER_HEAD_TEMP = "/v1/project/laser-head/get-temp"
@@ -73,30 +82,46 @@ M2_ACTION_RESUME = "RESUME"
 M2_ACTION_CANCEL = "CANCEL"
 
 
-# Mode-enum mapping from Studio's bundle. Studio's
-# ``deviceMessageService`` extracts ``data.mode`` on the
-# ``/v1/platform/device/state`` push event and matches against
-# this set. M2 reuses the V2 ``P_*`` enum.
+# Mode-enum mapping — M2 firmware uses short-name mode strings
+# (verified against Studio v1.7.23 JS002 bundle:
+# ``e.IDLE=`Idle``, ``e.SLEEP=`Sleep``, ``e.WORK_PLAY=`WorkPlay``,
+# …). Push frames on ``/v1/platform/device/state`` carry these
+# exact strings — no ``.upper()`` normalisation, exact-match lookup.
+# ``P_*`` legacy keys retained as aliases in case older firmware
+# revisions still emit them from the ``/state/sync`` POST reply.
 M2_MODE_MAP: dict[str, XtoolStatus] = {
-    "P_IDLE": XtoolStatus.IDLE,
-    "P_FRAMING": XtoolStatus.FRAMING,
-    "P_FRAME_READY": XtoolStatus.FRAME_READY,
-    "P_PROCESSING_READY": XtoolStatus.PROCESSING_READY,
-    "P_PROCESSING": XtoolStatus.PROCESSING,
-    "P_PAUSE": XtoolStatus.PAUSED,
-    "P_FINISH": XtoolStatus.FINISHED,
-    "P_FINISH_PROCESSING": XtoolStatus.FINISHED,
-    "P_SLEEP": XtoolStatus.SLEEPING,
-    "P_INITIALIZING": XtoolStatus.INITIALIZING,
-    "P_ERROR": XtoolStatus.ERROR_LIMIT,
-    "P_EMERGENCY_STOP": XtoolStatus.ERROR_LIMIT,
+    # M2 short-name enum (JS002 bundle constants).
+    "Initial":    XtoolStatus.INITIALIZING,
+    "Idle":       XtoolStatus.IDLE,
+    "WorkReady":  XtoolStatus.PROCESSING_READY,
+    "WorkPlay":   XtoolStatus.PROCESSING,
+    "WorkPause":  XtoolStatus.PAUSED,
+    "WorkCancel": XtoolStatus.CANCELLING,
+    "WorkDone":   XtoolStatus.FINISHED,
+    "finish":     XtoolStatus.FINISHED,   # bundle alias
+    "Sleep":      XtoolStatus.SLEEPING,
+    "Error":      XtoolStatus.ERROR_LIMIT,
+    # Legacy P_* names (aliases — some older M2 firmwares may still
+    # emit these on the ``/state/sync`` POST response).
+    "P_IDLE":               XtoolStatus.IDLE,
+    "P_FRAMING":            XtoolStatus.FRAMING,
+    "P_FRAME_READY":        XtoolStatus.FRAME_READY,
+    "P_PROCESSING_READY":   XtoolStatus.PROCESSING_READY,
+    "P_PROCESSING":         XtoolStatus.PROCESSING,
+    "P_PAUSE":              XtoolStatus.PAUSED,
+    "P_FINISH":             XtoolStatus.FINISHED,
+    "P_FINISH_PROCESSING":  XtoolStatus.FINISHED,
+    "P_SLEEP":              XtoolStatus.SLEEPING,
+    "P_INITIALIZING":       XtoolStatus.INITIALIZING,
+    "P_ERROR":              XtoolStatus.ERROR_LIMIT,
+    "P_EMERGENCY_STOP":     XtoolStatus.ERROR_LIMIT,
 }
 
 
 # Map ws_v2 base ``set_processing_state`` action verbs to M2's
 # uppercase action labels. Used to translate the entity-side
 # ``"pause" | "start" | "stop"`` strings into the M2 wire form.
-_M2_ACTION_TABLE: dict[str, str] = {
+_M2_JOB_ACTION_TABLE: dict[str, str] = {
     "start": M2_ACTION_START,   # used for both initial start and resume
     "pause": M2_ACTION_PAUSE,
     "stop": M2_ACTION_CANCEL,
@@ -106,9 +131,12 @@ _M2_ACTION_TABLE: dict[str, str] = {
 class M2WSV2Protocol(WSV2Protocol):
     """WS-V2 protocol with the M2 (JS002) URL surface.
 
-    Inherits transport, multi-channel handling, push-drain pipeline,
-    BT accessory subsystem, file_stream and OTA helpers from
-    :class:`WSV2Protocol`. Overrides only the URL-specific methods.
+    Inherits transport, multi-channel handling, file_stream and OTA
+    helpers from :class:`WSV2Protocol`. Overrides the URL-specific
+    methods (`get_device_info`, `_poll_runtime_status`, `poll_state`,
+    `set_config`, `set_peripheral`, `set_processing_state`,
+    `parts_control`, `camera_snap`) plus the push-frame dispatcher
+    (`_dispatch_push`) to handle M2's ``REPORT`` envelope.
     """
 
     PATH_DEVICE_INFO = M2_PATH_MACHINE_INFO
@@ -123,7 +151,9 @@ class M2WSV2Protocol(WSV2Protocol):
         routing key only — Studio's ``syncDeviceState`` issues a POST
         to ``/state/sync`` for the active pull. Response payload is
         the same shape as the push: ``{curMode:{mode, desc, subMode,
-        taskId}}``.
+        taskId}}``. Mode names are M2's short-form strings ("Idle",
+        "Sleep", "WorkPlay", …) — exact-match against
+        :data:`M2_MODE_MAP`, no case coercion.
         """
         try:
             s = await self.request(M2_PATH_STATE_SYNC, method="POST")
@@ -134,8 +164,9 @@ class M2WSV2Protocol(WSV2Protocol):
             cur = s.get("curMode") or {}
             if isinstance(cur, dict):
                 mode = cur.get("mode")
-                if isinstance(mode, str):
-                    state.status = M2_MODE_MAP.get(mode, XtoolStatus.UNKNOWN)
+                if isinstance(mode, str) and mode in M2_MODE_MAP:
+                    state.status = M2_MODE_MAP[mode]
+                    self._latest["status"] = state.status
                 task_id = cur.get("taskId")
                 if task_id:
                     state.task_id = str(task_id)
@@ -147,6 +178,8 @@ class M2WSV2Protocol(WSV2Protocol):
 
         Reuses the base status step (overridden above) but reads M2-
         specific peripheral routes instead of ``/v1/peripheral/param``.
+        Inkjet block runs on a slow cadence when ``model.has_inkjet``
+        is set.
         """
         if not self._connected:
             await self.connect()
@@ -154,14 +187,19 @@ class M2WSV2Protocol(WSV2Protocol):
         # 1. Status (overridden — uses POST /state/sync, M2_MODE_MAP).
         await self._poll_runtime_status(state)
 
-        # 2. Cover / lid via /v1/project/peripheral/lid GET.
+        # 2. Cover / lid via /v1/project/peripheral/lid GET. Response
+        # is ``{state: <bool>}`` on current firmware
+        # (40.141.010.01.ht03 verified via issue #7 log); older
+        # revisions returned ``{state: "on"|"off"}`` so tolerate both.
         try:
             lid = await self.request(M2_PATH_PERIPHERAL_LID, "GET")
         except Exception:
             lid = {}
         if isinstance(lid, dict):
             lid_state = lid.get("state")
-            if isinstance(lid_state, str):
+            if isinstance(lid_state, bool):
+                state.cover_open = lid_state
+            elif isinstance(lid_state, str):
                 state.cover_open = lid_state == "on"
 
         # 3. Coordinate — laser-head X/Y/Z position.
@@ -243,6 +281,118 @@ class M2WSV2Protocol(WSV2Protocol):
             self._latest["mac_address"] = info.mac_address
         return info
 
+    # --- Config writes ----------------------------------------------------
+
+    async def set_config(self, key: str, value: Any) -> dict[str, Any]:
+        """PUT a single config key to ``/v1/platform/device/config``.
+
+        M2's config surface uses a **flat** body (``{key: value}``)
+        rather than the F family's ``{alias:"config", type:"user",
+        kv:{…}}`` envelope. Verified against Studio v1.7.23 bundle
+        route ``setFanSmokeExhaustTime`` whose ``transformRequest``
+        clause returns a bare ``{smokeFanTimeout:e}`` dict. Bool
+        values are coerced to int 0/1 to match the F-family default
+        (safe on M2 — its schema hasn't been observed rejecting
+        int, unlike some F2 UV firmwares).
+        """
+        coerced: Any = value
+        if isinstance(value, bool):
+            coerced = 1 if value else 0
+        return await self.request(
+            M2_PATH_CONFIG,
+            "PUT",
+            data={key: coerced},
+        )
+
+    # --- Peripheral writes (replaces base /v1/peripheral/param dispatch) --
+
+    async def set_peripheral(
+        self,
+        peripheral_type: str,
+        action: str | None = None,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """Dispatch a peripheral-write to M2's per-URL routes.
+
+        M2 doesn't expose ``/v1/peripheral/param`` at all
+        (``code 404: API not found``); every peripheral has its
+        own ``/v1/project/*`` route with a route-specific body
+        shape. This override maps the entity-layer
+        ``(peripheral_type, action)`` calls to the matching
+        M2 route.
+
+        Unknown ``(peripheral_type, action)`` combinations raise
+        :class:`NotImplementedError` so unmapped entities fail
+        loud instead of falling through to a 404-loop on the base
+        class's route.
+        """
+        # laser_head — homing + move_to
+        if peripheral_type == "laser_head":
+            if action == "home_all":
+                return await self.request(
+                    M2_PATH_CONTROL_HOME, "POST",
+                    params={"axis": "ALL"},
+                )
+            if action == "home_xy":
+                return await self.request(
+                    M2_PATH_CONTROL_HOME, "POST",
+                    params={"axis": "XY"},
+                )
+            if action == "home_z":
+                return await self.request(
+                    M2_PATH_CONTROL_HOME, "POST",
+                    params={"axis": "Z"},
+                )
+            if action == "move_to":
+                x = float(extra.get("x", 0))
+                y = float(extra.get("y", 0))
+                return await self.request(
+                    M2_PATH_ABSOLUTE_MOVE, "POST",
+                    data={"coor": {"x": x, "y": y}, "speed": 18000},
+                )
+
+        # ir_measure_distance — Z-axis distance probe
+        if peripheral_type == "ir_measure_distance" and action == "measure":
+            return await self.request(
+                M2_PATH_MEASURE_EXECUTE, "POST",
+                data={
+                    "measurement": {"axis": "Z", "retPos": 0, "retSpeed": 0},
+                    "finish": {"action": "NONE"},
+                },
+            )
+
+        # fill_light — brightness (base entity surfaces a single
+        # channel; map to M2's ``far`` = global overview light).
+        if peripheral_type == "fill_light" and action == "set_brightness":
+            value = int(extra.get("value", 0))
+            return await self.request(
+                M2_PATH_PERIPHERAL_FILL_LIGHT, "PUT",
+                params={"name": "far"},
+                data={"brightness": value},
+            )
+
+        # smoking_fan — on/off. Bundle only defines the URL
+        # (``setSmokeFanSpeed``); body shape borrowed from the
+        # ``weakLaser`` precedent (``{enable:!0}``) since Studio
+        # doesn't ship an explicit ``transformRequest``.
+        if peripheral_type == "smoking_fan" and action in ("on", "off"):
+            return await self.request(
+                M2_PATH_PERIPHERAL_SMOKE_FAN, "POST",
+                data={"enable": action == "on"},
+            )
+
+        # air_pump — same best-effort body shape as smoking_fan.
+        if peripheral_type == "air_pump" and action in ("on", "off"):
+            return await self.request(
+                M2_PATH_PERIPHERAL_AIR_PUMP, "POST",
+                data={"enable": action == "on"},
+            )
+
+        raise NotImplementedError(
+            f"M2 has no set_peripheral mapping for "
+            f"peripheral_type={peripheral_type!r} action={action!r}"
+        )
+
     # --- Job control ------------------------------------------------------
 
     async def set_processing_state(self, action: str) -> dict[str, Any]:
@@ -258,7 +408,7 @@ class M2WSV2Protocol(WSV2Protocol):
         handles all three buttons; the entity layer doesn't need to
         know about M2's uppercase action labels.
         """
-        m2_action = _M2_ACTION_TABLE.get(action)
+        m2_action = _M2_JOB_ACTION_TABLE.get(action)
         if m2_action is None:
             raise ValueError(f"M2 unknown processing action: {action}")
         return await self.request(
@@ -266,6 +416,91 @@ class M2WSV2Protocol(WSV2Protocol):
             method="POST",
             params={"action": m2_action},
         )
+
+    # --- Accessory passthrough (no-op on M2) ------------------------------
+
+    async def parts_control(
+        self, mcode: str, prefix: bytes, timeout: float = 6.0,
+    ) -> str | None:
+        """M2 doesn't expose ``/v1/parts/control``.
+
+        Accessories on M2 live behind ``GET /v1/platform/accessories/list``
+        — a completely different topology (no F0F7 tunnel, no per-mcode
+        passthrough). Return ``None`` so the coordinator's
+        ``_poll_accessories`` records "no accessories" instead of
+        spamming ``code 404: API not found`` every poll cycle. Proper
+        M2 accessory support lands in a follow-up once the
+        ``/v1/platform/accessories/list`` payload is verified live.
+        """
+        return None
+
+    # --- Push event dispatch ----------------------------------------------
+
+    def _dispatch_push(self, event: dict[str, Any]) -> None:
+        """Handle M2's ``REPORT`` push envelope + fall through to base.
+
+        M2 push frames arrive as::
+
+            {"type":"request", "method":"REPORT",
+             "data": {"<url>": <payload>, ...}}
+
+        where ``data`` is a dict keyed by URL routing key (each
+        REPORT frame can carry multiple URL→payload pairs — e.g.
+        machine-info + wifi info together). This differs from the
+        F family's ``{url:"<path>", data:{module,type,info}}``
+        shape.
+
+        Iterate every ``(url, payload)`` pair and dispatch each to
+        its M2-specific handler. Anything not a REPORT frame falls
+        through to the base ``_dispatch_push``.
+        """
+        if event.get("method") == "REPORT" and isinstance(event.get("data"), dict):
+            for url, payload in event["data"].items():
+                self._dispatch_m2_report(url, payload)
+            return
+        super()._dispatch_push(event)
+
+    def _dispatch_m2_report(self, url: str, payload: Any) -> None:
+        """Dispatch a single M2 REPORT ``(url, payload)`` pair."""
+        if url == M2_PATH_STATE:
+            # /v1/platform/device/state → {mode: "<short-name>"}
+            if isinstance(payload, dict):
+                mode = payload.get("mode")
+                if isinstance(mode, str) and mode in M2_MODE_MAP:
+                    self._latest["status"] = M2_MODE_MAP[mode]
+                task_id = payload.get("taskId")
+                if task_id:
+                    self._latest["task_id"] = str(task_id)
+            return
+
+        if url == M2_PATH_ALARM:
+            # /v1/platform/device/alarm → list; empty = no alarm.
+            self._latest["alarm_present"] = bool(payload)
+            return
+
+        if url == M2_PATH_MACHINE_INFO:
+            # /v1/platform/device/machine-info → identity blob.
+            if isinstance(payload, dict):
+                if payload.get("deviceName"):
+                    self._latest["device_name"] = str(payload["deviceName"])
+                if payload.get("sn"):
+                    self._latest["serial_number"] = str(payload["sn"])
+                if payload.get("mac"):
+                    self._latest["mac_address"] = str(payload["mac"])
+                firmware = payload.get("firmware")
+                if isinstance(firmware, dict):
+                    fw_ver = (
+                        firmware.get("package_version")
+                        or firmware.get("version")
+                    )
+                    if fw_ver:
+                        self._latest["firmware_version"] = str(fw_ver)
+            return
+
+        # /v1/platform/wifi/info + any other unhandled URL —
+        # log-only for now. Wire the WiFi diagnostic sensors in a
+        # follow-up once the entity surface lands.
+        _LOGGER.debug("M2 REPORT unhandled url=%s payload=%r", url, payload)
 
     # --- Camera snap ------------------------------------------------------
 
