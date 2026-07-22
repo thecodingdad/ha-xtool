@@ -116,6 +116,10 @@ WSV2_TRANSACTION_ID_WRAP = 65500
 WSV2_FRAME_HEADER = bytes([0xBA, 0xBE])
 WSV2_PROTOCOL_JSON = 4
 WSV2_PROTOCOL_BUFFER = 5
+# Studio's ``bl.FILE_TRANSFER`` frame code — file_stream WS binary
+# chunks carry the raw file bytes as payload wrapped in the same
+# BABE + CRC envelope as JSON frames.
+WSV2_PROTOCOL_FILE_TRANSFER = 33
 # CRC-16/ARC (poly 0x8005 reflected, init 0, no xorout) — table-driven
 # implementation matching Studio's ``crc16_default``.
 _CRC16_TABLE = [
@@ -2285,13 +2289,37 @@ class WSV2Protocol(XtoolProtocol):
     ) -> bytes:
         """Open a file_stream WS, receive the binary blob for ``filename``.
 
-        Mirror of :meth:`_upload_file_stream` for the receive direction.
-        Studio's ``isFileTransfer:true, responseType:"blob"`` items —
-        camera snap, fire-record, log export — all flow through this
-        path. Sends the same descriptor envelope as the upload path
-        (``{fileType, fileName}``) and concatenates every BINARY frame
-        until the server signals end-of-stream (TEXT
-        ``{"transferFinish":true}`` / WS close / receive timeout).
+        Studio's ``atomm-sharedworker`` framer wraps every V2 WS
+        frame — including file_stream — in the same 10-byte BABE
+        + CRC envelope as the instruction channel. The
+        ``protocol_type`` field distinguishes them:
+        ``WSV2_PROTOCOL_JSON`` for regular request/response
+        frames, ``WSV2_PROTOCOL_FILE_TRANSFER`` for binary file
+        chunks.
+
+        Download flow (verified against Studio v1.7.23 JS002
+        bundle + `atomm-sharedworker.esm.*` framer):
+
+        1. Open ``?function=file_stream`` WS.
+        2. Send a normal V2 instruction-frame
+           ``{type:"request", method:"PUT",
+             url:"/v1/filetransfer/download",
+             data:{filename, fileType}, transactionId:<n>}``,
+           envelope-wrapped with ``protocol_type=JSON(4)``.
+        3. Firmware answers with a ``{type:"response", code:0,
+           transactionId:<n>}`` frame on the same WS.
+        4. Firmware pushes N binary chunks, each envelope-wrapped
+           with ``protocol_type=FILE_TRANSFER(33)``. Payload of
+           each chunk is a raw slice of the file.
+        5. Firmware closes the WS (or falls quiet past the
+           receive timeout) once the file is done.
+
+        Earlier revisions sent a plain-text
+        ``ws.send_str(json.dumps({fileType, fileName}))``
+        descriptor with no envelope wrapping — M2 firmware
+        discards those as framing errors and never starts the
+        push (issue #7). F-family firmware apparently tolerates
+        the raw descriptor sometimes.
         """
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
@@ -2299,7 +2327,22 @@ class WSV2Protocol(XtoolProtocol):
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
             f"?id={uuid.uuid4()}&function=file_stream"
         )
+        transaction_id = self._next_transaction_id()
+        request_payload: dict[str, Any] = {
+            "type": "request",
+            "method": "PUT",
+            "url": "/v1/filetransfer/download",
+            "params": {},
+            "data": {"filename": filename, "fileType": file_type},
+            "timestamp": int(time.time() * 1000),
+            "transactionId": transaction_id,
+        }
+        request_frame = _encode_frame(
+            _json_compact(request_payload).encode("utf-8"),
+            protocol_type=WSV2_PROTOCOL_JSON,
+        )
         buf = bytearray()
+        scan = bytearray()
         async with self._session.ws_connect(
             url,
             ssl=_ssl_context(),
@@ -2307,17 +2350,20 @@ class WSV2Protocol(XtoolProtocol):
             heartbeat=None,
             max_msg_size=0,
         ) as ws:
-            await ws.send_str(json.dumps({
-                "fileType": file_type,
-                "fileName": filename,
-            }))
+            await ws.send_bytes(request_frame)
+            _LOGGER.debug(
+                "V2 file_stream TX PUT /v1/filetransfer/download "
+                "filename=%s fileType=%d txn=%d",
+                filename, file_type, transaction_id,
+            )
             deadline = time.monotonic() + timeout
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     _LOGGER.debug(
-                        "V2 file_stream download %s: timeout after %ss",
-                        filename, timeout,
+                        "V2 file_stream download %s: timeout after %.1fs "
+                        "(received %d bytes)",
+                        filename, timeout, len(buf),
                     )
                     break
                 try:
@@ -2325,11 +2371,46 @@ class WSV2Protocol(XtoolProtocol):
                 except asyncio.TimeoutError:
                     break
                 if msg.type == aiohttp.WSMsgType.BINARY:
-                    buf.extend(msg.data)
+                    scan.extend(msg.data)
+                    frames, scan_rem = _decode_frames(bytes(scan))
+                    scan = bytearray(scan_rem)
+                    for protocol_type, payload in frames:
+                        if protocol_type == WSV2_PROTOCOL_FILE_TRANSFER:
+                            # Studio's parser treats a 1-byte 0x82
+                            # payload as a pong / keep-alive; treat
+                            # anything else as a JPEG slice.
+                            if len(payload) == 1 and payload[0] == 0x82:
+                                continue
+                            buf.extend(payload)
+                        elif protocol_type == WSV2_PROTOCOL_JSON:
+                            try:
+                                event = json.loads(
+                                    payload.decode("utf-8", "replace")
+                                )
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                event = None
+                            if isinstance(event, dict):
+                                code = event.get("code")
+                                if isinstance(code, int) and code != 0:
+                                    _LOGGER.debug(
+                                        "V2 file_stream download %s "
+                                        "aborted: code=%s msg=%s",
+                                        filename, code,
+                                        event.get("msg") or event.get("message"),
+                                    )
+                                    return b""
+                                if (
+                                    isinstance(event.get("data"), dict)
+                                    and event["data"].get("transferFinish")
+                                ):
+                                    break
+                        else:
+                            _LOGGER.debug(
+                                "V2 file_stream unknown protocol_type=%d "
+                                "len=%d",
+                                protocol_type, len(payload),
+                            )
                 elif msg.type == aiohttp.WSMsgType.TEXT:
-                    # Server end-of-stream marker. Some firmware emits
-                    # ``{"transferFinish":true}``, others close the WS
-                    # without an explicit marker.
                     try:
                         payload = json.loads(msg.data)
                     except (json.JSONDecodeError, TypeError):
@@ -2346,6 +2427,10 @@ class WSV2Protocol(XtoolProtocol):
                     aiohttp.WSMsgType.ERROR,
                 ):
                     break
+        _LOGGER.debug(
+            "V2 file_stream download %s finished — %d bytes",
+            filename, len(buf),
+        )
         return bytes(buf)
 
     def set_machine_type(self, machine_type: str) -> None:

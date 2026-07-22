@@ -614,19 +614,20 @@ class M2WSV2Protocol(WSV2Protocol):
     # --- Camera snap ------------------------------------------------------
 
     async def camera_snap(self, camera_name: str = "far") -> bytes | None:
-        """Two-step snap: instruction POST returns filename, file_stream delivers blob.
+        """Two-step snap: POST returns filename, file_stream delivers blob.
 
         Verified against Studio v1.7.23 JS002 bundle. Studio's
-        ``captureGlobalImage`` route only issues the POST — the
-        actual JPEG blob is fetched via a companion
-        ``downloadImage`` call flagged ``isFileTransfer:!0,
-        responseType:"blob"``, which routes to the ``file_stream``
-        WS descriptor ``{fileType:5, fileName:<uuid>}``.
+        ``captureGlobalImage`` route issues the POST and its
+        companion ``downloadImage`` — flagged
+        ``isFileTransfer:!0, responseType:"blob"`` — reads the
+        JPEG on the ``file_stream`` WS. The wire framing for the
+        download lives in the inherited
+        :meth:`_download_file_stream` helper (envelope-wrapped
+        instruction request → binary FILE_TRANSFER chunks).
 
-        Same two-step shape as the F-family camera_snap, only
-        difference is the instruction URL + POST/GET method — so
-        we can reuse the inherited ``_download_file_stream``
-        helper verbatim.
+        Timeout is capped at 8 s so the task exits before HA's own
+        10 s ``camera.snapshot`` deadline — failures show in the
+        debug log instead of being cancelled mid-flight.
         """
         try:
             reply = await self.request(
@@ -647,14 +648,34 @@ class M2WSV2Protocol(WSV2Protocol):
                 camera_name, reply,
             )
             return None
+        _LOGGER.debug("M2 camera snap %s filename=%s", camera_name, filename)
+
         try:
-            return await self._download_file_stream(filename, file_type=5)
+            blob = await self._download_file_stream(
+                filename, file_type=5, timeout=8.0,
+            )
         except Exception as err:
             _LOGGER.debug(
                 "M2 camera snap %s file_stream download failed: %s",
                 camera_name, err,
             )
             return None
+        if not blob:
+            _LOGGER.debug(
+                "M2 camera snap %s: file_stream returned empty blob",
+                camera_name,
+            )
+            return None
+
+        try:
+            await self.request(
+                "/v1/filetransfer/finish", "PUT",
+                data={"filename": filename},
+                timeout=3.0,
+            )
+        except Exception:
+            pass
+        return blob
 
     # --- Firmware update --------------------------------------------------
 
