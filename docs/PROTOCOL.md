@@ -1227,27 +1227,70 @@ Standalone peripheral paths (mostly carried over from V1):
 
 #### File transfer (WS-V2)
 
-File uploads + downloads happen on the **`function=file_stream`** WS,
-not on the `instruction` channel. The table below lists the
-`instruction`-channel routes that bracket the binary transfer; the
-binary frames themselves flow on `file_stream`:
+The file-transfer protocol uses **two channels together**: the
+`instruction` channel carries a JSON handshake, and the
+`function=file_stream` WS carries a **binary sliding-window
+protocol** with per-transfer channel multiplexing.
 
-| Endpoint / API name | Channel | Frame method | Params | Request body | Response |
-|---|---|---|---|---|---|
-| `/v1/filetransfer/upload` | `instruction` | `PUT` | — | — | Initiate upload — returns a transfer handle. |
-| `/v1/filetransfer/download` | `instruction` | `PUT` | — | `{filename, fileType:5}` | Initiate download. Studio skips this on F2 Ultra UV (rejected with `code -99`). |
-| `/v1/filetransfer/finish` | `instruction` | `PUT` | — | `{filename}` | Acknowledge end-of-stream. |
-| `uploadGcode` | `file_stream` → `instruction` | `POST` blob, then `PUT /v1/processing/upload/config` | `{fileType:1, fileName:"tmp.gcode"}` | `Blob(<gcode>)`, then `{fileType:"txt", autoStart:0}` | Upload G-code job (sequential 2-step). |
-| `uploadWalkBorder` | `file_stream` → `instruction` | `POST` blob, then `PUT /v1/processing/upload/config` | `{fileType:1, fileName:"tmpFrame.gcode"}` | `Blob(<gcode>)`, then `{fileType:"txt", autoStart:0}` | Upload framing G-code. |
-| `replaceWalkBorder` | `file_stream` → `instruction` | `POST` blob, then `PUT /v1/processing/frame/replace` | `{fileType:1, fileName:"tmpFrameNew.gcode"}` | `Blob(<gcode>)`, then `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Replace framing G-code in-flight. |
-| `updateFirmware` | `file_stream` | `POST` blob | `{fileType:2, fileName:"package.img"}` | `Blob(<firmware>)` | Upload firmware image. |
-| `exportLog` | `instruction` → `file_stream` | `GET /v1/log`, then file_stream descriptor | `{filetype:5}` on download | — | Pull device log. |
+**Instruction-channel handshake endpoints:**
+
+| Endpoint | Frame method | Params | Request body | Response |
+|---|---|---|---|---|
+| `/v1/filetransfer/upload` | `PUT` | — | `{filetype, filename, filesize, digesttype:1 (MD5), digestdata:<md5>, channel, packetsize}` | `{packetsize}` — server-side max packet size, may be smaller than requested. |
+| `/v1/filetransfer/download` | `PUT` | — | `{filetype, filename, digesttype:1 (MD5), channel, packetsize}` | `{filesize, digesttype, digestdata:<md5>, packetsize}` — server tells client the full file size + MD5 for post-download verification + actual packet size. |
+| `/v1/filetransfer/finish` | `PUT` | — | `{code:0, message:"file transfer finish", channel}` | End-of-transfer ack, sent by client after all bytes received / uploaded. |
+
+**File-stream binary frames.** Payload sits inside the standard
+BABE + CRC envelope with `protocol_type = 33 (FILE_TRANSFER)`.
+For outgoing `FILE_REQUEST` packets Studio sets `calCrc16=false`
+(bit 7 of the protocol_type byte SET, payload-CRC bytes zeroed);
+firmware seems to require this. Two opcodes:
+
+| Opcode | Direction | Layout |
+|---|---|---|
+| `FILE_REQUEST = 1` | Client → device | 10-byte header: opcode(1) + channel(1) + offset(5-byte BE) + windowSize(3-byte BE) |
+| `FILE_DATA = 129` | Device → client | 7-byte header + payload: opcode(1) + channel(1) + offset(5-byte BE) + content(N bytes) |
+
+**Download flow** (Studio v1.7.23 `main.e_TJj9fA.js`
+`FileDownloader.startDownload/handleFileData`):
+
+1. Reserve single-byte channel ID (Studio `Rv.MAX_CHANNEL = 255`).
+2. Client sends `PUT /v1/filetransfer/download` handshake on
+   instruction channel.
+3. Client opens fresh file_stream WS, sends first `FILE_REQUEST`
+   with `offset=0`, `windowSize = min(5 MiB, filesize)`.
+4. Server pushes `FILE_DATA` chunks on file_stream. Each chunk
+   carries its own `offset`; client copies `content` into
+   `buffer[offset : offset + len(content)]`.
+5. When the current window has been fully received, client sends
+   the next `FILE_REQUEST` at the new offset. Repeat until
+   `receivedSize == filesize`.
+6. Optional MD5 verification of `buffer` against `digestdata`.
+7. Client sends `PUT /v1/filetransfer/finish` on instruction
+   channel.
+
+Envelope-encoded upload flows (G-code / firmware) use the same
+channel-multiplexed protocol with `FILE_REQUEST` messages coming
+from the device (asking for the next slice) and `FILE_DATA`
+messages coming from the client.
+
+**Composite upload APIs** (bundle-defined chains that wrap the
+protocol above):
+
+| API name | Body / sequence | Purpose |
+|---|---|---|
+| `uploadGcode` | Upload `Blob(<gcode>)` as `{filetype:1, filename:"tmp.gcode"}`; then `PUT /v1/processing/upload/config` with `{fileType:"txt", autoStart:0}`. | Upload G-code job (sequential 2-step). |
+| `uploadWalkBorder` | Same as `uploadGcode` but `filename:"tmpFrame.gcode"`. | Upload framing G-code. |
+| `replaceWalkBorder` | Upload `Blob(<gcode>)` as `{filetype:1, filename:"tmpFrameNew.gcode"}`; then `PUT /v1/processing/frame/replace` with `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}`. | Replace framing G-code in-flight. |
+| `updateFirmware` | Upload `Blob(<firmware>)` as `{filetype:2, filename:"package.img"}`. | Upload firmware image; triggered separately by `/v1/device/upgrade-mode`. |
+| `exportLog` | `GET /v1/log` (returns `{filename}`) → file_stream download with `filetype:5`. | Pull device log. |
 
 The WS-V2 firmware update is itself a 3-step API:
 
 1. `PUT /v1/device/upgrade-mode?mode=ready` with body `{machine_type:"MXF"}` — handshake, expects `{result:"ok"}`.
-2. `POST` blob with `fileType:2, fileName:"package.img"` on the
-   `file_stream` WS to push the firmware.
+2. Push the firmware blob via the file transfer protocol
+   ([File transfer (WS-V2)](#file-transfer-ws-v2)) with
+   `filetype=2, filename="package.img"`.
 3. `PUT /v1/device/upgrade-mode?mode=upgrade` with body
    `{force_upgrade:1, action:"burn", atomm:1}` — trigger flash. Reply
    `{success:true}`.
@@ -1261,17 +1304,15 @@ The WS-V2 firmware update is itself a 3-step API:
 #### Camera capture (WS-V2 still images)
 
 Studio's `captureGlobalImage` (and per-model siblings
-`cameraNearSnap`, `cameraUpsideSnap`, etc.) is a sequential 3- or
-4-step flow over `instruction` + `file_stream`. The `instruction`
-channel returns a filename handle; `file_stream` delivers the
-raw JPEG.
+`cameraNearSnap`, `cameraUpsideSnap`, etc.) is a two-step chain
+that runs the [file transfer protocol](#file-transfer-ws-v2)
+above with `filetype=5` (`CUSTOM`, the camera/log/snap blob
+class).
 
 | Step | Channel | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|---|---|
-| 1 | `instruction` | `/v1/camera/snap` (or `/v1/camera/image` on P2S/P3) | `GET` | `{name:"main" \| "deep" \| "overview" \| "closeup" \| "fireRecord"}` (P2S/P3 use `data:{stream:"0" \| "1" \| "near" \| "upside"}` instead of `params`) | — | `{filename:"<uuid>"}` |
-| 2 | `instruction` | `/v1/filetransfer/download` | `PUT` | — | `{filename, fileType:5}` | Initiate blob transfer (`fileType:5` = `CUSTOM`, the camera/log/snap blob class). **F2 Ultra UV firmware 40.130.021 rejects this step with `code -99: error parameters`** — proceed to step 3 anyway; the `file_stream` descriptor still works without the PUT (Studio itself skips step 2 on this firmware). |
-| 3 | `file_stream` | (fresh WS descriptor) | — | — | `{fileType:5, fileName:"<uuid>"}` then receive binary frames | Raw JPEG bytes; terminates on `{"transferFinish":true}` TEXT or WS close. The same descriptor + the firmware's native MJPEG continuation also drives the live-stream path — one entity per physical lens can serve both still-snap and live MJPEG without separate wire setups. |
-| 4 | `instruction` | `/v1/filetransfer/finish` | `PUT` | — | `{filename}` | Best-effort end-of-transfer ack — some firmware skips this and closes the WS instead. |
+| 1 | `instruction` | `/v1/camera/snap` (F-family) or `/v1/camera/image` (P2S/P3) or `/v1/platform/camera/snap` (M2) | `GET` on F-family, `POST` on M2 | F-family + M2: `{name:"main" \| "deep" \| "overview" \| "closeup" \| "fireRecord" \| "far" \| "near" \| "side"}` (camera name is model-specific — see the per-model step-1 variants table below). P2S/P3 pass `data:{stream:"0" \| "1" \| "near" \| "upside"}` instead of `params`. | — | `{filename:"<file-path-or-uuid>"}` (F-family returns a bare UUID; M2 returns an absolute `/tmp/<name>_<ts>.jpg` path) |
+| 2 | file transfer | See [File transfer (WS-V2)](#file-transfer-ws-v2) | — | — | Download with `filetype=5`, `filename` from step 1 | Raw JPEG bytes. Content is verified against the MD5 returned in the `/v1/filetransfer/download` handshake before the client emits `/v1/filetransfer/finish`. |
 
 Studio uses this on demand only — there is no Studio-driven
 camera-refresh interval. Implementations that want a "live preview"
@@ -1282,13 +1323,14 @@ behind unfinished `file_stream` transfers.
 
 Per-model step-1 variants (audited from each Studio bundle):
 
-| Firmware bundle | Step-1 endpoint | Step-1 query / body |
+| Firmware bundle | Step-1 endpoint | Step-1 method + query / body |
 |---|---|---|
-| GS003 (F1 Ultra V2) | `/v1/camera/snap` | `?name=main` (single camera) |
-| GS004 / GS006 / GS007 / GS009 (F2 family), HJ003 (MetalFab) | `/v1/camera/snap` | `?name=main` or `?name=deep` (firmware `cameraMediaManager` exposes both — Studio bundles for some F2 models only invoke `main`, but the `deep` selector is accepted by the same code path) |
-| P2S | `/v1/camera/image` | body `{stream:"0"\|"1"}` |
-| P3 | `/v1/camera/image` | body `{stream:"near"\|"upside"}`, on `port:8329` (HTTP, not WS — V1 fallback) |
-| All of the above (V2) | `/v1/camera/snap` | `?name=fireRecord` — captures the buffered frame from the most recent flame-detection event (when supported by the firmware build). |
+| GS003 (F1 Ultra V2) | `/v1/camera/snap` | `GET ?name=main` (single camera) |
+| GS004 / GS006 / GS007 / GS009 (F2 family), HJ003 (MetalFab) | `/v1/camera/snap` | `GET ?name=main` or `?name=deep` (firmware `cameraMediaManager` exposes both — Studio bundles for some F2 models only invoke `main`, but the `deep` selector is accepted by the same code path) |
+| P2S | `/v1/camera/image` | `GET`, body `{stream:"0"\|"1"}` |
+| P3 | `/v1/camera/image` | `GET`, body `{stream:"near"\|"upside"}`, on `port:8329` (HTTP, not WS — V1 fallback) |
+| JS002 (M2) | `/v1/platform/camera/snap` | `POST ?name=far\|near\|side` — different namespace + method vs. the F-family route |
+| All of the above (V2) | `/v1/camera/snap` | `GET ?name=fireRecord` — captures the buffered frame from the most recent flame-detection event (when supported by the firmware build). |
 | F1, M1 Ultra, DT001 | _no camera-snap route in bundle_ | n/a |
 
 #### Camera live video — `media_stream` channel + WebRTC signaling

@@ -22,7 +22,7 @@ This integration communicates directly with your xTool device over the local net
 - Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
 - Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, ...)
-- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab (overview + close-up or main + deep depending on model, plus flame record).
+- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab / M2 (overview + close-up, main + deep, or far + near + side depending on model, plus flame record on flame-detection-capable models).
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
 - Automatic reconnect on network interruption
@@ -122,6 +122,7 @@ The available options are gated by the device's protocol family — only relevan
 | AP2 filter (pre / medium / carbon / dense carbon / HEPA) | Remaining filter capacity (requires AP2 air cleaner) |
 | AP2 sensor D / AP2 sensor S | Particle sensors (requires AP2 air cleaner) |
 | Purifier speed (sensor) | Current AP2 speed reading (requires AP2 air cleaner) |
+| Ink level cyan / magenta / yellow / black | **M2 only.** Remaining ink volume per CMYK channel. Unit is best-effort PERCENTAGE until a real-hardware measurement confirms the firmware's scale. |
 
 #### Diagnostic Sensors
 
@@ -136,6 +137,7 @@ The available options are gated by the device's protocol family — only relevan
 | Origin offset X / Y | Last set work-area origin offset |
 | Last distance | Last IR-distance measurement result |
 | Riser base | **S1 only.** Identifies which riser base is mounted (reads `M1098` slot, mapped through `RISER_BASE_NAMES`). |
+| Inkjet head serial / firmware / toner serial | **M2 only.** Inkjet-head identity blob from `/v1/project/inkjet/info`. |
 
 ### Binary Sensor
 
@@ -158,6 +160,7 @@ The available options are gated by the device's protocol family — only relevan
 | Lock check enabled | Machine-lock safety enforcement enabled |
 | Alarm | Generic problem flag — on when device reports any active alarm |
 | XCS compatibility mode | On when the XCS desktop app holds the WebSocket and writes are routed via HTTP `/cmd` |
+| Inkjet head capped / Toner installed / Inkjet head calibrated | **M2 only.** Read-only inkjet-head status from `/v1/project/inkjet/{cap-status,ink-status,info}`. |
 
 Connected BT accessories surface as their own **child devices** hanging off the laser (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) and carry their own sensor / binary-sensor / switch / number / select set — gear, running flag, filter wear, connection status, post-run timeout, buzzer toggle, and so on. See the laser device page under **Devices** to navigate into the linked accessories.
 
@@ -220,6 +223,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
+| Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
 | Flame record | Snapshot of the most recent flame-detection event |
 
 ### Button
