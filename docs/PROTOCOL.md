@@ -1265,7 +1265,10 @@ firmware seems to require this. Two opcodes:
 5. When the current window has been fully received, client sends
    the next `FILE_REQUEST` at the new offset. Repeat until
    `receivedSize == filesize`.
-6. Optional MD5 verification of `buffer` against `digestdata`.
+6. Client verifies `md5(buffer) == digestdata` from the
+   handshake. On mismatch Studio throws
+   `Error("File MD5 verification failed")` and skips step 7 so
+   firmware doesn't see the transfer as complete.
 7. Client sends `PUT /v1/filetransfer/finish` on instruction
    channel.
 

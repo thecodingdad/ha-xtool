@@ -57,6 +57,7 @@ loop.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import ssl
@@ -2356,7 +2357,10 @@ class WSV2Protocol(XtoolProtocol):
         6. When ``receivedSize`` in the current window equals the
            requested window, send the next ``FILE_REQUEST`` with
            the new offset. Repeat until ``receivedSize == filesize``.
-        7. Send ``PUT /v1/filetransfer/finish`` on the instruction
+        7. Verify ``md5(buffer) == handshake.digestdata``. On
+           mismatch, skip finish and return empty (Studio's
+           ``FileDownloader.handleFileData`` throws here).
+        8. Send ``PUT /v1/filetransfer/finish`` on the instruction
            channel with body
            ``{code:0, message:"file transfer finish", channel}``.
         """
@@ -2547,7 +2551,32 @@ class WSV2Protocol(XtoolProtocol):
                 ):
                     break
 
-        # ---- Step 5 — best-effort finish --------------------------
+        if received < filesize:
+            _LOGGER.debug(
+                "V2 file_stream download %s incomplete — %d / %d bytes",
+                filename, received, filesize,
+            )
+            return b""
+
+        # ---- Step 5 — MD5 verify vs handshake digestdata -----------
+        # Studio's ``FileDownloader.handleFileData`` verifies the
+        # reassembled buffer against ``digestdata`` from the
+        # handshake before sending ``filetransfer/finish``. On
+        # mismatch Studio throws ``Error("File MD5 verification
+        # failed")`` and skips ``finish`` entirely so firmware
+        # doesn't mark the transfer complete on our end. Mirror
+        # that: log expected/actual, skip finish, return empty.
+        if digest:
+            actual = hashlib.md5(buffer).hexdigest()
+            if actual.lower() != str(digest).lower():
+                _LOGGER.debug(
+                    "V2 file_stream MD5 verification failed "
+                    "expected=%s actual=%s filename=%s size=%d",
+                    digest, actual, filename, received,
+                )
+                return b""
+
+        # ---- Step 6 — best-effort finish --------------------------
         try:
             await self.request(
                 "/v1/filetransfer/finish",
@@ -2562,14 +2591,8 @@ class WSV2Protocol(XtoolProtocol):
         except Exception:
             pass
 
-        if received < filesize:
-            _LOGGER.debug(
-                "V2 file_stream download %s incomplete — %d / %d bytes",
-                filename, received, filesize,
-            )
-            return b""
         _LOGGER.debug(
-            "V2 file_stream download %s finished — %d bytes",
+            "V2 file_stream download %s finished — %d bytes (MD5 OK)",
             filename, received,
         )
         return bytes(buffer)
