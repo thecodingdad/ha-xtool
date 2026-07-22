@@ -205,7 +205,11 @@ def _crc16(data: bytes) -> int:
     return crc
 
 
-def _encode_frame(payload: bytes, protocol_type: int = WSV2_PROTOCOL_JSON) -> bytes:
+def _encode_frame(
+    payload: bytes,
+    protocol_type: int = WSV2_PROTOCOL_JSON,
+    cal_crc16: bool = True,
+) -> bytes:
     """Wrap a JSON payload in Studio's V2 framing envelope.
 
     Layout (10-byte header + payload):
@@ -214,10 +218,19 @@ def _encode_frame(payload: bytes, protocol_type: int = WSV2_PROTOCOL_JSON) -> by
 
         bytes 0-1   : 0xBA 0xBE                   (FRAME_HEADER magic)
         bytes 2-4   : payload length, big-endian  (3 bytes)
-        byte  5     : protocol_type (low 7 bits); bit 7 = 0 → CRC enabled
+        byte  5     : protocol_type (low 7 bits); bit 7 = 0 → CRC on,
+                                                   bit 7 = 1 → CRC off
         bytes 6-7   : CRC-16/ARC of payload, big-endian
+                       (zeroed when ``cal_crc16 = False``)
         bytes 8-9   : CRC-16/ARC of bytes 0-7,  big-endian (header CRC)
         bytes 10-…  : payload bytes
+
+    Studio's ``FileDownloader.requestNextDataPacket`` sends
+    FILE_REQUEST packets with ``sendCmd(targetId, packet, false)``
+    — the third arg is ``calCrc16``. FILE_REQUEST packets go out
+    with bit 7 of the protocol_type byte set and a zeroed payload
+    CRC. Mirroring that avoids the M2 firmware silently ignoring
+    our packets on the file_stream WS.
     """
     header = bytearray(10)
     header[0:2] = WSV2_FRAME_HEADER
@@ -225,8 +238,8 @@ def _encode_frame(payload: bytes, protocol_type: int = WSV2_PROTOCOL_JSON) -> by
     header[2] = (length >> 16) & 0xFF
     header[3] = (length >> 8) & 0xFF
     header[4] = length & 0xFF
-    header[5] = protocol_type & 0x7F  # top bit 0 = CRC enabled
-    payload_crc = _crc16(payload)
+    header[5] = (protocol_type & 0x7F) | (0 if cal_crc16 else 0x80)
+    payload_crc = _crc16(payload) if cal_crc16 else 0
     header[6] = (payload_crc >> 8) & 0xFF
     header[7] = payload_crc & 0xFF
     header_crc = _crc16(bytes(header[0:8]))
@@ -2447,9 +2460,13 @@ class WSV2Protocol(XtoolProtocol):
                 # 3-byte big-endian window size
                 for i in range(3):
                     packet[7 + i] = (size >> (8 * (2 - i))) & 0xFF
+                # Studio calls sendCmd(..., calCrc16=false) for
+                # FILE_REQUEST — bit 7 of the protocol_type byte
+                # set, payload CRC zeroed. Match verbatim.
                 return _encode_frame(
                     bytes(packet),
                     protocol_type=WSV2_PROTOCOL_FILE_TRANSFER,
+                    cal_crc16=False,
                 )
 
             async def request_window(offset: int) -> int:
