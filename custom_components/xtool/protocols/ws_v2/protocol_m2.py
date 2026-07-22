@@ -666,15 +666,6 @@ class M2WSV2Protocol(WSV2Protocol):
                 camera_name,
             )
             return None
-
-        try:
-            await self.request(
-                "/v1/filetransfer/finish", "PUT",
-                data={"filename": filename},
-                timeout=3.0,
-            )
-        except Exception:
-            pass
         return blob
 
     # --- Firmware update --------------------------------------------------

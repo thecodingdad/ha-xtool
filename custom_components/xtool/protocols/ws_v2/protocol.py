@@ -116,10 +116,35 @@ WSV2_TRANSACTION_ID_WRAP = 65500
 WSV2_FRAME_HEADER = bytes([0xBA, 0xBE])
 WSV2_PROTOCOL_JSON = 4
 WSV2_PROTOCOL_BUFFER = 5
-# Studio's ``bl.FILE_TRANSFER`` frame code — file_stream WS binary
-# chunks carry the raw file bytes as payload wrapped in the same
-# BABE + CRC envelope as JSON frames.
+# Studio's ``bl.FILE_TRANSFER`` frame code — the file_stream WS
+# carries the sliding-window file-transfer packets under this
+# protocol type. Payload is a binary FILE_REQUEST / FILE_DATA
+# packet, not a JSON envelope.
 WSV2_PROTOCOL_FILE_TRANSFER = 33
+
+# --- Studio file-transfer constants (verified against Studio v1.7.23
+# ``main.e_TJj9fA.js`` — ``Iv/Lv/Rv/zv/Bv/Vv/Wv`` blocks). ------------
+# Binary packet opcodes carried in the FILE_TRANSFER payload.
+WSV2_FILE_OP_REQUEST = 1     # ``zv.FILE_REQUEST`` — client → device
+WSV2_FILE_OP_DATA = 129      # ``zv.FILE_DATA`` — device → client
+# Fixed packet-header sizes.
+WSV2_FILE_REQUEST_HEADER = 10  # ``Bv.FILE_REQUEST_HEADER``
+WSV2_FILE_DATA_HEADER = 7      # ``Bv.FILE_DATA_HEADER``
+# Digest type for the initial handshake — MD5 = 1 matches Studio's
+# ``Vv.MD5``. Firmware only accepts this value on M2 firmware
+# ``40.141.010.01.ht03``; SHA variants exist in Studio's enum but
+# are not documented as functional.
+WSV2_FILE_DIGEST_MD5 = 1
+# Default window and packet sizes (Studio's ``Iv`` = 5 MiB window,
+# ``Lv`` = 1 MiB packet). The firmware may echo a smaller
+# ``packetsize`` in the handshake reply — respect whichever is
+# smaller.
+WSV2_FILE_DEFAULT_WINDOW = 5 * 1024 * 1024
+WSV2_FILE_DEFAULT_PACKET = 1 * 1024 * 1024
+# Channel IDs are single-byte (Studio ``Rv.MAX_CHANNEL``). The
+# integration reuses a monotonic counter modulo 256; simultaneous
+# downloads pick distinct channel slots.
+WSV2_FILE_MAX_CHANNEL = 255
 # CRC-16/ARC (poly 0x8005 reflected, init 0, no xorout) — table-driven
 # implementation matching Studio's ``crc16_default``.
 _CRC16_TABLE = [
@@ -498,6 +523,11 @@ class WSV2Protocol(XtoolProtocol):
         self._pending: dict[int, _PendingRequest] = {}
         self._heartbeat_pending: asyncio.Future[dict[str, Any]] | None = None
         self._transaction_counter = 0
+        # Single-byte channel counter for the file-transfer sliding-window
+        # protocol (Studio ``Rv.MAX_CHANNEL = 255``). Each concurrent
+        # download picks a distinct channel; the wraparound is fine —
+        # channels only clash if 256+ downloads race simultaneously.
+        self._file_channel_counter = 0
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
@@ -2281,68 +2311,124 @@ class WSV2Protocol(XtoolProtocol):
             except asyncio.TimeoutError:
                 _LOGGER.debug("V2 file_stream: no ack received (timeout)")
 
+    def _next_file_channel(self) -> int:
+        """Pick a fresh channel ID for a file-transfer download."""
+        self._file_channel_counter = (
+            self._file_channel_counter + 1
+        ) & WSV2_FILE_MAX_CHANNEL
+        return self._file_channel_counter
+
     async def _download_file_stream(
         self,
         filename: str,
         file_type: int = 5,
         timeout: float = 30.0,
     ) -> bytes:
-        """Open a file_stream WS, receive the binary blob for ``filename``.
+        """Download a file from the device via Studio's sliding-window protocol.
 
-        Studio's ``atomm-sharedworker`` framer wraps every V2 WS
-        frame — including file_stream — in the same 10-byte BABE
-        + CRC envelope as the instruction channel. The
-        ``protocol_type`` field distinguishes them:
-        ``WSV2_PROTOCOL_JSON`` for regular request/response
-        frames, ``WSV2_PROTOCOL_FILE_TRANSFER`` for binary file
-        chunks.
+        Verified against Studio v1.7.23 ``main.e_TJj9fA.js``
+        (``fileTransfer.buildFileTransfer`` +
+        ``FileDownloader.startDownload/handleFileData``,
+        constants in ``Iv/Lv/Rv/zv/Bv/Vv``). Flow:
 
-        Download flow (verified against Studio v1.7.23 JS002
-        bundle + `atomm-sharedworker.esm.*` framer):
+        1. Reserve a single-byte channel ID (``Rv.MAX_CHANNEL = 255``).
+        2. Send ``PUT /v1/filetransfer/download`` on the
+           **instruction** channel via :meth:`request` with body
+           ``{filetype, filename, digesttype:1 (MD5), channel,
+           packetsize:<default>}``. Response payload is
+           ``{filesize, digesttype, digestdata:<md5>, packetsize}``
+           — firmware may return a smaller ``packetsize`` than we
+           asked for; respect that.
+        3. Open a fresh ``?function=file_stream`` WS.
+        4. Send a binary ``FILE_REQUEST`` packet (10 bytes) on the
+           file_stream WS, wrapped with envelope
+           ``protocol_type=FILE_TRANSFER``:
 
-        1. Open ``?function=file_stream`` WS.
-        2. Send a normal V2 instruction-frame
-           ``{type:"request", method:"PUT",
-             url:"/v1/filetransfer/download",
-             data:{filename, fileType}, transactionId:<n>}``,
-           envelope-wrapped with ``protocol_type=JSON(4)``.
-        3. Firmware answers with a ``{type:"response", code:0,
-           transactionId:<n>}`` frame on the same WS.
-        4. Firmware pushes N binary chunks, each envelope-wrapped
-           with ``protocol_type=FILE_TRANSFER(33)``. Payload of
-           each chunk is a raw slice of the file.
-        5. Firmware closes the WS (or falls quiet past the
-           receive timeout) once the file is done.
+                byte 0     : opcode = 1 (FILE_REQUEST)
+                byte 1     : channel
+                bytes 2-6  : offset (5-byte big-endian)
+                bytes 7-9  : windowSize (3-byte big-endian,
+                             ``min(Iv=5 MiB, filesize - offset)``)
 
-        Earlier revisions sent a plain-text
-        ``ws.send_str(json.dumps({fileType, fileName}))``
-        descriptor with no envelope wrapping — M2 firmware
-        discards those as framing errors and never starts the
-        push (issue #7). F-family firmware apparently tolerates
-        the raw descriptor sometimes.
+        5. Firmware replies with ``FILE_DATA`` packets on the
+           file_stream WS, each envelope-wrapped with
+           ``protocol_type=FILE_TRANSFER``:
+
+                byte 0     : opcode = 129 (FILE_DATA)
+                byte 1     : channel
+                bytes 2-6  : offset (5-byte big-endian)
+                bytes 7+   : raw file bytes at ``offset``
+
+        6. When ``receivedSize`` in the current window equals the
+           requested window, send the next ``FILE_REQUEST`` with
+           the new offset. Repeat until ``receivedSize == filesize``.
+        7. Send ``PUT /v1/filetransfer/finish`` on the instruction
+           channel with body
+           ``{code:0, message:"file transfer finish", channel}``.
         """
+        # ---- Step 1 — reserve channel ------------------------------
+        channel = self._next_file_channel()
+
+        # ---- Step 2 — instruction-channel handshake ---------------
+        try:
+            handshake = await self.request(
+                "/v1/filetransfer/download",
+                "PUT",
+                data={
+                    "filetype": file_type,
+                    "filename": filename,
+                    "digesttype": WSV2_FILE_DIGEST_MD5,
+                    "channel": channel,
+                    "packetsize": WSV2_FILE_DEFAULT_PACKET,
+                },
+                timeout=timeout,
+            )
+        except Exception as err:
+            _LOGGER.debug(
+                "V2 file_stream /v1/filetransfer/download handshake "
+                "failed for %s: %s", filename, err,
+            )
+            return b""
+
+        if not isinstance(handshake, dict):
+            _LOGGER.debug(
+                "V2 file_stream handshake reply not a dict: %r", handshake,
+            )
+            return b""
+        try:
+            filesize = int(handshake.get("filesize") or 0)
+        except (TypeError, ValueError):
+            filesize = 0
+        if filesize <= 0:
+            _LOGGER.debug(
+                "V2 file_stream handshake missing/zero filesize: %r",
+                handshake,
+            )
+            return b""
+        digest = handshake.get("digestdata") or ""
+        packetsize = handshake.get("packetsize")
+        window_cap = WSV2_FILE_DEFAULT_WINDOW
+        if isinstance(packetsize, int) and packetsize > 0:
+            window_cap = min(window_cap, packetsize)
+        _LOGGER.debug(
+            "V2 file_stream handshake OK filename=%s channel=%d "
+            "filesize=%d packetsize=%s digest=%s",
+            filename, channel, filesize, packetsize, digest,
+        )
+
+        # ---- Step 3 — open file_stream WS -------------------------
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
             f"?id={uuid.uuid4()}&function=file_stream"
         )
-        transaction_id = self._next_transaction_id()
-        request_payload: dict[str, Any] = {
-            "type": "request",
-            "method": "PUT",
-            "url": "/v1/filetransfer/download",
-            "params": {},
-            "data": {"filename": filename, "fileType": file_type},
-            "timestamp": int(time.time() * 1000),
-            "transactionId": transaction_id,
-        }
-        request_frame = _encode_frame(
-            _json_compact(request_payload).encode("utf-8"),
-            protocol_type=WSV2_PROTOCOL_JSON,
-        )
-        buf = bytearray()
+        buffer = bytearray(filesize)
+        received = 0
+        window_requested = 0
+        window_received = 0
         scan = bytearray()
+
         async with self._session.ws_connect(
             url,
             ssl=_ssl_context(),
@@ -2350,75 +2436,110 @@ class WSV2Protocol(XtoolProtocol):
             heartbeat=None,
             max_msg_size=0,
         ) as ws:
-            await ws.send_bytes(request_frame)
-            _LOGGER.debug(
-                "V2 file_stream TX PUT /v1/filetransfer/download "
-                "filename=%s fileType=%d txn=%d",
-                filename, file_type, transaction_id,
-            )
+
+            def build_file_request(offset: int, size: int) -> bytes:
+                packet = bytearray(WSV2_FILE_REQUEST_HEADER)
+                packet[0] = WSV2_FILE_OP_REQUEST
+                packet[1] = channel & 0xFF
+                # 5-byte big-endian offset
+                for i in range(5):
+                    packet[2 + i] = (offset >> (8 * (4 - i))) & 0xFF
+                # 3-byte big-endian window size
+                for i in range(3):
+                    packet[7 + i] = (size >> (8 * (2 - i))) & 0xFF
+                return _encode_frame(
+                    bytes(packet),
+                    protocol_type=WSV2_PROTOCOL_FILE_TRANSFER,
+                )
+
+            async def request_window(offset: int) -> int:
+                size = min(window_cap, filesize - offset)
+                await ws.send_bytes(build_file_request(offset, size))
+                _LOGGER.debug(
+                    "V2 file_stream TX FILE_REQUEST channel=%d offset=%d "
+                    "windowSize=%d",
+                    channel, offset, size,
+                )
+                return size
+
+            # ---- Step 4 — kick off first window --------------------
+            window_requested = await request_window(0)
             deadline = time.monotonic() + timeout
-            while True:
+
+            while received < filesize:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     _LOGGER.debug(
-                        "V2 file_stream download %s: timeout after %.1fs "
-                        "(received %d bytes)",
-                        filename, timeout, len(buf),
+                        "V2 file_stream download %s timed out after "
+                        "%.1fs (received %d / %d bytes)",
+                        filename, timeout, received, filesize,
                     )
                     break
                 try:
-                    msg = await asyncio.wait_for(ws.receive(), timeout=remaining)
+                    msg = await asyncio.wait_for(
+                        ws.receive(), timeout=remaining,
+                    )
                 except asyncio.TimeoutError:
                     break
+
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     scan.extend(msg.data)
                     frames, scan_rem = _decode_frames(bytes(scan))
                     scan = bytearray(scan_rem)
                     for protocol_type, payload in frames:
-                        if protocol_type == WSV2_PROTOCOL_FILE_TRANSFER:
-                            # Studio's parser treats a 1-byte 0x82
-                            # payload as a pong / keep-alive; treat
-                            # anything else as a JPEG slice.
-                            if len(payload) == 1 and payload[0] == 0x82:
-                                continue
-                            buf.extend(payload)
-                        elif protocol_type == WSV2_PROTOCOL_JSON:
-                            try:
-                                event = json.loads(
-                                    payload.decode("utf-8", "replace")
-                                )
-                            except (json.JSONDecodeError, UnicodeDecodeError):
-                                event = None
-                            if isinstance(event, dict):
-                                code = event.get("code")
-                                if isinstance(code, int) and code != 0:
-                                    _LOGGER.debug(
-                                        "V2 file_stream download %s "
-                                        "aborted: code=%s msg=%s",
-                                        filename, code,
-                                        event.get("msg") or event.get("message"),
-                                    )
-                                    return b""
-                                if (
-                                    isinstance(event.get("data"), dict)
-                                    and event["data"].get("transferFinish")
-                                ):
-                                    break
-                        else:
+                        if protocol_type != WSV2_PROTOCOL_FILE_TRANSFER:
                             _LOGGER.debug(
-                                "V2 file_stream unknown protocol_type=%d "
-                                "len=%d",
+                                "V2 file_stream unexpected "
+                                "protocol_type=%d len=%d",
                                 protocol_type, len(payload),
                             )
+                            continue
+                        if len(payload) == 1 and payload[0] == 0x82:
+                            # Pong / keep-alive.
+                            continue
+                        if len(payload) < WSV2_FILE_DATA_HEADER:
+                            _LOGGER.debug(
+                                "V2 file_stream short FILE_DATA payload "
+                                "len=%d — ignored", len(payload),
+                            )
+                            continue
+                        opcode = payload[0]
+                        if opcode != WSV2_FILE_OP_DATA:
+                            _LOGGER.debug(
+                                "V2 file_stream unexpected opcode=%d "
+                                "on channel=%d", opcode, payload[1],
+                            )
+                            continue
+                        pkt_channel = payload[1]
+                        if pkt_channel != (channel & 0xFF):
+                            _LOGGER.debug(
+                                "V2 file_stream FILE_DATA channel "
+                                "mismatch got=%d want=%d",
+                                pkt_channel, channel,
+                            )
+                            continue
+                        offset = int.from_bytes(payload[2:7], "big")
+                        content = payload[WSV2_FILE_DATA_HEADER:]
+                        if offset + len(content) > filesize:
+                            _LOGGER.debug(
+                                "V2 file_stream FILE_DATA overrun "
+                                "offset=%d len=%d filesize=%d — truncated",
+                                offset, len(content), filesize,
+                            )
+                            content = content[: filesize - offset]
+                        buffer[offset : offset + len(content)] = content
+                        received += len(content)
+                        window_received += len(content)
+                    if (
+                        window_received >= window_requested
+                        and received < filesize
+                    ):
+                        window_received = 0
+                        window_requested = await request_window(received)
                 elif msg.type == aiohttp.WSMsgType.TEXT:
-                    try:
-                        payload = json.loads(msg.data)
-                    except (json.JSONDecodeError, TypeError):
-                        payload = None
-                    if isinstance(payload, dict) and payload.get("transferFinish"):
-                        break
                     _LOGGER.debug(
-                        "V2 file_stream download text frame: %s", msg.data,
+                        "V2 file_stream unexpected TEXT frame: %s",
+                        msg.data,
                     )
                 elif msg.type in (
                     aiohttp.WSMsgType.CLOSE,
@@ -2427,11 +2548,33 @@ class WSV2Protocol(XtoolProtocol):
                     aiohttp.WSMsgType.ERROR,
                 ):
                     break
+
+        # ---- Step 5 — best-effort finish --------------------------
+        try:
+            await self.request(
+                "/v1/filetransfer/finish",
+                "PUT",
+                data={
+                    "code": 0,
+                    "message": "file transfer finish",
+                    "channel": channel,
+                },
+                timeout=3.0,
+            )
+        except Exception:
+            pass
+
+        if received < filesize:
+            _LOGGER.debug(
+                "V2 file_stream download %s incomplete — %d / %d bytes",
+                filename, received, filesize,
+            )
+            return b""
         _LOGGER.debug(
             "V2 file_stream download %s finished — %d bytes",
-            filename, len(buf),
+            filename, received,
         )
-        return bytes(buf)
+        return bytes(buffer)
 
     def set_machine_type(self, machine_type: str) -> None:
         """Stash the model's firmware_machine_type for the next flash call."""
