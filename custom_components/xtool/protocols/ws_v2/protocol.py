@@ -989,22 +989,20 @@ class WSV2Protocol(XtoolProtocol):
     async def camera_snap(self, camera_name: str = "main") -> bytes | None:
         """Capture a JPEG snapshot from one of the device's cameras.
 
-        V2 camera capture is a three-step flow per the Studio bundle's
+        V2 camera capture is a two-step flow per the Studio bundle's
         ``captureGlobalImage`` definition:
 
-        1. ``GET /v1/camera/snap?name=<camera-name>`` returns
-           ``{filename:"<uuid>"}``. Firmware-canonical names: the
-           F2 family (GS004/006/007/009) + HJ003 (MetalFab) expose
-           ``main`` + ``deep``; F1 Ultra V2 (GS003) is single
-           ``main``; the P-family carries the legacy
-           ``overview`` / ``closeup`` names through.
-        2. ``PUT /v1/filetransfer/download`` with
-           ``{filename, fileType:5}`` initiates the blob transfer.
-        3. The JPEG bytes arrive over a fresh ``function=file_stream``
-           WS — see :meth:`_download_file_stream`.
-
-        ``PUT /v1/filetransfer/finish`` is best-effort; some firmware
-        skips it and closes the WS itself.
+        1. ``GET /v1/camera/snap?name=<camera-name>`` on the
+           instruction channel returns ``{filename:"<path>"}``.
+           Firmware-canonical names: the F2 family
+           (GS004/006/007/009) + HJ003 (MetalFab) expose ``main``
+           + ``deep``; F1 Ultra V2 (GS003) is single ``main``; the
+           P-family carries the legacy ``overview`` / ``closeup``
+           names through.
+        2. :meth:`_download_file_stream` runs Studio's binary
+           sliding-window file-transfer protocol against
+           ``PUT /v1/filetransfer/download`` + the ``function=
+           file_stream`` WS + ``PUT /v1/filetransfer/finish``.
         """
         try:
             snap = await self.request(
@@ -1026,14 +1024,6 @@ class WSV2Protocol(XtoolProtocol):
             )
             return None
 
-        # ``PUT /v1/filetransfer/download`` was the legacy V2
-        # negotiation step. Removed in v2.5.7 — Studio's
-        # GS009-CLASS-4 bundle's ``captureGlobalImage`` route marks
-        # the second leg as ``isFileTransfer:true, params:{fileType:5}``
-        # and opens the ``file_stream`` channel directly. F2 Ultra UV
-        # firmware ``40.130.021.00.ht2`` actively rejects the PUT
-        # with ``code -99: error parameters``. Skipping the PUT
-        # mirrors Studio and drops a noisy log line per snap.
         try:
             blob = await self._download_file_stream(filename, file_type=5)
         except Exception as err:
@@ -1042,15 +1032,6 @@ class WSV2Protocol(XtoolProtocol):
                 camera_name, err,
             )
             return None
-
-        try:
-            await self.request(
-                "/v1/filetransfer/finish",
-                "PUT",
-                data={"filename": filename},
-            )
-        except Exception:
-            pass
 
         return blob if blob else None
 
