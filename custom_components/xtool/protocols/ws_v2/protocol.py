@@ -108,6 +108,14 @@ WSV2_PING_TRANSACTION_ID = 65510
 # Studio's generateTransactionId rotates a uint16-ish counter — we
 # wrap below the ping id to keep the two pools disjoint.
 WSV2_TRANSACTION_ID_WRAP = 65500
+# Shared client-session id. The instruction, file_stream and
+# media_stream sockets must all present the SAME ``id`` query
+# parameter (see module docstring) — V2 firmware binds a pending
+# file-transfer channel to the client session that requested it.
+# A fresh uuid4 per socket makes the file_stream connection look
+# like an unrelated client, so FILE_DATA is never delivered and
+# the device eventually reports ``-7 transfer timeout``.
+_CLIENT_SESSION_ID = uuid.uuid4()
 
 # Frame-format constants (Studio's MessageEncoder.encodeFrame /
 # MessageParser.extractCompletePackets, both gated by
@@ -413,7 +421,7 @@ async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
     """
     url = (
         f"wss://{host}:{WSV2_PORT}{WSV2_PATH}"
-        f"?id={uuid.uuid4()}&function=instruction"
+        f"?id={_CLIENT_SESSION_ID}&function=instruction"
     )
     try:
         async with aiohttp.ClientSession() as session:
@@ -627,7 +635,7 @@ class WSV2Protocol(XtoolProtocol):
     async def _open_instruction_ws(self) -> None:
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={uuid.uuid4()}&function=instruction"
+            f"?id={_CLIENT_SESSION_ID}&function=instruction"
         )
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
@@ -2272,7 +2280,7 @@ class WSV2Protocol(XtoolProtocol):
             self._session = aiohttp.ClientSession()
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={uuid.uuid4()}&function=file_stream"
+            f"?id={_CLIENT_SESSION_ID}&function=file_stream"
         )
         async with self._session.ws_connect(
             url,
@@ -2419,7 +2427,7 @@ class WSV2Protocol(XtoolProtocol):
             self._session = aiohttp.ClientSession()
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={uuid.uuid4()}&function=file_stream"
+            f"?id={_CLIENT_SESSION_ID}&function=file_stream"
         )
         buffer = bytearray(filesize)
         received = 0
