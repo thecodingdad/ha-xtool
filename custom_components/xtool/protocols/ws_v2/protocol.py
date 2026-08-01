@@ -108,6 +108,14 @@ WSV2_PING_TRANSACTION_ID = 65510
 # Studio's generateTransactionId rotates a uint16-ish counter — we
 # wrap below the ping id to keep the two pools disjoint.
 WSV2_TRANSACTION_ID_WRAP = 65500
+# Shared client-session id. The instruction, file_stream and
+# media_stream sockets must all present the SAME ``id`` query
+# parameter (see module docstring) — V2 firmware binds a pending
+# file-transfer channel to the client session that requested it.
+# A fresh uuid4 per socket makes the file_stream connection look
+# like an unrelated client, so FILE_DATA is never delivered and
+# the device eventually reports ``-7 transfer timeout``.
+_CLIENT_SESSION_ID = uuid.uuid4()
 
 # Frame-format constants (Studio's MessageEncoder.encodeFrame /
 # MessageParser.extractCompletePackets, both gated by
