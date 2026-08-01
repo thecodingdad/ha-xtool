@@ -53,19 +53,22 @@ XTOOL_F1_ULTRA_WSV2 = XtoolDeviceModel(
     has_beeper=True,
     has_flame_alarm=True,
     has_move_stop=True,
-    has_smoking_fan=True,
+    # GS002 firmware 40.52.x rejects smoking_fan, cooling_fan,
+    # uv_fire_sensor, laser_head, digital_screen, cover, ir_led,
+    # drawer, and button with code -3 "error action type !".
+    # Only gap, machine_lock, gyro, fill_light, and ext_purifier work.
     has_machine_lock=True,
     has_mode_switch=True,
-    has_uv_fire=True,
     has_gyro=True,
-    has_display_screen=True,
     has_camera=True,
     camera_names=("main",),  # Studio F1Ultra V2 bundle → /v1/camera/snap?name=main
     has_camera_exposure=True,
     has_fill_light=True,
     has_fire_record=True,
-    has_laser_head_position=True,
-    has_cover_sensor=True,
+    has_cover_sensor=True,  # gap peripheral works → cover entity
+    # Statistics endpoint returns session counts only (no time-based
+    # stats like timeModeWorking / timeSystemWork / toolRuntime).
+    # has_runtime_stats would gate 5 sensors that always show unknown.
     # No water cooling — fiber + diode galvo, internal/passive cooling.
     firmware_content_id="xTool-f1-ultra-firmware-1.5",
     firmware_machine_type="MXF",
@@ -473,6 +476,7 @@ XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     has_beeper=True,
     has_move_stop=True,
     has_camera=True,  # 16MP AI camera for nozzle calibration
+    has_inkjet_sensors=True,
     has_runtime_stats=True,  # DT001 bundle exposes standbyTime
     # Inkjet DTF device — no laser, no flame alarm, no smoke extraction.
     firmware_content_id="xTool-apparelprinter-firmware-1.5",

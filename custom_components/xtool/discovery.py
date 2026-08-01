@@ -243,6 +243,23 @@ async def _probe_v1(
                     "V1 discovered %s at %s",
                     response.get("name"), response["ip"],
                 )
+            elif "ip" in response and not broadcast and not multicast:
+                # Unicast probe to a known host — some firmware (P2
+                # 40.21.x) replies with requestId 0 instead of
+                # echoing the sent value. Accept anyway; cross-talk
+                # is not a concern in a unicast exchange.
+                devices.append(
+                    DiscoveredDevice(
+                        ip=response["ip"],
+                        name=response.get("name", DEFAULT_DEVICE_NAME),
+                        version=response.get("version", ""),
+                        protocol_version="V1",
+                    )
+                )
+                _LOGGER.debug(
+                    "V1 discovered %s at %s (requestId mismatch, unicast)",
+                    response.get("name"), response["ip"],
+                )
 
     try:
         transport, _ = await loop.create_datagram_endpoint(

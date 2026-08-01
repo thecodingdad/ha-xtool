@@ -489,7 +489,11 @@ class WSV2Protocol(XtoolProtocol):
         "last_job_time_seconds",
         "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
-        "water_flow", "drawer_open", "cpu_fan_running",
+        "water_flow", "cpu_temp", "ambient_temp", "ambient_humidity",
+        "heating_status", "film_buffer_ready", "film_position_ready",
+        "powder_loop_running", "ink_cyan", "ink_black", "ink_magenta",
+        "ink_white", "ink_yellow", "clean_water", "waste_water",
+        "heater_connected", "drawer_open", "cpu_fan_running",
         "gyro_x", "gyro_y", "gyro_z",
         "position_x", "position_y", "position_z",
         "last_distance_mm", "display_brightness",
@@ -1269,6 +1273,42 @@ class WSV2Protocol(XtoolProtocol):
                 sub = info.get("subMode")
                 if sub:
                     self._latest["working_mode"] = str(sub)
+                temp_humidity = info.get("tempHumidty")
+                if isinstance(temp_humidity, dict):
+                    ambient_temp = temp_humidity.get("temp")
+                    if isinstance(ambient_temp, (int, float)):
+                        self._latest["ambient_temp"] = float(ambient_temp)
+                    ambient_humidity = temp_humidity.get("humity")
+                    if isinstance(ambient_humidity, (int, float)):
+                        self._latest["ambient_humidity"] = float(ambient_humidity)
+                ink_bottle = info.get("inkBottle")
+                if isinstance(ink_bottle, dict):
+                    for src, dst in (
+                        ("ink_c", "ink_cyan"),
+                        ("ink_k", "ink_black"),
+                        ("ink_m", "ink_magenta"),
+                        ("ink_w", "ink_white"),
+                        ("ink_y", "ink_yellow"),
+                    ):
+                        value = ink_bottle.get(src)
+                        if isinstance(value, str) and value:
+                            self._latest[dst] = value
+                water_bottle = info.get("waterBottle")
+                if isinstance(water_bottle, dict):
+                    for src, dst in (
+                        ("clean_water_bottle", "clean_water"),
+                        ("waste_water_bottle", "waste_water"),
+                    ):
+                        value = water_bottle.get(src)
+                        if isinstance(value, str) and value:
+                            self._latest[dst] = value
+                heater = info.get("heater")
+                if isinstance(heater, dict):
+                    connect_state = heater.get("connectState")
+                    if isinstance(connect_state, str) and connect_state.strip():
+                        self._latest["heater_connected"] = (
+                            connect_state.strip().lower() == "connected"
+                        )
             mapped = WSV2_MODE_MAP.get(mode)
             if mapped is not None:
                 self._latest["status"] = mapped
@@ -1730,11 +1770,28 @@ class WSV2Protocol(XtoolProtocol):
                     watts = int(laser_power[0])
                 except (TypeError, ValueError):
                     watts = 0
-                # ``laser_power_watts`` is a read-only property on
-                # ``DeviceInfo`` (returns ``self.laser.power_watts``).
-                # Set the underlying ``laser`` field — the property
-                # picks the value up automatically.
-                info.laser = LaserInfo(power_watts=watts)
+                # laserType may be a string ("CO2") or a list
+                # (["RED","BLUE"] on F1 Ultra). Pass it through so
+                # ``LaserInfo.type_name`` returns the device's own
+                # label instead of the legacy numeric fallback.
+                raw_lt = data.get("laserType")
+                lt_str = ""
+                if isinstance(raw_lt, str) and raw_lt:
+                    lt_str = raw_lt
+                elif isinstance(raw_lt, list) and raw_lt:
+                    lt_str = " + ".join(str(t) for t in raw_lt if t)
+                info.laser = LaserInfo(
+                    power_watts=watts, laser_type_name=lt_str,
+                )
+
+            # Hardware board revision, e.g. "V8" from {h3:"V8", ...}
+            hardware = data.get("hardware")
+            if isinstance(hardware, dict):
+                for key in ("h3", "rk3568", "main"):
+                    val = hardware.get(key)
+                    if val and str(val) != "0.00":
+                        info.hardware_version = str(val)
+                        break
 
         # MetalFab firmware returns an empty body for the GET — the
         # real machineInfo arrives via the `/device/info MACHINE_INFO
@@ -1783,6 +1840,13 @@ class WSV2Protocol(XtoolProtocol):
                     state.working_mode = str(cur_mode["subMode"])
                 if cur_mode.get("taskId"):
                     state.task_id = str(cur_mode["taskId"])
+            # cpuTemp is present on every V2 model tested (F1 Ultra,
+            # DT001, etc.).  Extract it here so subclasses don't need
+            # to duplicate the logic.
+            cpu_temp = rt.get("cpuTemp")
+            if isinstance(cpu_temp, (int, float)):
+                state.cpu_temp = int(cpu_temp)
+                self._latest["cpu_temp"] = int(cpu_temp)
 
     async def _poll_configs(self) -> None:
         """Fetch + apply the persistent config blob.
@@ -1792,8 +1856,19 @@ class WSV2Protocol(XtoolProtocol):
         ``GET /v1/config/get`` with a body that lists which keys to
         return — that override lives in :class:`P2SWSV2Protocol`.
         """
+        if self.PATH_CONFIGS_GET in self._unsupported_endpoints:
+            return
         try:
             cfg = await self.request(self.PATH_CONFIGS_GET, "GET")
+        except RuntimeError as err:
+            msg = str(err)
+            if any(c in msg for c in ("code 1:", "code -2", "code -3", "code 404")):
+                _LOGGER.debug(
+                    "V2 %s rejected by firmware (%s) — caching as unsupported",
+                    self.PATH_CONFIGS_GET, msg,
+                )
+                self._unsupported_endpoints.add(self.PATH_CONFIGS_GET)
+            cfg = None
         except Exception:
             cfg = None
         if isinstance(cfg, dict):

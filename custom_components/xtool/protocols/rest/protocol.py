@@ -216,19 +216,46 @@ class RestProtocol(XtoolProtocol):
         except (ValueError, TypeError):
             pass
 
+        # laserType may be a string ("CO2", "Diode", "RED") or a list
+        # (F1 Ultra returns ["RED","BLUE"]).  Prefer the explicit string
+        # over the numeric fallback in ``get_laser_type_name``.
+        raw_lt = data.get("laserType")
+        laser_type_str = ""
+        if isinstance(raw_lt, str) and raw_lt:
+            laser_type_str = raw_lt
+        elif isinstance(raw_lt, list) and raw_lt:
+            laser_type_str = " + ".join(str(t) for t in raw_lt if t)
+
         firmware_str = ""
         firmware = data.get("firmware")
-        if isinstance(firmware, list) and firmware:
+        if isinstance(firmware, dict):
+            # P2/F1 Ultra shape: {package_version, version:{...}}
+            firmware_str = str(firmware.get("package_version") or "")
+        elif isinstance(firmware, list) and firmware:
             parts = [f.get("version", "") for f in firmware if f.get("version")]
             firmware_str = parts[0] if parts else ""
         elif isinstance(firmware, str):
             firmware_str = firmware
 
+        hardware_str = ""
+        hardware = data.get("hardware")
+        if isinstance(hardware, dict):
+            # Primary board revision, e.g. "V1" from {h3:"V1", ...}
+            for key in ("h3", "rk3568", "main"):
+                val = hardware.get(key)
+                if val and str(val) != "0.00":
+                    hardware_str = str(val)
+                    break
+        hw_ver = data.get("hardwareVersion")
+        if not hardware_str and isinstance(hw_ver, (int, float)) and hw_ver:
+            hardware_str = str(hw_ver)
+
         return DeviceInfo(
             serial_number=data.get("sn", ""),
             device_name=data.get("deviceName", ""),
-            laser=LaserInfo(power_watts=power),
+            laser=LaserInfo(power_watts=power, laser_type_name=laser_type_str),
             main_firmware=firmware_str,
+            hardware_version=hardware_str,
             mac_address=str(data.get("mac", "") or ""),
         )
 
