@@ -421,7 +421,7 @@ async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
     """
     url = (
         f"wss://{host}:{WSV2_PORT}{WSV2_PATH}"
-        f"?id={uuid.uuid4()}&function=instruction"
+        f"?id={_CLIENT_SESSION_ID}&function=instruction"
     )
     try:
         async with aiohttp.ClientSession() as session:
@@ -635,7 +635,7 @@ class WSV2Protocol(XtoolProtocol):
     async def _open_instruction_ws(self) -> None:
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={uuid.uuid4()}&function=instruction"
+            f"?id={_CLIENT_SESSION_ID}&function=instruction"
         )
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
@@ -2280,7 +2280,7 @@ class WSV2Protocol(XtoolProtocol):
             self._session = aiohttp.ClientSession()
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={uuid.uuid4()}&function=file_stream"
+            f"?id={_CLIENT_SESSION_ID}&function=file_stream"
         )
         async with self._session.ws_connect(
             url,
@@ -2427,7 +2427,7 @@ class WSV2Protocol(XtoolProtocol):
             self._session = aiohttp.ClientSession()
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
-            f"?id={uuid.uuid4()}&function=file_stream"
+            f"?id={_CLIENT_SESSION_ID}&function=file_stream"
         )
         buffer = bytearray(filesize)
         received = 0
