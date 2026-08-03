@@ -2384,7 +2384,7 @@ shown verbatim where they exist.
 | `/v1/platform/device/machine-info` | GET | — | — | `{firmware:{version,…}, sn, …}` — Studio's ``deviceInfo`` adds `version=firmware.version`, `snCode=sn` and an `accessoriesFirmware:[{contentId:"xTool-m2-firmware", contentVersion:version}]` block on top |
 | `/v1/platform/device/machine-info/name` | PUT | — | new device name string | OK |
 | `/v1/platform/device/capabilities` | GET | — | — | feature-flags blob (identity passthrough) |
-| `/v1/platform/device/config` | GET | optional `{action:"START"}`, optional `data:{kv:[<keys>]}` selector | — | `{fillLightBrightness,smokeFanTimeout,smokeFanRunningSpeed,smokeFanCleanTime,backPlaneCleanTime,fillLightCleanTime,cameraCleanTime,…}` |
+| `/v1/platform/device/config` | GET | optional `{action:"START"}`, optional `data:{kv:[<keys>]}` selector | — | Flat dict; the JS002 bundle `Urt` array enumerates the full key set: `fillLightBrightness, smokeFanTimeout, beepEnable, autoDectect` (typo — the gap/cover-check toggle), `laserCleanTipEnable, airPumpSpeedEngrave, airPumpSpeedCutting, flameSensitivity` (enum `1=LOW / 2=HIGH`), `laserEngravingCutoff{3,10,20,40}W, laserCuttingCutoff{3,10,20,40}W, automationId, slantEnable, smokeFanEngraveSpeed, smokeFanBitmapSpeed, smokeFanCuttingSpeed, smokeFanCleanTime, backPlaneCleanTime, fillLightCleanTime, cameraCleanTime` |
 | `/v1/platform/device/config` | PUT | — | per-key body, e.g. `{smokeFanTimeout:<n>}` | OK |
 | `/v1/platform/device/alarm` | GET / (push event) | — | — | alarm list; also fires as `ALARM_INFO` push |
 
@@ -2393,8 +2393,9 @@ shown verbatim where they exist.
 | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|
 | `/v1/platform/device/state` | (push event) | — | — | `DEVICE_STATE` push event — `{curMode:{mode,desc,subMode,taskId}}`. M2 reuses the WS-V2 `P_*` mode enum (`P_IDLE`, `P_PROCESSING`, `P_FRAMING`, `P_PAUSE`, `P_FINISH`, …) |
-| `/v1/platform/device/process` | (push event) | — | — | `PROCESS_EVENT` push — job-lifecycle deltas |
-| `/v1/platform/device/state/sync` | POST | optional `{name:"far"}` | — | full state snapshot |
+| `/v1/platform/device/process` | (push event) | — | — | `PROCESS_EVENT` push — `{content:{action, taskId}}` where `action` ∈ `START` / `READY` / `PAUSE` / `RESUME` / `CANCEL` / `FINISH` (bundle enum `V8`). Status transitions still come from `DEVICE_STATE`; this event carries the taskId + user-visible action label |
+| `/v1/platform/device/state/sync` | POST | optional `{name:"far"}` | — | full state snapshot — `{curMode:{mode,desc,subMode,taskId}}`. Does **not** include `cpuTemp` (M2 firmware has no CPU-temp source) |
+| `/v1/project/process/statistics` | GET | — | — | Lifetime counters — `{standbyTime, totalTime, singleTime, count}`. `standbyTime` / `totalTime` are seconds (may arrive string-encoded to avoid 32-bit overflow — parse with `int(x)` tolerating both). `singleTime` = last job duration in seconds. `count` = completed-job counter. Studio's `workingInfo` route displays these on the device home screen |
 | `/v1/project/running/status` | GET | — | — | running-state blob (used by ``getRunningStatus``) |
 | `/v1/project/device/control` | POST | `?action=START\|PAUSE\|RESUME\|CANCEL` | — | OK. Studio's ``startProcess`` / ``pausePrint`` / ``resumePrint`` / ``cancelPrint`` all POST here |
 | `/v1/processing/state` | PUT | `?action=stop` | — | OK. **Framing stop only** (``stopWalkBorder``) — do not use to cancel a real job |

@@ -33,6 +33,11 @@ The transport-layer plumbing (channels, CRC framing, transaction-id
 correlation, file_stream, OTA) is unchanged from :class:`WSV2Protocol`
 so this subclass overrides only the diverging URL-specific methods
 plus the push-frame dispatcher.
+
+M2 firmware does not report ``cpuTemp`` in the ``/state/sync`` reply
+(no cpu-temp string in the JS002 bundle or the on-device rootfs).
+The always-on ``cpu_temp`` sensor therefore stays Unknown on this
+model by design.
 """
 
 from __future__ import annotations
@@ -61,6 +66,8 @@ M2_PATH_CAMERA_LIST = "/v1/platform/camera/list"
 M2_PATH_CAMERA_LIVE = "/v1/platform/camera/live"
 
 M2_PATH_DEVICE_CONTROL = "/v1/project/device/control"
+M2_PATH_STATISTICS = "/v1/project/process/statistics"
+M2_PATH_PROCESS_EVENT = "/v1/platform/device/process"
 M2_PATH_COORDINATE = "/v1/project/device/coordinate"
 M2_PATH_CONTROL_HOME = "/v1/project/control/home"
 M2_PATH_ABSOLUTE_MOVE = "/v1/project/control/absolute-move"
@@ -190,6 +197,110 @@ class M2WSV2Protocol(WSV2Protocol):
                 task_id = cur.get("taskId")
                 if task_id:
                     state.task_id = str(task_id)
+                    self._latest["task_id"] = str(task_id)
+
+    # --- Config / statistics / smoke-fan polls ---------------------------
+
+    def _apply_m2_configs(self, kv: dict[str, Any]) -> None:
+        """Map JS002 config-blob keys to shared ``_latest`` fields.
+
+        Bundle key list (``Urt`` in the JS002 index.js): every key the
+        Studio setting UI knows about. We surface the ones already
+        wired to entities on the base WSV2 side; unmapped keys stay
+        in ``_latest`` under their raw name for future entity
+        scaffolding.
+        """
+        _keys = (
+            ("beepEnable",          "beep_enabled_v2"),
+            ("autoDectect",         "gap_check_enabled"),
+            ("smokeFanTimeout",     "smoking_fan_duration"),
+            ("fillLightBrightness", "fill_light_a"),
+            ("flameSensitivity",    "flame_sensitivity"),
+            ("laserCleanTipEnable", "laser_clean_tip_enabled"),
+        )
+        for src, dst in _keys:
+            if src in kv:
+                self._latest[dst] = kv[src]
+
+    async def _poll_m2_configs(self) -> None:
+        try:
+            cfg = await self.request(M2_PATH_CONFIG, "GET")
+        except Exception as err:
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_CONFIG, err)
+            return
+        if isinstance(cfg, dict):
+            self._apply_m2_configs(cfg)
+
+    async def _poll_m2_statistics(self, state: XtoolDeviceState) -> None:
+        """GET /v1/project/process/statistics — bundle route ``workingInfo``.
+
+        Response keys ``standbyTime``, ``totalTime``, ``singleTime``,
+        ``count`` — Studio parses them as strings via ``parseInt(x, 10)``
+        because firmware wraps counters as strings once they overflow
+        32-bit. Mirror that: tolerate both str and int inputs.
+        """
+        try:
+            stats = await self.request(M2_PATH_STATISTICS, "GET")
+        except Exception as err:
+            _LOGGER.debug("M2 %s failed: %s", M2_PATH_STATISTICS, err)
+            return
+        if not isinstance(stats, dict):
+            return
+
+        def _to_int(v: Any) -> int | None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+
+        single = _to_int(stats.get("singleTime"))
+        if single is not None:
+            state.last_job_time_seconds = single
+            self._latest["last_job_time_seconds"] = single
+        total = _to_int(stats.get("totalTime"))
+        if total is not None:
+            state.working_seconds = total
+            state.tool_runtime_seconds = total
+            self._latest["working_seconds"] = total
+            self._latest["tool_runtime_seconds"] = total
+        standby = _to_int(stats.get("standbyTime"))
+        if standby is not None:
+            state.standby_seconds = standby
+            self._latest["standby_seconds"] = standby
+        count = _to_int(stats.get("count"))
+        if count is not None:
+            state.session_count = count
+            self._latest["session_count"] = count
+
+    async def _poll_m2_smoke_fan(self, state: XtoolDeviceState) -> None:
+        """Best-effort GET on the smoke-fan URL.
+
+        JS002 bundle wires only the POST setter; firmware exports a
+        ``getSmokeFan`` symbol but no verified GET route. Try once
+        per connection; if firmware rejects (code 404/-2/-3), the
+        base ``_unsupported_endpoints`` cache stops retries for the
+        rest of this WS session.
+        """
+        if M2_PATH_PERIPHERAL_SMOKE_FAN in self._unsupported_endpoints:
+            return
+        try:
+            reply = await self.request(M2_PATH_PERIPHERAL_SMOKE_FAN, "GET")
+        except RuntimeError as err:
+            msg = str(err)
+            if any(c in msg for c in ("code 404", "code -2", "code -3", "code 1:")):
+                self._unsupported_endpoints.add(M2_PATH_PERIPHERAL_SMOKE_FAN)
+            _LOGGER.debug("M2 smoke_fan GET rejected: %s", err)
+            return
+        except Exception as err:
+            _LOGGER.debug("M2 smoke_fan GET failed: %s", err)
+            return
+        if isinstance(reply, dict):
+            for key in ("enable", "status"):
+                v = reply.get(key)
+                if isinstance(v, (bool, int)):
+                    state.smoking_fan_running = bool(v)
+                    self._latest["smoking_fan_running"] = bool(v)
+                    return
 
     # --- Peripheral poll (replaces base /v1/peripheral/param loop) -------
 
@@ -239,12 +350,22 @@ class M2WSV2Protocol(WSV2Protocol):
 
         # 4. Inkjet block — slow cadence, gated on model.has_inkjet.
         model = getattr(self, "_model", None)
+        slow_tick = self._m2_poll_counter % self._INKJET_POLL_EVERY == 0
         if (
             model is not None
             and getattr(model, "has_inkjet", False)
-            and self._m2_poll_counter % self._INKJET_POLL_EVERY == 0
+            and slow_tick
         ):
             await self._poll_inkjet(state)
+
+        # 5. Smoke-fan running state (every tick, defensive GET).
+        await self._poll_m2_smoke_fan(state)
+
+        # 6/7. Configs + statistics — slow cadence.
+        if slow_tick:
+            await self._poll_m2_configs()
+            await self._poll_m2_statistics(state)
+
         self._m2_poll_counter += 1
 
         # Drain push-cached fields exactly like the base class does.
@@ -585,6 +706,29 @@ class M2WSV2Protocol(WSV2Protocol):
         if url == M2_PATH_ALARM:
             # /v1/platform/device/alarm → list; empty = no alarm.
             self._latest["alarm_present"] = bool(payload)
+            return
+
+        if url == M2_PATH_PROCESS_EVENT:
+            # {content:{action, taskId}} — action ∈ START | READY |
+            # PAUSE | RESUME | CANCEL | FINISH (bundle enum ``V8``).
+            # Task-id lands in _latest for the task_id sensor.
+            # Status transitions come from /state push, not here.
+            if isinstance(payload, dict):
+                content = payload.get("content")
+                if isinstance(content, dict):
+                    task_id = content.get("taskId")
+                    if task_id:
+                        self._latest["task_id"] = str(task_id)
+            return
+
+        if url == M2_PATH_PERIPHERAL_LID:
+            # {state: bool|"on"|"off"} — mirror the polled parser.
+            if isinstance(payload, dict):
+                lid_state = payload.get("state")
+                if isinstance(lid_state, bool):
+                    self._latest["cover_open"] = lid_state
+                elif isinstance(lid_state, str):
+                    self._latest["cover_open"] = lid_state == "on"
             return
 
         if url == M2_PATH_MACHINE_INFO:

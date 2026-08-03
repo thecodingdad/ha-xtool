@@ -515,6 +515,10 @@ XTOOL_M2_WSV2 = XtoolDeviceModel(
     has_inkjet=True,
     has_beeper=True,
     has_flame_alarm=True,
+    # Fed by GET /v1/project/process/statistics (JS002 bundle route
+    # ``workingInfo``). Populates last_job_time / working_seconds /
+    # standby_seconds / session_count.
+    has_runtime_stats=True,
     # M2's accessory topology is /v1/platform/accessories/list, not
     # the F-family's /v1/parts/control passthrough. Until the M2
     # accessory listing is wired properly the coordinator's
