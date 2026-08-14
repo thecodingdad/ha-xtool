@@ -28,7 +28,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.components.button import ButtonEntity
 from aiohttp import web
-from homeassistant.components.camera import Camera
+from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -1166,6 +1166,7 @@ class _WSV2Camera(XtoolEntity, Camera):
         # path does not reliably request or timestamp its raw Annex-B feed.
         # Lovelace's live camera card falls back to camera_proxy_stream,
         # which calls ``handle_async_mjpeg_stream`` below.
+        self._attr_supported_features = CameraEntityFeature(0)
 
     @property
     def use_stream_for_stills(self) -> bool:
