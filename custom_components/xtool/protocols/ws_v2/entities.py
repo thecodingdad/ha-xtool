@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import shutil
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
@@ -1160,18 +1161,9 @@ class _WSV2Camera(XtoolEntity, Camera):
         )
         self._stream_server: asyncio.AbstractServer | None = None
         self._stream_clients = 0
+        self._ffmpeg_path = shutil.which("ffmpeg")
         if self._live_supported:
             self._attr_supported_features = CameraEntityFeature.STREAM
-            # P3 media packets are raw Annex-B H.264 without container
-            # timestamps. Use their live arrival time so HA's stream worker
-            # can mux them into HLS/WebRTC instead of rejecting missing DTS.
-            self.stream_options.update(
-                {
-                    "fflags": "genpts",
-                    "framerate": "25",
-                    "use_wallclock_as_timestamps": "1",
-                }
-            )
 
     @property
     def use_stream_for_stills(self) -> bool:
@@ -1179,8 +1171,10 @@ class _WSV2Camera(XtoolEntity, Camera):
         return False
 
     async def stream_source(self) -> str | None:
-        """Return a localhost TCP source consumed by HA's Stream worker."""
-        if not self._live_supported:
+        """Return a timestamped MPEG-TS source for HA's Stream worker."""
+        if not self._live_supported or self._ffmpeg_path is None:
+            if self._live_supported and self._ffmpeg_path is None:
+                _LOGGER.error("xTool live camera requires the ffmpeg executable")
             return None
         if self._stream_server is None:
             self._stream_server = await asyncio.start_server(
@@ -1199,15 +1193,58 @@ class _WSV2Camera(XtoolEntity, Camera):
         _reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        """Bridge one HA Stream worker connection to the xTool media WS."""
+        """Remux one raw xTool H.264 feed into timestamped MPEG-TS."""
         self._stream_clients += 1
         self._attr_is_streaming = True
         self.async_write_ha_state()
+        process: asyncio.subprocess.Process | None = None
+        feed_task: asyncio.Task[None] | None = None
         try:
-            async for fragment in self.coordinator.protocol.iter_media_stream(
-                self._camera_name,
-            ):
-                writer.write(fragment)
+            assert self._ffmpeg_path is not None
+            process = await asyncio.create_subprocess_exec(
+                self._ffmpeg_path,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-fflags",
+                "+genpts",
+                "-use_wallclock_as_timestamps",
+                "1",
+                "-f",
+                "h264",
+                "-framerate",
+                "25",
+                "-i",
+                "pipe:0",
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                "-muxdelay",
+                "0",
+                "-muxpreload",
+                "0",
+                "-f",
+                "mpegts",
+                "pipe:1",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            async def feed_ffmpeg() -> None:
+                assert process is not None and process.stdin is not None
+                async for fragment in self.coordinator.protocol.iter_media_stream(
+                    self._camera_name,
+                ):
+                    process.stdin.write(fragment)
+                    await process.stdin.drain()
+                process.stdin.close()
+
+            feed_task = asyncio.create_task(feed_ffmpeg())
+            assert process.stdout is not None
+            while chunk := await process.stdout.read(64 * 1024):
+                writer.write(chunk)
                 await writer.drain()
         except (asyncio.CancelledError, ConnectionError, BrokenPipeError):
             pass
@@ -1216,6 +1253,19 @@ class _WSV2Camera(XtoolEntity, Camera):
                 "V2 live H.264 %s ended: %s", self._camera_name, err,
             )
         finally:
+            if feed_task is not None:
+                feed_task.cancel()
+                try:
+                    await feed_task
+                except (asyncio.CancelledError, ConnectionError, BrokenPipeError):
+                    pass
+            if process is not None and process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=2)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
             writer.close()
             try:
                 await writer.wait_closed()
