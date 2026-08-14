@@ -1346,9 +1346,10 @@ path that does **not** require WebRTC signaling:
 2. Send `POST /v1/platform/camera/live` with query params
    `{name:"far", action:"start"}` for the overview camera or
    `{name:"upside", action:"start"}` for the second camera.
-3. Read CRC-wrapped protocol-34 frames from `media_stream`. Each payload
-   is one stream-id byte followed by Annex-B H.264 (start code
-   `00 00 00 01`).
+3. Read CRC-wrapped protocol-34 frames from the single shared
+   `media_stream` socket. Each payload is one stream-id byte followed by
+   Annex-B H.264 (start code `00 00 00 01`): id `0` routes `far`, and id
+   `2` routes `upside`. Both start requests may be active concurrently.
 4. Send the matching `action:"stop"` request when the consumer exits.
 
 Observed on a production P3: H.264 High profile, 1280×720, approximately
