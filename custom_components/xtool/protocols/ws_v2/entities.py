@@ -1165,8 +1165,8 @@ class _WSV2Camera(XtoolEntity, Camera):
 
     @property
     def use_stream_for_stills(self) -> bool:
-        """Use HA's H.264 decoder for stills when live video is supported."""
-        return self._live_supported
+        """Keep snapshot requests independent from the live H.264 stream."""
+        return False
 
     async def stream_source(self) -> str | None:
         """Return a localhost TCP source consumed by HA's Stream worker."""
