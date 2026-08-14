@@ -2247,14 +2247,25 @@ class WSV2Protocol(XtoolProtocol):
                     if isinstance(v, (int, float)):
                         self._latest[dst] = int(v)
 
-        # 5. Progress — only when a job is running.
-        if state.status in (XtoolStatus.PROCESSING,
-                             XtoolStatus.PROCESSING_READY,
-                             XtoolStatus.FRAMING):
+        # 5. Progress — only when a job is running on most models. P3's
+        # runtime-infos endpoint can report P_OFF throughout an active cut,
+        # even while /v1/processing/progress exposes the live workingTime.
+        # Poll P3 unconditionally so task time does not disappear behind the
+        # incorrect mode flag.
+        model_id = str(getattr(model, "model_id", ""))
+        if (
+            model_id == "P3"
+            or state.status in (
+                XtoolStatus.PROCESSING,
+                XtoolStatus.PROCESSING_READY,
+                XtoolStatus.FRAMING,
+            )
+        ):
             try:
                 prog = await self.request(self.PATH_PROGRESS, "GET")
             except Exception:
                 prog = None
+            _LOGGER.debug("V2 %s raw: %s", self.PATH_PROGRESS, prog)
             if isinstance(prog, dict):
                 wt = prog.get("workingTime") or prog.get("totalTime")
                 if isinstance(wt, (int, float)):
