@@ -1162,6 +1162,16 @@ class _WSV2Camera(XtoolEntity, Camera):
         self._stream_clients = 0
         if self._live_supported:
             self._attr_supported_features = CameraEntityFeature.STREAM
+            # P3 media packets are raw Annex-B H.264 without container
+            # timestamps. Use their live arrival time so HA's stream worker
+            # can mux them into HLS/WebRTC instead of rejecting missing DTS.
+            self.stream_options.update(
+                {
+                    "fflags": "genpts",
+                    "framerate": "25",
+                    "use_wallclock_as_timestamps": "1",
+                }
+            )
 
     @property
     def use_stream_for_stills(self) -> bool:
