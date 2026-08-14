@@ -28,7 +28,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.components.button import ButtonEntity
 from aiohttp import web
-from homeassistant.components.camera import Camera, CameraEntityFeature
+from homeassistant.components.camera import Camera
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -1162,8 +1162,10 @@ class _WSV2Camera(XtoolEntity, Camera):
         self._stream_server: asyncio.AbstractServer | None = None
         self._stream_clients = 0
         self._ffmpeg_path = shutil.which("ffmpeg")
-        if self._live_supported:
-            self._attr_supported_features = CameraEntityFeature.STREAM
+        # P3 is exposed as direct MJPEG because HA's native Stream/go2rtc
+        # path does not reliably request or timestamp its raw Annex-B feed.
+        # Lovelace's live camera card falls back to camera_proxy_stream,
+        # which calls ``handle_async_mjpeg_stream`` below.
 
     @property
     def use_stream_for_stills(self) -> bool:
@@ -1307,11 +1309,11 @@ class _WSV2Camera(XtoolEntity, Camera):
     async def handle_async_mjpeg_stream(
         self, request: web.Request,
     ) -> web.StreamResponse | None:
-        """Snapshot-polled fallback at ``LIVE_FRAME_INTERVAL``.
+        """Serve live P3 video, with a snapshot-polled model fallback.
 
-        Models without a verified live-media mapping use the snapshot API.
-        HA's Lovelace picture-card renders the resulting
-        ``multipart/x-mixed-replace`` response as a continuous feed.
+        P3's raw H.264 is decoded directly to multipart JPEG so Lovelace
+        does not depend on HA's HLS/WebRTC timestamp handling. Models without
+        a verified live-media mapping continue to use the snapshot API.
         """
         boundary = "--xtoolframe"
         response = web.StreamResponse(
@@ -1325,6 +1327,85 @@ class _WSV2Camera(XtoolEntity, Camera):
             },
         )
         await response.prepare(request)
+        if self._live_supported and self._ffmpeg_path is not None:
+            process: asyncio.subprocess.Process | None = None
+            feed_task: asyncio.Task[None] | None = None
+            self._stream_clients += 1
+            self._attr_is_streaming = True
+            self.async_write_ha_state()
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    self._ffmpeg_path,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-fflags",
+                    "+genpts",
+                    "-f",
+                    "h264",
+                    "-framerate",
+                    "25",
+                    "-i",
+                    "pipe:0",
+                    "-vf",
+                    "fps=5",
+                    "-q:v",
+                    "5",
+                    "-f",
+                    "mpjpeg",
+                    "-boundary_tag",
+                    boundary[2:],
+                    "pipe:1",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+
+                async def feed_ffmpeg() -> None:
+                    assert process is not None and process.stdin is not None
+                    async for fragment in (
+                        self.coordinator.protocol.iter_media_stream(
+                            self._camera_name,
+                        )
+                    ):
+                        process.stdin.write(fragment)
+                        await process.stdin.drain()
+                    process.stdin.close()
+
+                feed_task = asyncio.create_task(feed_ffmpeg())
+                assert process.stdout is not None
+                while chunk := await process.stdout.read(64 * 1024):
+                    await response.write(chunk)
+            except (
+                asyncio.CancelledError,
+                ConnectionError,
+                ConnectionResetError,
+                BrokenPipeError,
+            ):
+                pass
+            finally:
+                if feed_task is not None:
+                    feed_task.cancel()
+                    try:
+                        await feed_task
+                    except (
+                        asyncio.CancelledError,
+                        ConnectionError,
+                        BrokenPipeError,
+                    ):
+                        pass
+                if process is not None and process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=2)
+                    except TimeoutError:
+                        process.kill()
+                        await process.wait()
+                self._stream_clients = max(0, self._stream_clients - 1)
+                self._attr_is_streaming = self._stream_clients > 0
+                self.async_write_ha_state()
+            return response
+
         try:
             while True:
                 try:
