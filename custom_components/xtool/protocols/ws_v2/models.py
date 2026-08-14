@@ -396,7 +396,8 @@ XTOOL_P3_WSV2 = XtoolDeviceModel(
     has_air_assist_state=True,
     has_water_cooling=True,
     has_camera=True,
-    camera_names=("overview", "closeup"),  # P3 retains the V1 dual-camera shape
+    # Snapshot API names; live media maps these to Studio's far/upside names.
+    camera_names=("overview", "closeup"),
     has_camera_exposure=True,
     has_digital_lock=True,
     has_distance_measure=True,

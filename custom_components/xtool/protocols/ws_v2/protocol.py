@@ -63,7 +63,7 @@ import logging
 import ssl
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any
 
@@ -130,6 +130,16 @@ WSV2_PROTOCOL_BUFFER = 5
 # protocol type. Payload is a binary FILE_REQUEST / FILE_DATA
 # packet, not a JSON envelope.
 WSV2_PROTOCOL_FILE_TRANSFER = 33
+# Studio's live-camera packets on ``function=media_stream``.  The payload
+# begins with a one-byte stream id followed by an Annex-B H.264 fragment.
+WSV2_PROTOCOL_MEDIA_STREAM = 34
+
+# Snapshot and live-view camera names are not identical on P3 firmware.
+# ``/v1/camera/snap`` retains the P-family overview/closeup vocabulary while
+# ``/v1/platform/camera/live`` uses the names from Studio's cameraMap.
+_MEDIA_CAMERA_NAMES: dict[str, dict[str, str]] = {
+    "P3": {"overview": "far", "closeup": "upside"},
+}
 
 # --- Studio file-transfer constants (verified against Studio v1.7.23
 # ``main.e_TJj9fA.js`` — ``Iv/Lv/Rv/zv/Bv/Vv/Wv`` blocks). ------------
@@ -525,6 +535,7 @@ class WSV2Protocol(XtoolProtocol):
     PATH_ALARMS = "/v1/device/alarms"
     PATH_PROCESSING_STATE = "/v1/processing/state"
     PATH_CAMERA_SNAP = "/v1/camera/snap"
+    PATH_CAMERA_LIVE = "/v1/platform/camera/live"
     PATH_UPGRADE_MODE = "/v1/device/upgrade-mode"
 
     def _apply_latest_to_state(self, state: XtoolDeviceState) -> None:
@@ -822,6 +833,82 @@ class WSV2Protocol(XtoolProtocol):
             timeout=WSV2_FIRST_MESSAGE_TIMEOUT,
             _skip_connect=True,
         )
+
+    def supports_media_stream(self, camera_name: str) -> bool:
+        """Return whether this model has a live stream mapping we verified."""
+        model_id = str(getattr(self._model, "model_id", ""))
+        return camera_name in _MEDIA_CAMERA_NAMES.get(model_id, {})
+
+    async def iter_media_stream(self, camera_name: str) -> AsyncIterator[bytes]:
+        """Yield Annex-B H.264 fragments from a verified WS-V2 camera.
+
+        xTool Studio opens a third WebSocket with the same client-session id
+        as the instruction channel, starts the selected camera through
+        ``/v1/platform/camera/live``, then receives protocol-34 frames.  Live
+        P3 hardware confirmed that each payload contains a one-byte stream id
+        followed by an Annex-B start code and H.264 NAL data.
+        """
+        await self.connect()
+        model_id = str(getattr(self._model, "model_id", ""))
+        live_name = _MEDIA_CAMERA_NAMES.get(model_id, {}).get(camera_name)
+        if live_name is None:
+            raise RuntimeError(
+                f"WS-V2 media stream is not verified for {model_id}/{camera_name}"
+            )
+        if self._session is None or self._session.closed:
+            raise ConnectionError("V2 WebSocket session is not connected")
+
+        url = (
+            f"wss://{self.host}:{self._port}{WSV2_PATH}"
+            f"?id={_CLIENT_SESSION_ID}&function=media_stream"
+        )
+        media_ws = await self._session.ws_connect(
+            url,
+            ssl=_ssl_context(),
+            timeout=aiohttp.ClientTimeout(total=15),
+            heartbeat=20.0,
+            max_msg_size=0,
+            headers={"Origin": "atomm://renderer"},
+        )
+        started = False
+        rx_buffer = bytearray()
+        try:
+            await self.request(
+                self.PATH_CAMERA_LIVE,
+                "POST",
+                params={"name": live_name, "action": "start"},
+            )
+            started = True
+            async for msg in media_ws:
+                if msg.type != aiohttp.WSMsgType.BINARY:
+                    if msg.type in (
+                        aiohttp.WSMsgType.CLOSED,
+                        aiohttp.WSMsgType.CLOSING,
+                        aiohttp.WSMsgType.ERROR,
+                    ):
+                        break
+                    continue
+                rx_buffer.extend(msg.data)
+                frames, remainder = _decode_frames(bytes(rx_buffer))
+                rx_buffer = bytearray(remainder)
+                for protocol_type, payload in frames:
+                    if protocol_type != WSV2_PROTOCOL_MEDIA_STREAM:
+                        continue
+                    if len(payload) > 5 and payload[1:5] == b"\x00\x00\x00\x01":
+                        yield payload[1:]
+        finally:
+            if started:
+                try:
+                    await self.request(
+                        self.PATH_CAMERA_LIVE,
+                        "POST",
+                        params={"name": live_name, "action": "stop"},
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "V2 media stream %s stop failed: %s", live_name, err,
+                    )
+            await media_ws.close()
 
     # ── action helpers (entity write-paths) ──────────────────────────
 
