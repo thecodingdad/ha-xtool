@@ -2276,7 +2276,12 @@ class WSV2Protocol(XtoolProtocol):
                     or prog.get("totalTime")
                 )
                 if isinstance(wt, (int, float)):
-                    state.task_time = int(wt)
+                    elapsed = int(wt)
+                    state.task_time = elapsed
+                    # _apply_latest_to_state runs after polling. Keep its
+                    # push cache synchronized so a stale zero cannot replace
+                    # the freshly polled P3 value before entities update.
+                    self._latest["task_time"] = elapsed
 
         # 6. Alarms — alarm presence, slow cadence. Skip once cached as
         # unsupported (F1 / GS005 / HJ003 / M1Ultra / P2S / P3 / DT001
