@@ -2267,7 +2267,14 @@ class WSV2Protocol(XtoolProtocol):
                 prog = None
             _LOGGER.debug("V2 %s raw: %s", self.PATH_PROGRESS, prog)
             if isinstance(prog, dict):
-                wt = prog.get("workingTime") or prog.get("totalTime")
+                # P3 firmware names elapsed job seconds ``time`` and uses
+                # ``total``/``value`` for percentage progress. Other WS-V2
+                # models use workingTime (or, on older firmware, totalTime).
+                wt = (
+                    prog.get("workingTime")
+                    or prog.get("time")
+                    or prog.get("totalTime")
+                )
                 if isinstance(wt, (int, float)):
                     state.task_time = int(wt)
 

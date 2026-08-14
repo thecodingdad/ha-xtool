@@ -88,10 +88,8 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     ),
     # ``task_name`` / loaded-G-code filename entity intentionally
     # absent — F1V2 firmware decompile shows ``fileName`` string
-    # in laserservice but no V2 endpoint or push surfaces it. The
-    # only thing ``/v1/processing/progress`` returns is
-    # ``{"progress": "%f"}`` (percent only). Restore once a future
-    # firmware / log capture confirms a real wire-source.
+    # in laserservice but no V2 endpoint or push surfaces it. Restore once a
+    # future firmware / log capture confirms a real wire-source.
     # ``working_mode`` diagnostic sensor removed in v2.5.4 — the
     # firmware ``workingMode`` field on F-series V2 carries the
     # ``"NORMAL"`` (stationary) / ``"HANDLE"`` (handheld) enum that
