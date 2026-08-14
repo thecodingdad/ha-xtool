@@ -1336,12 +1336,30 @@ Per-model step-1 variants (audited from each Studio bundle):
 | All of the above (V2) | `/v1/camera/snap` | `GET ?name=fireRecord` — captures the buffered frame from the most recent flame-detection event (when supported by the firmware build). |
 | F1, M1 Ultra, DT001 | _no camera-snap route in bundle_ | n/a |
 
-#### Camera live video — `media_stream` channel + WebRTC signaling
+#### Camera live video — `media_stream` channel
 
-The third WS channel (`function=media_stream`) carries the live
-camera video over **WebRTC**, not a simple WS-MJPEG stream.
-Signaling rides the `/v1/signaling/*` and `/v1/platform/camera/*`
-endpoints (see below).
+The third WS channel (`function=media_stream`) carries live camera
+video. Live P3 hardware and the Studio P3 bundle confirm a direct H.264
+path that does **not** require WebRTC signaling:
+
+1. Open `instruction` and `media_stream` sockets with the same client id.
+2. Send `POST /v1/platform/camera/live` with query params
+   `{name:"far", action:"start"}` for the overview camera or
+   `{name:"upside", action:"start"}` for the second camera.
+3. Read CRC-wrapped protocol-34 frames from the single shared
+   `media_stream` socket. Each payload is one stream-id byte followed by
+   Annex-B H.264 (start code `00 00 00 01`): id `0` routes `far`, and id
+   `2` routes `upside`. Both start requests may be active concurrently.
+4. Send the matching `action:"stop"` request when the consumer exits.
+
+Observed on a production P3: H.264 High profile, 1280×720, approximately
+10 delivered packets/frames per second. The integration exposes this to
+Home Assistant's native Stream component through a localhost-only TCP
+bridge; HA handles HLS/WebRTC presentation and still-frame decoding.
+
+The signaling endpoints below still exist in firmware and may be used by
+other clients or model generations, but they are not required for the
+verified P3 direct media path.
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -1425,13 +1443,11 @@ The namespace mixes two concerns:
 | `/v1/platform/user/{parity,ping}` | various | — | varies | Account session keep-alive. |
 | `/v1/atomm-api/v1/device/{bind-user,dev-bind-code,register,sign,timestamp}` | various | — | varies | Atomm-namespaced bind + sign endpoints (xTool's internal cloud SDK). |
 
-**Studio's actual usage:** zero. A `grep -c
-"RTCPeerConnection\|webrtc\|signaling\|mediasoup\|iceServer"` over
-every Studio `index.js` returns `0` everywhere — Studio never
-opens `media_stream` in any model bundle. Live preview appears
-to be exclusive to the xTool **mobile app**, which is the only
-known consumer of `/v1/platform/camera/live` + the
-`/v1/signaling/*` exchange. Studio bundles don't exercise it.
+**Studio's actual P3 usage:** current Studio builds configure three
+same-id sockets (`instruction`, `file_stream`, `media_stream`) and call
+`/v1/platform/camera/live` through `cameraMediaManager.openVideoStream`.
+The P3 camera map names are `far` and `upside`; these differ from the
+snapshot entity labels `overview` and `closeup`.
 
 ### Push events
 
@@ -2820,4 +2836,3 @@ hardware split:
 | P2 | Allwinner H3 + Linux | GD450 motion + GD330 UI + GD330 WCB | UI + cover board MCUs |
 | P2S | same as P2 | same | newer revision |
 | Bluetooth dongle | dedicated MCU | — | exposes `M9091`–`M9098` for pairing, scan, connect |
-

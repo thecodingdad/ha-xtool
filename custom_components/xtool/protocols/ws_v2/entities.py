@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import shutil
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
@@ -27,7 +28,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.components.button import ButtonEntity
 from aiohttp import web
-from homeassistant.components.camera import Camera
+from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -87,10 +88,8 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     ),
     # ``task_name`` / loaded-G-code filename entity intentionally
     # absent — F1V2 firmware decompile shows ``fileName`` string
-    # in laserservice but no V2 endpoint or push surfaces it. The
-    # only thing ``/v1/processing/progress`` returns is
-    # ``{"progress": "%f"}`` (percent only). Restore once a future
-    # firmware / log capture confirms a real wire-source.
+    # in laserservice but no V2 endpoint or push surfaces it. Restore once a
+    # future firmware / log capture confirms a real wire-source.
     # ``working_mode`` diagnostic sensor removed in v2.5.4 — the
     # firmware ``workingMode`` field on F-series V2 carries the
     # ``"NORMAL"`` (stationary) / ``"HANDLE"`` (handheld) enum that
@@ -1119,23 +1118,20 @@ class WSV2SyncTime(_WSV2Button):
 class _WSV2Camera(XtoolEntity, Camera):
     """V2 camera — single entity per physical lens.
 
-    Serves both the still-snapshot flow (``async_camera_image``) and
-    the live MJPEG preview (``handle_async_mjpeg_stream``) over the
-    same ``/v1/camera/snap?name=<n>`` wire path. HA's picture-card
-    auto-subscribes to the streaming method when
-    ``_attr_is_streaming`` is ``True``, while the
-    ``camera.snapshot`` service still consumes the
-    snapshot-cached path.
+    Serves the still-snapshot flow (``async_camera_image``) on every
+    supported WS-V2 model. Models with verified live-video mappings also
+    expose Home Assistant's native Stream feature; unverified models keep
+    the snapshot-polled MJPEG fallback.
 
     Previously split into separate ``_WSV2Camera`` +
     ``_WSV2LiveCamera`` entities; dual-camera models then surfaced
     four entries on the device page. Merged in v2.5.4.
 
-    ``_attr_is_streaming`` is intentionally left ``False`` until
-    the live MJPEG path is fully verified — Issue #4 v2.5.4 retest
-    reports "Streaming" state but no frame rendered on F2 Ultra UV.
-    Falling back to snapshot-card keeps the still image working
-    while the live-stream wire shape is re-investigated.
+    P3 uses the verified WS-V2 ``media_stream`` channel.  A localhost-only
+    TCP bridge exposes its Annex-B H.264 packets to Home Assistant's native
+    Stream integration, which provides HLS/WebRTC playback and still-frame
+    extraction. Other models retain the snapshot/MJPEG fallback until their
+    live camera names and payloads are confirmed on hardware.
     """
 
     _camera_name: str = ""
@@ -1158,6 +1154,135 @@ class _WSV2Camera(XtoolEntity, Camera):
             self._attr_icon = icon
         self._last_snapshot: bytes | None = None
         self._last_snapshot_time = dt_util.utcnow() - MIN_SNAPSHOT_INTERVAL
+        self._live_supported = coordinator.protocol.supports_media_stream(
+            camera_name,
+        )
+        self._stream_server: asyncio.AbstractServer | None = None
+        self._stream_clients = 0
+        self._ffmpeg_path = shutil.which("ffmpeg")
+        # P3 is exposed as direct MJPEG because HA's native Stream/go2rtc
+        # path does not reliably request or timestamp its raw Annex-B feed.
+        # Lovelace's live camera card falls back to camera_proxy_stream,
+        # which calls ``handle_async_mjpeg_stream`` below.
+        self._attr_supported_features = CameraEntityFeature(0)
+
+    @property
+    def use_stream_for_stills(self) -> bool:
+        """Keep snapshot requests independent from the live H.264 stream."""
+        return False
+
+    async def stream_source(self) -> str | None:
+        """Return a timestamped MPEG-TS source for HA's Stream worker."""
+        if not self._live_supported or self._ffmpeg_path is None:
+            if self._live_supported and self._ffmpeg_path is None:
+                _LOGGER.error("xTool live camera requires the ffmpeg executable")
+            return None
+        if self._stream_server is None:
+            self._stream_server = await asyncio.start_server(
+                self._handle_stream_client,
+                host="127.0.0.1",
+                port=0,
+            )
+        sockets = self._stream_server.sockets or []
+        if not sockets:
+            return None
+        port = sockets[0].getsockname()[1]
+        return f"tcp://127.0.0.1:{port}"
+
+    async def _handle_stream_client(
+        self,
+        _reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        """Remux one raw xTool H.264 feed into timestamped MPEG-TS."""
+        self._stream_clients += 1
+        self._attr_is_streaming = True
+        self.async_write_ha_state()
+        process: asyncio.subprocess.Process | None = None
+        feed_task: asyncio.Task[None] | None = None
+        try:
+            assert self._ffmpeg_path is not None
+            process = await asyncio.create_subprocess_exec(
+                self._ffmpeg_path,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-fflags",
+                "+genpts",
+                "-use_wallclock_as_timestamps",
+                "1",
+                "-f",
+                "h264",
+                "-framerate",
+                "25",
+                "-i",
+                "pipe:0",
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "copy",
+                "-muxdelay",
+                "0",
+                "-muxpreload",
+                "0",
+                "-f",
+                "mpegts",
+                "pipe:1",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            async def feed_ffmpeg() -> None:
+                assert process is not None and process.stdin is not None
+                async for fragment in self.coordinator.protocol.iter_media_stream(
+                    self._camera_name,
+                ):
+                    process.stdin.write(fragment)
+                    await process.stdin.drain()
+                process.stdin.close()
+
+            feed_task = asyncio.create_task(feed_ffmpeg())
+            assert process.stdout is not None
+            while chunk := await process.stdout.read(64 * 1024):
+                writer.write(chunk)
+                await writer.drain()
+        except (asyncio.CancelledError, ConnectionError, BrokenPipeError):
+            pass
+        except Exception as err:
+            _LOGGER.debug(
+                "V2 live H.264 %s ended: %s", self._camera_name, err,
+            )
+        finally:
+            if feed_task is not None:
+                feed_task.cancel()
+                try:
+                    await feed_task
+                except (asyncio.CancelledError, ConnectionError, BrokenPipeError):
+                    pass
+            if process is not None and process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=2)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except (ConnectionError, BrokenPipeError):
+                pass
+            self._stream_clients = max(0, self._stream_clients - 1)
+            self._attr_is_streaming = self._stream_clients > 0
+            self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Close the private TCP bridge when the camera entity unloads."""
+        if self._stream_server is not None:
+            self._stream_server.close()
+            await self._stream_server.wait_closed()
+            self._stream_server = None
+        await super().async_will_remove_from_hass()
 
     async def async_camera_image(
         self,
@@ -1183,12 +1308,11 @@ class _WSV2Camera(XtoolEntity, Camera):
     async def handle_async_mjpeg_stream(
         self, request: web.Request,
     ) -> web.StreamResponse | None:
-        """Multipart-MJPEG live preview at ``LIVE_FRAME_INTERVAL``.
+        """Serve live P3 video, with a snapshot-polled model fallback.
 
-        Substitute for the unimplemented WebRTC ``media_stream``
-        path (see PROTOCOL.md). HA's Lovelace picture-card renders
-        the resulting ``multipart/x-mixed-replace`` stream as a
-        continuous video feed.
+        P3's raw H.264 is decoded directly to multipart JPEG so Lovelace
+        does not depend on HA's HLS/WebRTC timestamp handling. Models without
+        a verified live-media mapping continue to use the snapshot API.
         """
         boundary = "--xtoolframe"
         response = web.StreamResponse(
@@ -1202,6 +1326,85 @@ class _WSV2Camera(XtoolEntity, Camera):
             },
         )
         await response.prepare(request)
+        if self._live_supported and self._ffmpeg_path is not None:
+            process: asyncio.subprocess.Process | None = None
+            feed_task: asyncio.Task[None] | None = None
+            self._stream_clients += 1
+            self._attr_is_streaming = True
+            self.async_write_ha_state()
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    self._ffmpeg_path,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-fflags",
+                    "+genpts",
+                    "-f",
+                    "h264",
+                    "-framerate",
+                    "25",
+                    "-i",
+                    "pipe:0",
+                    "-vf",
+                    "fps=5",
+                    "-q:v",
+                    "5",
+                    "-f",
+                    "mpjpeg",
+                    "-boundary_tag",
+                    boundary[2:],
+                    "pipe:1",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+
+                async def feed_ffmpeg() -> None:
+                    assert process is not None and process.stdin is not None
+                    async for fragment in (
+                        self.coordinator.protocol.iter_media_stream(
+                            self._camera_name,
+                        )
+                    ):
+                        process.stdin.write(fragment)
+                        await process.stdin.drain()
+                    process.stdin.close()
+
+                feed_task = asyncio.create_task(feed_ffmpeg())
+                assert process.stdout is not None
+                while chunk := await process.stdout.read(64 * 1024):
+                    await response.write(chunk)
+            except (
+                asyncio.CancelledError,
+                ConnectionError,
+                ConnectionResetError,
+                BrokenPipeError,
+            ):
+                pass
+            finally:
+                if feed_task is not None:
+                    feed_task.cancel()
+                    try:
+                        await feed_task
+                    except (
+                        asyncio.CancelledError,
+                        ConnectionError,
+                        BrokenPipeError,
+                    ):
+                        pass
+                if process is not None and process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=2)
+                    except TimeoutError:
+                        process.kill()
+                        await process.wait()
+                self._stream_clients = max(0, self._stream_clients - 1)
+                self._attr_is_streaming = self._stream_clients > 0
+                self.async_write_ha_state()
+            return response
+
         try:
             while True:
                 try:
@@ -1692,9 +1895,9 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
 def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
     """Build one camera entity per ``model.camera_names`` entry.
 
-    Each entity serves both ``async_camera_image`` (still
-    snapshot, cached) and ``handle_async_mjpeg_stream`` (live
-    preview). The earlier split into snapshot + live entities
+    Each entity serves cached still snapshots. Verified models also expose
+    their native live stream; other models retain the snapshot-polled MJPEG
+    preview. The earlier split into snapshot + live entities
     surfaced four entries on dual-camera devices; collapsed in
     v2.5.4. Skipping when ``camera_names`` is empty avoids
     creating entities whose wire-shape we haven't audited.

@@ -4,6 +4,7 @@
   "codeowners": ["@thecodingdad"],
   "config_flow": true,
   "documentation": "https://github.com/thecodingdad/ha-xtool",
+  "dependencies": ["stream"],
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/thecodingdad/ha-xtool/issues",

@@ -63,7 +63,7 @@ import logging
 import ssl
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any
 
@@ -130,6 +130,20 @@ WSV2_PROTOCOL_BUFFER = 5
 # protocol type. Payload is a binary FILE_REQUEST / FILE_DATA
 # packet, not a JSON envelope.
 WSV2_PROTOCOL_FILE_TRANSFER = 33
+# Studio's live-camera packets on ``function=media_stream``.  The payload
+# begins with a one-byte stream id followed by an Annex-B H.264 fragment.
+WSV2_PROTOCOL_MEDIA_STREAM = 34
+
+# Snapshot and live-view camera names are not identical on P3 firmware.
+# ``/v1/camera/snap`` retains the P-family overview/closeup vocabulary while
+# ``/v1/platform/camera/live`` uses the names from Studio's cameraMap.
+_MEDIA_CAMERA_NAMES: dict[str, dict[str, str]] = {
+    "P3": {"overview": "far", "closeup": "upside"},
+}
+
+# First byte of each P3 protocol-34 payload. Both live cameras share one
+# ``media_stream`` socket; the byte routes packets to the requested lens.
+_MEDIA_STREAM_IDS: dict[str, int] = {"far": 0, "upside": 2}
 
 # --- Studio file-transfer constants (verified against Studio v1.7.23
 # ``main.e_TJj9fA.js`` — ``Iv/Lv/Rv/zv/Bv/Vv/Wv`` blocks). ------------
@@ -525,6 +539,7 @@ class WSV2Protocol(XtoolProtocol):
     PATH_ALARMS = "/v1/device/alarms"
     PATH_PROCESSING_STATE = "/v1/processing/state"
     PATH_CAMERA_SNAP = "/v1/camera/snap"
+    PATH_CAMERA_LIVE = "/v1/platform/camera/live"
     PATH_UPGRADE_MODE = "/v1/device/upgrade-mode"
 
     def _apply_latest_to_state(self, state: XtoolDeviceState) -> None:
@@ -544,8 +559,14 @@ class WSV2Protocol(XtoolProtocol):
         self._session: aiohttp.ClientSession | None = None
         self._ws_instr: aiohttp.ClientWebSocketResponse | None = None
         self._ws_file: aiohttp.ClientWebSocketResponse | None = None
+        self._ws_media: aiohttp.ClientWebSocketResponse | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._media_reader_task: asyncio.Task[None] | None = None
+        self._media_lock = asyncio.Lock()
+        self._media_subscribers: dict[
+            str, set[asyncio.Queue[bytes | None]]
+        ] = {}
         self._pending: dict[int, _PendingRequest] = {}
         self._heartbeat_pending: asyncio.Future[dict[str, Any]] | None = None
         self._transaction_counter = 0
@@ -698,7 +719,11 @@ class WSV2Protocol(XtoolProtocol):
 
     async def _close_quiet(self) -> None:
         self._connected = False
-        for t in (self._reader_task, self._heartbeat_task):
+        for t in (
+            self._reader_task,
+            self._heartbeat_task,
+            self._media_reader_task,
+        ):
             if t and not t.done():
                 t.cancel()
                 try:
@@ -707,7 +732,14 @@ class WSV2Protocol(XtoolProtocol):
                     pass
         self._reader_task = None
         self._heartbeat_task = None
-        for ws in (self._ws_instr, self._ws_file):
+        self._media_reader_task = None
+        for queues in self._media_subscribers.values():
+            for queue in queues:
+                if queue.full():
+                    queue.get_nowait()
+                queue.put_nowait(None)
+        self._media_subscribers.clear()
+        for ws in (self._ws_instr, self._ws_file, self._ws_media):
             if ws and not ws.closed:
                 try:
                     await ws.close()
@@ -715,6 +747,7 @@ class WSV2Protocol(XtoolProtocol):
                     pass
         self._ws_instr = None
         self._ws_file = None
+        self._ws_media = None
         # Resolve any outstanding requests so callers don't hang.
         for pending in self._pending.values():
             if not pending.future.done():
@@ -822,6 +855,162 @@ class WSV2Protocol(XtoolProtocol):
             timeout=WSV2_FIRST_MESSAGE_TIMEOUT,
             _skip_connect=True,
         )
+
+    def supports_media_stream(self, camera_name: str) -> bool:
+        """Return whether this model has a live stream mapping we verified."""
+        model_id = str(getattr(self._model, "model_id", ""))
+        return camera_name in _MEDIA_CAMERA_NAMES.get(model_id, {})
+
+    async def iter_media_stream(self, camera_name: str) -> AsyncIterator[bytes]:
+        """Yield routed Annex-B H.264 fragments from a WS-V2 camera.
+
+        P3 exposes both lenses over one same-session ``media_stream`` socket.
+        Protocol-34's leading byte is 0 for ``far`` and 2 for ``upside``;
+        the rest is Annex-B H.264. Multiple HA stream workers subscribe to
+        the shared reader and receive only their camera's packets.
+        """
+        await self.connect()
+        model_id = str(getattr(self._model, "model_id", ""))
+        live_name = _MEDIA_CAMERA_NAMES.get(model_id, {}).get(camera_name)
+        if live_name is None:
+            raise RuntimeError(
+                f"WS-V2 media stream is not verified for {model_id}/{camera_name}"
+            )
+        if self._session is None or self._session.closed:
+            raise ConnectionError("V2 WebSocket session is not connected")
+        queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=12)
+        first_for_camera = False
+        async with self._media_lock:
+            if self._ws_media is None or self._ws_media.closed:
+                await self._open_media_stream()
+            subscribers = self._media_subscribers.setdefault(live_name, set())
+            first_for_camera = not subscribers
+            subscribers.add(queue)
+        try:
+            if first_for_camera:
+                await self.request(
+                    self.PATH_CAMERA_LIVE,
+                    "POST",
+                    params={"name": live_name, "action": "start"},
+                )
+            while (fragment := await queue.get()) is not None:
+                yield fragment
+        finally:
+            stop_camera = False
+            close_media = False
+            async with self._media_lock:
+                subscribers = self._media_subscribers.get(live_name, set())
+                subscribers.discard(queue)
+                if not subscribers:
+                    self._media_subscribers.pop(live_name, None)
+                    stop_camera = True
+                close_media = not self._media_subscribers
+            if stop_camera:
+                try:
+                    await self.request(
+                        self.PATH_CAMERA_LIVE,
+                        "POST",
+                        params={"name": live_name, "action": "stop"},
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "V2 media stream %s stop failed: %s", live_name, err,
+                    )
+            if close_media:
+                await self._close_media_stream()
+
+    async def _open_media_stream(self) -> None:
+        """Open the one shared media socket and start its routing task."""
+        if self._session is None or self._session.closed:
+            raise ConnectionError("V2 WebSocket session is not connected")
+        url = (
+            f"wss://{self.host}:{self._port}{WSV2_PATH}"
+            f"?id={_CLIENT_SESSION_ID}&function=media_stream"
+        )
+        self._ws_media = await self._session.ws_connect(
+            url,
+            ssl=_ssl_context(),
+            timeout=aiohttp.ClientTimeout(total=15),
+            heartbeat=20.0,
+            max_msg_size=0,
+            headers={"Origin": "atomm://renderer"},
+        )
+        self._media_reader_task = asyncio.create_task(self._media_reader_loop())
+
+    async def _media_reader_loop(self) -> None:
+        """Route protocol-34 packets from the shared socket to subscribers."""
+        ws = self._ws_media
+        if ws is None:
+            return
+        rx_buffer = bytearray()
+        try:
+            async for msg in ws:
+                if msg.type != aiohttp.WSMsgType.BINARY:
+                    if msg.type in (
+                        aiohttp.WSMsgType.CLOSED,
+                        aiohttp.WSMsgType.CLOSING,
+                        aiohttp.WSMsgType.ERROR,
+                    ):
+                        break
+                    continue
+                rx_buffer.extend(msg.data)
+                frames, remainder = _decode_frames(bytes(rx_buffer))
+                rx_buffer = bytearray(remainder)
+                for protocol_type, payload in frames:
+                    if (
+                        protocol_type != WSV2_PROTOCOL_MEDIA_STREAM
+                        or len(payload) <= 5
+                        or payload[1:5] != b"\x00\x00\x00\x01"
+                    ):
+                        continue
+                    stream_id = payload[0]
+                    live_name = next(
+                        (
+                            name for name, value in _MEDIA_STREAM_IDS.items()
+                            if value == stream_id
+                        ),
+                        None,
+                    )
+                    # When upside is the only active camera its initial SPS
+                    # packet may carry id 0 before subsequent packets use 2.
+                    if (
+                        live_name == "far"
+                        and "far" not in self._media_subscribers
+                        and "upside" in self._media_subscribers
+                    ):
+                        live_name = "upside"
+                    if live_name is None:
+                        continue
+                    for queue in tuple(
+                        self._media_subscribers.get(live_name, ())
+                    ):
+                        if queue.full():
+                            queue.get_nowait()
+                        queue.put_nowait(payload[1:])
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("V2 shared media reader ended: %s", err)
+        finally:
+            for queues in self._media_subscribers.values():
+                for queue in queues:
+                    if queue.full():
+                        queue.get_nowait()
+                    queue.put_nowait(None)
+
+    async def _close_media_stream(self) -> None:
+        """Close the shared socket after its last subscriber exits."""
+        task = self._media_reader_task
+        self._media_reader_task = None
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if self._ws_media is not None and not self._ws_media.closed:
+            await self._ws_media.close()
+        self._ws_media = None
 
     # ── action helpers (entity write-paths) ──────────────────────────
 
@@ -2058,18 +2247,41 @@ class WSV2Protocol(XtoolProtocol):
                     if isinstance(v, (int, float)):
                         self._latest[dst] = int(v)
 
-        # 5. Progress — only when a job is running.
-        if state.status in (XtoolStatus.PROCESSING,
-                             XtoolStatus.PROCESSING_READY,
-                             XtoolStatus.FRAMING):
+        # 5. Progress — only when a job is running on most models. P3's
+        # runtime-infos endpoint can report P_OFF throughout an active cut,
+        # even while /v1/processing/progress exposes the live workingTime.
+        # Poll P3 unconditionally so task time does not disappear behind the
+        # incorrect mode flag.
+        model_id = str(getattr(model, "model_id", ""))
+        if (
+            model_id == "P3"
+            or state.status in (
+                XtoolStatus.PROCESSING,
+                XtoolStatus.PROCESSING_READY,
+                XtoolStatus.FRAMING,
+            )
+        ):
             try:
                 prog = await self.request(self.PATH_PROGRESS, "GET")
             except Exception:
                 prog = None
+            _LOGGER.debug("V2 %s raw: %s", self.PATH_PROGRESS, prog)
             if isinstance(prog, dict):
-                wt = prog.get("workingTime") or prog.get("totalTime")
+                # P3 firmware names elapsed job seconds ``time`` and uses
+                # ``total``/``value`` for percentage progress. Other WS-V2
+                # models use workingTime (or, on older firmware, totalTime).
+                wt = (
+                    prog.get("workingTime")
+                    or prog.get("time")
+                    or prog.get("totalTime")
+                )
                 if isinstance(wt, (int, float)):
-                    state.task_time = int(wt)
+                    elapsed = int(wt)
+                    state.task_time = elapsed
+                    # _apply_latest_to_state runs after polling. Keep its
+                    # push cache synchronized so a stale zero cannot replace
+                    # the freshly polled P3 value before entities update.
+                    self._latest["task_time"] = elapsed
 
         # 6. Alarms — alarm presence, slow cadence. Skip once cached as
         # unsupported (F1 / GS005 / HJ003 / M1Ultra / P2S / P3 / DT001
