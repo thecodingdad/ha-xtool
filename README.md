@@ -178,7 +178,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
-| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select) |
+| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control |
 | Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
 | Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
 | Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |

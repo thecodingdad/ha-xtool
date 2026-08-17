@@ -599,6 +599,7 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         config_key: str,
         state_attr: str,
         icon: str | None = None,
+        enabled_default: bool = True,
     ) -> None:
         super().__init__(coordinator)
         self._set_unique_id(f"{key}")
@@ -607,6 +608,7 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         self._state_attr = state_attr
         if icon is not None:
             self._attr_icon = icon
+        self._attr_entity_registry_enabled_default = enabled_default
 
     @property
     def is_on(self) -> bool | None:
@@ -1489,11 +1491,17 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # ``WSV2Coordinator._poll_accessories``).
     ])
     if model.has_flame_alarm:
+        # Disabled by default in the entity registry — disabling
+        # this switch means no flame alarm will be triggered per
+        # xTool Studio's own warning ("Fires may cause serious
+        # injuries and property damage"). Users who need
+        # programmatic control can enable it explicitly.
         entities.append(
             _WSV2ConfigSwitch(
                 coordinator, "flame_alarm_v2", "flameAlarm",
                 "flame_alarm_v2_enabled",
                 "mdi:fire-alert",
+                enabled_default=False,
             )
         )
     if model.has_machine_lock:
