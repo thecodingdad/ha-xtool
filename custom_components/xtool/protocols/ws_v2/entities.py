@@ -46,6 +46,7 @@ from homeassistant.components.switch import (
     SwitchEntity,
 )
 from homeassistant.components.update import UpdateEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.const import (
     EntityCategory,
     PERCENTAGE,
@@ -733,6 +734,42 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
         if self.coordinator.data is not None:
             setattr(self.coordinator.data, self._state_attr, False)
         self.async_write_ha_state()
+
+
+class _WSV2IRLedSwitch(_WSV2PeripheralSwitch, RestoreEntity):
+    """Red-dot / IR-LED switch that survives HA restarts.
+
+    Studio's ``controlRedLed`` bundle only defines a PUT route —
+    firmware exposes no GET or push for the IR LED state, so a
+    fresh HA start has no way to learn whether the LED is
+    physically lit. The last HA-side write is the best proxy:
+    restore it on ``async_added_to_hass`` and let the base
+    ``_WSV2PeripheralSwitch`` optimistic write path keep it in
+    sync from there.
+    """
+
+    _restored_is_on: bool | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("on", "off"):
+            self._restored_is_on = last.state == "on"
+            if (
+                self.coordinator.data is not None
+                and getattr(self.coordinator.data, self._state_attr, None) is None
+            ):
+                setattr(
+                    self.coordinator.data, self._state_attr,
+                    self._restored_is_on,
+                )
+
+    @property
+    def is_on(self) -> bool | None:
+        live = super().is_on
+        if live is not None:
+            return live
+        return self._restored_is_on
 
 
 # --- Numbers -----------------------------------------------------------
@@ -1597,8 +1634,11 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # exposes two LEDs the ``closeup`` variant can be added back.
         # User-facing label is "Red dot" (matches Studio's wording);
         # icon is the laser-pointer crosshair Studio uses too.
+        # Uses the restoring switch subclass — firmware provides no
+        # read for the IR LED state, so the last HA-side write is
+        # replayed on restart until the user toggles again.
         entities.append(
-            _WSV2PeripheralSwitch(
+            _WSV2IRLedSwitch(
                 coordinator, "ir_led", "ir_led",
                 "ir_led_global", "mdi:laser-pointer",
                 SwitchDeviceClass.SWITCH,
