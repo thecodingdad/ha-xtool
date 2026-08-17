@@ -64,6 +64,7 @@ XTOOL_F1_ULTRA_WSV2 = XtoolDeviceModel(
     camera_names=("main",),  # Studio F1Ultra V2 bundle → /v1/camera/snap?name=main
     has_camera_exposure=True,
     has_fill_light=True,
+    fill_light_device_min=20,  # Studio F1Ultra bundle Q7 transform
     has_fire_record=True,
     has_cover_sensor=True,  # gap peripheral works → cover entity
     # Statistics endpoint returns session counts only (no time-based
@@ -98,6 +99,7 @@ XTOOL_F1_ULTRA_V2_WSV2 = XtoolDeviceModel(
     camera_names=("main",),  # Studio GS003 bundle → /v1/camera/snap?name=main
     has_camera_exposure=True,
     has_fill_light=True,
+    fill_light_device_min=20,  # Studio GS003 bundle Q7 transform
     has_fire_record=True,
     has_laser_head_position=True,
     has_cover_sensor=True,
@@ -142,7 +144,9 @@ XTOOL_F2_WSV2 = XtoolDeviceModel(
     has_air_assist_state=True,
     has_camera_exposure=True,
     has_fill_light=True,
-    has_fill_light_dual=True,  # GS004 bundle ships front + back channels
+    has_fill_light_dual=True,  # GS006 bundle ships front + back channels
+    # GS006 uses linear fill-light transform (O7 = device/255*100),
+    # not the Q7 offset — keep ``fill_light_device_min`` at 0.
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push
     firmware_content_id="xTool-f2-firmware",
     firmware_machine_type="MXF",
@@ -167,9 +171,10 @@ XTOOL_F2_ULTRA_WSV2 = XtoolDeviceModel(
     camera_names=("main", "deep"),  # GS007 cameraMediaManager exposes main + deep
     has_camera_exposure=True,
     has_fill_light=True,
-    has_fill_light_dual=True,  # GS007 bundle ships front + back channels
+    has_fill_light_dual=True,  # GS004-CLASS-4 ships front + back channels
+    fill_light_device_min=20,  # Studio GS004-CLASS-4 bundle Q7 transform
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push
-    has_button_event=True,  # GS007-CLASS-4 bundle defines /button/status push
+    has_button_event=True,  # GS004-CLASS-4 bundle defines /button/status push
     firmware_content_id="xTool-f2-ultra-firmware",
     firmware_machine_type="MXF",
     protocol_version="V2",
@@ -193,9 +198,10 @@ XTOOL_F2_ULTRA_SINGLE_WSV2 = XtoolDeviceModel(
     camera_names=("main", "deep"),  # GS009 cameraMediaManager exposes main + deep
     has_camera_exposure=True,
     has_fill_light=True,
-    has_fill_light_dual=True,  # GS009 bundle ships front + back channels
+    has_fill_light_dual=True,  # GS007-CLASS-4 ships front + back channels
+    fill_light_device_min=20,  # Studio GS007-CLASS-4 bundle Q7 transform
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push
-    has_button_event=True,  # GS009-CLASS-4 bundle defines /button/status push
+    has_button_event=True,  # GS007-CLASS-4 bundle defines /button/status push
     firmware_content_id="xTool-f2-ultra-single-firmware",
     firmware_machine_type="MXF",
     protocol_version="V2",
@@ -218,10 +224,11 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     camera_names=("main", "deep"),  # GS006 cameraMediaManager exposes main + deep
     has_camera_exposure=True,
     has_fill_light=True,
-    has_fill_light_dual=True,  # GS006 bundle ships front + back channels
+    has_fill_light_dual=True,  # GS009-CLASS-4 ships front + back channels
+    fill_light_device_min=20,  # Studio GS009-CLASS-4 bundle Q7 transform
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push (live capture)
     has_ir_led=True,  # F2UV bundle queries `/v1/peripheral/param?type=ir_led`
-    has_button_event=True,  # GS006 bundle defines /button/status push handler
+    has_button_event=True,  # GS009-CLASS-4 bundle defines /button/status push handler
     # Air-pump V2 + UV fire sensor are BT-paired accessories on F2UV
     # (`airassistV2` = AirPumpV2, `uv_sensor_wb031` = UvSensor) routed
     # via `/v1/parts/control` — not built-in peripherals; entities
@@ -257,6 +264,7 @@ XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,
+    fill_light_device_min=20,  # Studio GS009-CLASS-1 bundle Q7 transform
     has_device_sleep=True,
     has_ir_led=True,
     has_button_event=True,
@@ -461,6 +469,7 @@ XTOOL_RETAIL_MARKER_WSV2 = XtoolDeviceModel(
     camera_names=("main",),
     has_camera_exposure=True,
     has_fill_light=True,
+    fill_light_device_min=20,  # Studio GS008 bundle Q7 transform
     has_ir_led=True,  # single mention in bundle — leave on; entity is gated to a usable read
     firmware_content_id="xTool-retail-marker-firmware",
     protocol_version="V2",

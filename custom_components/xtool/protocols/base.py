@@ -126,6 +126,14 @@ class XtoolDeviceModel:
     has_smoking_fan: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
+    # Some V2 firmwares only drive the fill-light LED array above a
+    # PWM floor (~20/255) — Studio applies a matching offset transform
+    # (bundle helper ``Q7``: ``(device-20)*99/235+1`` on read,
+    # ``(pct-1)*235/99+20`` on write) so the user-facing slider stays
+    # 0-100 %. Models set this to 20 to opt in; the fill-light entity
+    # scales HA brightness accordingly. Defaults to 0 (linear
+    # passthrough) for models whose bundle uses ``device/255*100``.
+    fill_light_device_min: int = 0
     has_device_sleep: bool = False  # ``autoSleepEnable`` config bool
     has_move_stop: bool = False
     has_beeper: bool = False

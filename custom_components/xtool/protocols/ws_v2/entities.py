@@ -879,11 +879,17 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
         if d is None:
             return None
         # WS-V2 firmware exposes ``fillLightBright*`` on the 0-255
-        # scale natively — same range as HA's Light brightness. No
-        # scaling needed. (v2.5.8 normalized through a 0-100 device
-        # alias which halved the perceived brightness; Issue #4
-        # retest datapoints confirmed.)
-        return int(getattr(d, self._state_attr) or 0)
+        # scale natively. Some F-series bundles apply a
+        # ``(device-20)*99/235+1`` offset transform for their
+        # slider display; we mirror it here so the HA slider
+        # percentage matches Studio's percentage (Issue #4
+        # v2.7.1 retest datapoints on GS009-CLASS-4). Models
+        # without the offset (``fill_light_device_min=0``, e.g.
+        # F1 Lite / F2 / M2) keep linear passthrough.
+        return _fill_light_device_to_ha(
+            int(getattr(d, self._state_attr) or 0),
+            self.coordinator.model.fill_light_device_min,
+        )
 
     def _other_value(self) -> int:
         d = self.coordinator.data
@@ -902,12 +908,16 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         ha_brightness = int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX))
+        device_value = _fill_light_ha_to_device(
+            ha_brightness,
+            self.coordinator.model.fill_light_device_min,
+        )
         await self.coordinator.protocol.set_config(
-            self._config_key, ha_brightness,
+            self._config_key, device_value,
         )
         if self.coordinator.data is not None:
             setattr(
-                self.coordinator.data, self._state_attr, ha_brightness,
+                self.coordinator.data, self._state_attr, device_value,
             )
         self.async_write_ha_state()
 
@@ -916,6 +926,33 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
         if self.coordinator.data is not None:
             setattr(self.coordinator.data, self._state_attr, 0)
         self.async_write_ha_state()
+
+
+def _fill_light_ha_to_device(ha_brightness: int, device_min: int) -> int:
+    """Map HA brightness (0-255) → device value.
+
+    ``device_min`` = 0 (default) means the firmware accepts the raw
+    0-255 HA value 1:1. ``device_min`` > 0 (F-series V2 bundles that
+    use Studio's ``Q7`` transform) reserves the device range
+    ``[device_min, 255]`` for a HA value ≥ 1 and maps HA 0 to
+    device 0 (off).
+    """
+    if device_min <= 0:
+        return max(0, min(255, ha_brightness))
+    if ha_brightness <= 0:
+        return 0
+    span_dev = 255 - device_min
+    return round((ha_brightness - 1) * span_dev / 254 + device_min)
+
+
+def _fill_light_device_to_ha(device_value: int, device_min: int) -> int:
+    """Inverse of :func:`_fill_light_ha_to_device`."""
+    if device_min <= 0:
+        return max(0, min(255, device_value))
+    if device_value <= 0:
+        return 0
+    span_dev = 255 - device_min
+    return max(1, min(255, round((device_value - device_min) * 254 / span_dev + 1)))
 
 
 class WSV2FillLight(_WSV2FillLightBase):
@@ -941,15 +978,19 @@ class WSV2FillLight(_WSV2FillLightBase):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         ha_brightness = int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX))
-        await self.coordinator.protocol.set_config(
-            "fillLightBrightFront", ha_brightness,
+        device_value = _fill_light_ha_to_device(
+            ha_brightness,
+            self.coordinator.model.fill_light_device_min,
         )
         await self.coordinator.protocol.set_config(
-            "fillLightBrightBack", ha_brightness,
+            "fillLightBrightFront", device_value,
+        )
+        await self.coordinator.protocol.set_config(
+            "fillLightBrightBack", device_value,
         )
         if self.coordinator.data is not None:
-            self.coordinator.data.fill_light_a = ha_brightness
-            self.coordinator.data.fill_light_b = ha_brightness
+            self.coordinator.data.fill_light_a = device_value
+            self.coordinator.data.fill_light_b = device_value
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
