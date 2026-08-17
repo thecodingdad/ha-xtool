@@ -209,7 +209,9 @@ def parse_fan_v3_push(text: str) -> dict[str, object]:
     - ``B`` / ``C`` = transient state indicators; alternate 2/3
       across mode transitions, semantically unclear, kept for
       debug visibility.
-    - ``S`` = buzzer-enable mirror.
+    - ``S`` = write-side echo of the last ``M9079 S<x>`` command;
+      Studio ignores it and so do we. Buzzer state is refreshed
+      from the M9082 poll (see :func:`parse_fan_v3_info`).
 
     Auto sub-mode (Regular vs Quiet) is NOT recoverable from the
     push — neither the poll nor the push reliably distinguishes
@@ -219,15 +221,19 @@ def parse_fan_v3_push(text: str) -> dict[str, object]:
     HA-side write or a fresh sub-mode hint arrives.
     """
     f = _v3_tokens(text, include_a=True)
-    out: dict[str, object] = {
-        "mode_class": f["D"],
-        "c_state": f["C"],
-    }
+    out: dict[str, object] = {"c_state": f["C"]}
+    # Push frames emitted during a Studio-initiated speed change
+    # carry ``D0`` (transitional / not-yet-settled). Merging that
+    # into ``mode_class`` briefly reports the fan as "off" until
+    # the next M9082 poll restores the real value — that's the
+    # bounce reported on the fan entity in Issue #4 v2.7.1 retest.
+    # Only accept the documented mode discriminators
+    # (2 = Manual Off, 3 = Manual running, 4 = Auto running).
+    if f["D"] in (2, 3, 4):
+        out["mode_class"] = f["D"]
     a_token = f["A"]
     if f["D"] == 3 and a_token is not None and 0 <= a_token <= 4:
         out["current_gear"] = a_token
-    if f["S"] is not None:
-        out["buzzer_enable"] = bool(f["S"])
     return out
 
 
