@@ -143,19 +143,14 @@ class _AccessoryEntity(XtoolEntity):
             raw = state.fields.get("sn") if state.fields else None
             if isinstance(raw, str) and raw:
                 product_sn = raw
-        if is_synthetic_sn:
-            device_name = self._definition.friendly_name
-            serial_for_info: str | None = product_sn
-        else:
-            display = product_sn or self._sn
-            device_name = (
-                f"{self._definition.friendly_name} ({display})"
-            )
-            serial_for_info = product_sn or self._sn
+        serial_for_info: str | None = (
+            product_sn if is_synthetic_sn
+            else product_sn or self._sn
+        )
         return DeviceInfo(
             identifiers={(DOMAIN, f"{laser_sid}:{self._accessory_key}")},
             via_device=(DOMAIN, laser_sid),
-            name=device_name,
+            name=self._definition.friendly_name,
             manufacturer="xTool",
             model=self._definition.friendly_name,
             serial_number=serial_for_info,
@@ -539,17 +534,14 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
             raw = state.fields.get("sn") if state.fields else None
             if isinstance(raw, str) and raw:
                 product_sn = raw
-        if is_synthetic_sn:
-            device_name = self._definition.friendly_name
-            serial_for_info: str | None = product_sn
-        else:
-            display = product_sn or self._sn
-            device_name = f"{self._definition.friendly_name} ({display})"
-            serial_for_info = product_sn or self._sn
+        serial_for_info: str | None = (
+            product_sn if is_synthetic_sn
+            else product_sn or self._sn
+        )
         return DeviceInfo(
             identifiers={(DOMAIN, f"{laser_sid}:{self._accessory_key}")},
             via_device=(DOMAIN, laser_sid),
-            name=device_name,
+            name=self._definition.friendly_name,
             manufacturer="xTool",
             model=self._definition.friendly_name,
             serial_number=serial_for_info,
