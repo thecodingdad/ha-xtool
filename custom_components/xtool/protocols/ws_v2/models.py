@@ -229,6 +229,7 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push (live capture)
     has_ir_led=True,  # F2UV bundle queries `/v1/peripheral/param?type=ir_led`
     has_button_event=True,  # GS009-CLASS-4 bundle defines /button/status push handler
+    has_md_mode=True,  # GS009-CLASS-4 bundle surfaces mdMode access-control switch
     # Air-pump V2 + UV fire sensor are BT-paired accessories on F2UV
     # (`airassistV2` = AirPumpV2, `uv_sensor_wb031` = UvSensor) routed
     # via `/v1/parts/control` — not built-in peripherals; entities
@@ -268,6 +269,7 @@ XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     has_device_sleep=True,
     has_ir_led=True,
     has_button_event=True,
+    has_md_mode=True,
     firmware_content_id="xTool-f2-ultra-uv-class1-firmware",
     firmware_machine_type="MXF",
     protocol_version="V2",

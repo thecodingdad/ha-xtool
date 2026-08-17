@@ -514,6 +514,9 @@
       "beep_enable": {
         "name": "Buzzer reminders"
       },
+      "md_mode": {
+        "name": "Auto mode (access control)"
+      },
       "drawer_check": {
         "name": "Drawer check"
       },

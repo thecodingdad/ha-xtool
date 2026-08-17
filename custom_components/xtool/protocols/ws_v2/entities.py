@@ -1584,6 +1584,19 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
                 enabled_default=False,
             )
         )
+    if model.has_md_mode:
+        # xTool "Auto mode" / Material-Detection access control:
+        # once enabled the device requires a physical safety key
+        # to start processing (Studio bundle label
+        # ``enable_access_control``). Wire is the standard
+        # ``/v1/device/configs`` PUT with ``{mdMode: bool}``.
+        entities.append(
+            _WSV2ConfigSwitch(
+                coordinator, "md_mode", "mdMode",
+                "md_mode_enabled",
+                "mdi:key-variant",
+            )
+        )
     if model.has_machine_lock:
         # F2 Ultra UV (and the rest of the F-series V2 firmware) types
         # the Stops-when-moved enforcement field as the ``workingMode``
