@@ -1211,15 +1211,17 @@ class _WSV2Camera(XtoolEntity, Camera):
     ``_WSV2LiveCamera`` entities; dual-camera models then surfaced
     four entries on the device page. Merged in v2.5.4.
 
-    ``_attr_is_streaming`` is intentionally left ``False`` until
-    the live MJPEG path is fully verified — Issue #4 v2.5.4 retest
-    reports "Streaming" state but no frame rendered on F2 Ultra UV.
-    Falling back to snapshot-card keeps the still image working
-    while the live-stream wire shape is re-investigated.
+    ``_attr_is_streaming = True`` since v2.7.2 — the
+    ``handle_async_mjpeg_stream`` path was confirmed working on F2
+    Ultra UV (Issue #4 v2.7.1 retest, "both seem to be streaming,
+    nice work"). HA now reports ``streaming`` as the entity state
+    and auto-refreshes Lovelace picture-card thumbnails from the
+    MJPEG feed. ``camera.snapshot`` continues to consume the
+    still-image cache maintained in :meth:`async_camera_image`.
     """
 
     _camera_name: str = ""
-    _attr_is_streaming = False
+    _attr_is_streaming = True
 
     def __init__(
         self,
