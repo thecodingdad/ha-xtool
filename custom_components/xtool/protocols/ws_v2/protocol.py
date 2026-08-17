@@ -1840,13 +1840,16 @@ class WSV2Protocol(XtoolProtocol):
                     state.working_mode = str(cur_mode["subMode"])
                 if cur_mode.get("taskId"):
                     state.task_id = str(cur_mode["taskId"])
-            # cpuTemp is present on every V2 model tested (F1 Ultra,
-            # DT001, etc.).  Extract it here so subclasses don't need
-            # to duplicate the logic.
+            # ``cpuTemp`` is reported in milli-degrees Celsius
+            # (verified live on F2 Ultra UV firmware
+            # 40.130.021.00.ht2, Issue #4 log: cpuTemp=43565 =>
+            # 43.6 °C). Divide by 1000 before storing so the
+            # temperature sensor reports the correct unit.
             cpu_temp = rt.get("cpuTemp")
             if isinstance(cpu_temp, (int, float)):
-                state.cpu_temp = int(cpu_temp)
-                self._latest["cpu_temp"] = int(cpu_temp)
+                cpu_temp_c = int(cpu_temp / 1000)
+                state.cpu_temp = cpu_temp_c
+                self._latest["cpu_temp"] = cpu_temp_c
 
     async def _poll_configs(self) -> None:
         """Fetch + apply the persistent config blob.

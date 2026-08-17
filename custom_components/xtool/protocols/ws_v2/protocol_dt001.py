@@ -146,9 +146,12 @@ class DT001WSV2Protocol(WSV2Protocol):
             if cur_mode.get("taskId"):
                 state.task_id = str(cur_mode["taskId"])
 
+        # ``cpuTemp`` is milli-degrees Celsius (matches the base
+        # WSV2 handler — Issue #4 firmware trace verified 43565
+        # => 43.6 °C).
         cpu_temp = rt.get("cpuTemp")
         if isinstance(cpu_temp, (int, float)):
-            self._cache_state_value(state, "cpu_temp", int(cpu_temp))
+            self._cache_state_value(state, "cpu_temp", int(cpu_temp / 1000))
         ambient_humidity = rt.get("humity")
         if isinstance(ambient_humidity, (int, float)):
             self._cache_state_value(
