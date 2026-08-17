@@ -254,6 +254,24 @@ async def _dispatch_write(entity: _AccessoryEntity, value: Any) -> None:
     ):
         _remember_fan_v3_state(entity, mcode[len("M9064 "):])
         entity.async_write_ha_state()
+    # M9085 T<seconds> — inline-fan post-run duration. Firmware
+    # never re-reports this in M9082 or via push, so without a
+    # local cache the number entity snaps back to the previously
+    # observed value on the next tick. Store the just-written value
+    # on the accessory fields so the entity reflects the write and
+    # subsequent renders read the fresh number.
+    if (
+        entity._definition.type_id == "DuctFanV3"
+        and isinstance(mcode, str)
+        and mcode.startswith("M9085 T")
+    ):
+        try:
+            seconds = int(mcode[len("M9085 T"):].split()[0])
+        except (ValueError, IndexError):
+            seconds = None
+        if seconds is not None and entity._state is not None:
+            entity._state.fields["post_run_seconds"] = seconds
+            entity.async_write_ha_state()
 
 
 class _AccessorySwitch(_AccessoryEntity, SwitchEntity):
