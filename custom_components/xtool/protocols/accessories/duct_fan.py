@@ -133,24 +133,30 @@ def parse_fan_v3_info(text: str) -> dict[str, object]:
 
     Wire shape on F2 Ultra UV firmware ``40.130.021.00.ht2``:
 
-    ``A<version> B<gear> C<c_state> D<mode_class> E:"<sn>" S<buzzer> Z<online>``
+    ``A<version> B<gear> C<c_state> D<mode_class> E:"<sn>" S<s> Z<buzzer>``
 
-    Field semantics (verified live; v2.5.8 retest 14-action trace):
+    Field semantics (Studio bundle ``getFanInfoV3`` for
+    GS009-CLASS-4 is authoritative — verified live via v2.7.1
+    retest, Issue #4):
 
-    - ``A`` is the firmware-version string. Contains dots — parsed
-      positionally as ``tokens[0]`` to avoid colliding with B/C/D
-      via a generic numeric scan.
+    - ``A`` = firmware-version string; contains dots so parsed
+      positionally as ``tokens[0]``.
     - ``B`` = ``current_gear`` — motor speed indicator (Manual:
       1-4 = gear; Manual Off: residual RPM of the previous gear;
       Auto: ramping speed).
-    - ``C`` = ``c_state`` — alternates 2/3 across mode transitions;
-      semantically unclear, kept for debugging. Earlier revs
-      misnamed this ``control_mode``, which was wrong.
+    - ``C`` = ``c_state`` — transient state indicator; alternates
+      2/3 across mode transitions, semantically unclear, kept for
+      debug visibility.
     - ``D`` = ``mode_class`` — authoritative mode discriminator:
-      ``2`` = Manual Off, ``3`` = Manual running, ``4`` = Auto
-      running. Earlier revs misnamed this ``target_gear``, which
-      was wrong.
-    - ``S`` = buzzer-enable flag, ``Z`` = online flag.
+      ``2`` = Manual Off, ``3`` = Manual running, ``4`` = Auto.
+    - **``Z`` = ``buzzer_enable``** (per Studio bundle
+      ``fanBuzzerEnable: yC(t, 'Z') === 1``). Earlier revs
+      swapped S / Z here; the swap caused the buzzer switch to
+      bounce back to ``off`` after the user toggled it on, and
+      the entity to display stale ``off`` while the physical
+      buzzer was actually enabled.
+    - ``S`` = write-side echo of the last ``M9079 S<x>`` command
+      — Studio ignores it on read; not surfaced.
 
     ``mode_class=4`` (Auto) does NOT carry the Regular/Quiet
     sub-mode in the poll reply. The set-handler caches it in
@@ -166,15 +172,16 @@ def parse_fan_v3_info(text: str) -> dict[str, object]:
     current_gear = fields["B"]
     c_state = fields["C"]
     mode_class = fields["D"]
-    buzzer = fields["S"]
-    connected = fields["Z"]
+    buzzer = fields["Z"]
     return {
         "version": version,
         "current_gear": current_gear,
         "c_state": c_state,
         "mode_class": mode_class,
         "buzzer_enable": bool(buzzer) if buzzer is not None else None,
-        "connected": bool(connected) if connected is not None else None,
+        # M9082 reply presence itself proves the accessory is
+        # connected — we wouldn't be parsing this reply otherwise.
+        "connected": True,
         "sn": quoted(text, "E:"),
         # mode_speed left ``None`` here — the V2 coordinator's
         # accessory merge step calls ``derive_fan_v3_mode_speed``
