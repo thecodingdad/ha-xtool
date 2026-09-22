@@ -124,6 +124,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.protocol = protocol
         self.device_name = device_name
         self.serial_number = serial_number
+        self.laser_device_id: str | None = None
         self.firmware_version = firmware_version
         self.model = model
         self.laser = LaserInfo()
