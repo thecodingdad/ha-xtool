@@ -21,6 +21,7 @@ from ..base import XtoolDeviceModel
 from .coordinator import WSV2Coordinator
 from .protocol import WSV2Protocol
 from .protocol_dt001 import DT001WSV2Protocol
+from .protocol_dt002 import DT002WSV2Protocol
 from .protocol_m2 import M2WSV2Protocol
 from .protocol_p2s import P2SWSV2Protocol
 
@@ -546,6 +547,38 @@ XTOOL_M2_WSV2 = XtoolDeviceModel(
 )
 
 
+# xTool O1 Omni Printer (model_id DT002) — UV / DTG printer, V2-only
+# (Studio ext.json: ``protocolVersion:"V2"``, ``channelType:"socket"``
+# for both USB and WIFI, ``machineType:"PRINT"``). Verified against a
+# live O1 on firmware 40.101.013.01.ht1. The first iteration is
+# read-only: status, consumables, doors, environment, queue, alarms
+# and the firmware-update check. No camera entity — the O1's
+# Pixel-Scan system is a CIS line scanner, not a live camera.
+XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
+    model_id="DT002",
+    name="xTool O1 Omni Printer",
+    protocol_class=DT002WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    # Top lid → the shared Cover binary sensor (True = open).
+    has_cover_sensor=True,
+    # Also carries the O1's lifetime counters (working / standby / UV
+    # lamp time from /v1/project/device/config/all) and the last
+    # finished job's duration from the task history.
+    has_ink_cartridges=True,
+    # Write paths (config PUT, job control) not verified yet.
+    has_baseline_controls=False,
+    # Alarm list is mostly door / cartridge / tank notices.
+    has_fire_warning_event=False,
+    has_bt_accessories=False,
+    firmware_content_id="xTool-dt002-firmware",
+    firmware_machine_type="DT002",
+    protocol_version="V2",
+    # V2 discovery reports deviceCode "DT002" and deviceName
+    # "xTool Omni Printer O1".
+    discovery_match=("DT002", "Omni Printer O1"),
+)
+
+
 WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_F1_WSV2,
     XTOOL_F1_ULTRA_WSV2,
@@ -565,4 +598,5 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_METALFAB_WSV2,
     XTOOL_APPAREL_PRINTER_WSV2,
     XTOOL_M2_WSV2,
+    XTOOL_O1_OMNI_WSV2,
 )

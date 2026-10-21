@@ -494,6 +494,8 @@ class WSV2Coordinator(XtoolCoordinator):
         """
         if bool(prev) == bool(new):
             return
+        if not self.model.has_fire_warning_event:
+            return
         self._emit_event(
             "fire_warning",
             "triggered" if new else "cleared",

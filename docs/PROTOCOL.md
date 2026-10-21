@@ -36,7 +36,7 @@ USB, `needConnectAlive: false`, no heartbeat).
 | `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
 | `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
 | `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
-| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23 | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
+| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
 
 V1- and V2-firmware lines for the same hardware coexist — discovery +
 the port-28900 probe pick the right family at config-flow time. See
@@ -2594,6 +2594,115 @@ on-device upgrade service does the per-controller dispatch.
 
 ---
 
+## O1 Omni protocol (DT002)
+
+xTool O1 Omni Printer (Studio ``deviceCode`` `DT002`, `machineType`
+`PRINT`, extension `xcs-ext-dt002`) is a UV / DTG printer. Studio's
+`ext.json` lists it as **V2-only** with `channelType:"socket"` for
+both USB and WIFI, so the USB link is a network adapter and the same
+port-28900 framework applies on either path. Transport, framing,
+parity handshake and heartbeat are identical to the
+[WS-V2 protocol](#ws-v2-protocol-tls-websocket-rpc--push); the URL set
+is printer-specific and lives under `/v1/platform/*` and
+`/v1/project/*` like the [M2](#m2-protocol).
+
+Everything in this section is verified against a live O1 (UV & DT
+edition, firmware `40.101.013.01.ht1`, marketing version V0.6.8) and
+Studio's DT002 bundle v0.6.8. Identifiers in the samples are redacted.
+
+### Discovery
+
+V2 encrypted discovery answers with `deviceCode:"DT002"`,
+`deviceName:"xTool Omni Printer O1"`, `protocolVersion:"V2"`,
+`platformVersion:"2.0"`, `firmwareVersion:"40.101.013.01.ht1"` and a
+`wifiSignal` field. ha-xtool matches on `DT002` / `Omni Printer O1`.
+
+### Read routes
+
+All are frames on the instruction channel (`method:"GET"`).
+
+| Route | Reply `data` |
+|---|---|
+| `/v1/platform/device/machine-info` | `{deviceCode, deviceId, deviceName, sn, sku, uuid, firmware:{version, buildTime, modules:[{name, appVersion, bootVersion, hardVersion}]}}` — modules `MR536`, `MotionController`, `PrinterController`, `ScanController` |
+| `/v1/platform/wifi/connected-info` | `{ip, mac_addr, rssi_dbm, ssid}` |
+| `/v1/project/device/peripheral-status` | `{doors:[{type:1\|2, status:bool}], lid:bool, filter:bool, pallet:int}` — type 1 = front, 2 = rear; `status` / `lid` **true = open** (Studio's head-cooling flow requires all three `=== true` before it starts) |
+| `/v1/project/device/ink-tank` | `{inkRoad1:[…], inkRoad2:[…], whiteStireStatus:{active, remainSec}}` — one entry per slot: `{tank_id, exist, serial, full_ml, remain_ml, level, level_value, calib_status, calib_value}`; empty slot = `exist:false, full_ml:-1, remain_ml:-1, serial:""` |
+| `/v1/project/device/maintenance-tank` | `{moisturizing:[{index, exist, serial, full_ml, remain_ml, level, …}], waste:{exist, level, level_value, calib_status, calib_value}}` |
+| `/v1/project/device/temp-humity` | `{temp, humity}` (sic) — °C and %RH |
+| `/v1/project/device/printer-head-param` | `{power_error, printer_head_param:[{ink_road, ink_type, temp, work_state, exit_state}]}` |
+| `/v1/project/device/fill-light` | `{on, brightness:0-1000, autoOffSec, remainSec, suppressed}` (bundle v0.6.8+) |
+| `/v1/project/task/list` | `{print_tasks:[…], history_tasks:[…], totalPrintTaskCount, totalHistoryTaskCount}` — task `{id, name, status, type, processingMode, currentPrintPass, totalPrintPass, processingTime, estimateTime, createdAt, updatedAt, …}`; `status` ∈ `PRINTING` / `FINISHED` / `CANCELED` / …, `processingMode` ∈ `UV_PRINT` / `DTG_PRINT` / … |
+| `/v1/project/device/config/all` | **`data` is a JSON string** of ~150 keys: lifetime counters (`processCount`, `processTotalTime`, `standbyTime`, `uvLampRunTime`, `opticalPathRunTime`, `printHead1WorkTime`, `printHead2WorkTime`, `airPurifierRunTime`), clean counters per head, thresholds (`printHeadOverheatThreshold`, `mantainTempThreshold`, `mantainHumidityThreshold`), `timeoutToSleep`, `beepEnable`, … |
+| `/v1/project/task/cache-info` | `{leftBytes}` |
+| `/v1/project/accessories/info` | `{Laminator:{…}, RollMaterialStand:{…}, RotatingParts:{…}}` |
+| `/v1/project/device/coordinate` | `{x, y, z, u, v, w, a, j, k, n}` |
+
+Answers `404 API not found` on this firmware:
+`/v1/project/process/statistics`, GET `/v1/platform/device/alarm`, and
+the legacy `/v1/peripheral/maintenanceTank`. `/v1/platform/device/config`
+GET needs a `kv` array (`code -1 "in_data is not array"` otherwise). No
+state-snapshot route exists; the firmware pushes the state right after
+the parity handshake.
+
+**Cartridge colour.** Studio derives the colour from `serial[6:8]`:
+first letter = ink type (`U` UV, `D` DTG), second = colour (`C` cyan,
+`M` magenta, `Y` yellow, `K` black, `W` / `S` white, `V` varnish, `F`
+moisturizing fluid). The UV & DT edition reports UV C/M/Y/K/V/W on
+ink road 1 (125 ml each) and DTG C/M/Y/K/W on road 2 (white 290 ml)
+plus one empty slot. Remaining percentage = `remain_ml / full_ml`
+(Studio's helper, clamped 0-100). `level` 1 = insufficient; on the
+waste tank `level` 2 = full.
+
+### Push events
+
+Three envelopes, all `type:"request"` on the instruction channel:
+
+```json
+{"method": "REPORT", "data": {"/v1/platform/device/state": {"mode": "WorkPlay"}}}
+{"method": "NOTIFY", "data": [{"name": "/v1/project/task/printing-task-update",
+  "info": {"id": "<task>", "currentPrintPass": 31, "processingTime": 50},
+  "level": "NOTICE", "timestamp": 0}]}
+{"method": "NOTIFY-RECORD", "data": [{"name": "/v1/platform/device/process",
+  "content": {"action": "pause", "taskId": "<task>"}, "timestamp": 0}]}
+```
+
+| URL | Envelope | Payload |
+|---|---|---|
+| `/v1/platform/device/state` | REPORT | `{mode}` — `Initial`, `Idle`, `Clean`, `Scan`, `Motion`, `Calibration`, `Measure`, `WorkReady`, `WorkPlay`, `WorkPause`, `WorkDrying`, `WorkRollPause`, `Sleep`, `Upgrade`, `Network`, `Error`, `LowPower`, `KnifeCut`, `WorkBaking`, `Cutting` |
+| `/v1/platform/device/alarm` | REPORT | full active list on every change, `[]` when cleared: `[{info:{code, message}, level:"NOTICE"\|"WARNING"\|"ERROR"\|"FATAL", timestamp}]` — e.g. 5028 waste tank removed, 5139 DTG cartridge missing (`message:"DTG Black"`), 5030 front door not open |
+| `/v1/project/peripheral/front_door`, `/rear_door`, `/lid` | REPORT | `{state:bool}` (true = open) |
+| `/v1/project/peripheral/waste_tank_status` | REPORT | `{exist, level}` |
+| `/v1/project/peripheral/ink_tank_status` | REPORT | `{route:0\|1, tank_id:0-5, exist, full_ml, remain_ml, level}` — **0-based** road and slot |
+| `/v1/project/peripheral/moisture_tank_status` | REPORT | `{index:0\|1, exist, full_ml, remain_ml, level}` |
+| `/v1/project/peripheral/temp_humity` | REPORT | `{temp, humity}` |
+| `/v1/project/device/info` | REPORT | periodic snapshot: `{ink_tanks:{inkRoad1, inkRoad2}, moisturizing, waste, printer_head_param, temp, humity, airPurifierRunTime}`; cartridge entries here also carry a display `name` ("UV Cyan", "DTG White") |
+| `/v1/project/peripheral/air_purifier_run_time` | REPORT | `{airPurifierRunTime}` |
+| `/v1/platform/net/link` | REPORT | `{isConnected, timestamp}` |
+| `/v1/project/task/printing-task-update` | NOTIFY | ~1 Hz while printing: `{id, currentPrintPass, processingTime}`; at the end `{id, status:"FINISHED"}` |
+| `/v1/project/task/task-list-update` | NOTIFY | `{}` — queue changed |
+| `/v1/project/clean/start`, `/clean/result` | NOTIFY | `{head, type, estimate_time}` / `{code}` |
+| `/v1/platform/device/process` | NOTIFY-RECORD | `{content:{action, taskId}}` — `start`, `pause`, `resume`, `finish`, `cancel`, … |
+
+**Automatic head clean.** Mid-print the firmware pauses on its own
+every `uvPrintFlashCleanTime` seconds (300 s here) for a ~4 s flash
+clean: `process pause` → `state WorkPause` → `state Clean` +
+`clean/start` (~30 ms later) → `clean/result` → `state WorkPause` →
+`state WorkPlay` + `process resume`. ha-xtool maps `Clean` to its own
+`cleaning` status and only reports a Job `paused` event when no clean
+starts within 2 s of the pause.
+
+### Write surface
+
+Not used by ha-xtool yet. The bundle drives jobs through
+`/v1/project/device/control` (POST, `action`), config through
+`PUT /v1/platform/device/config`, the fill light through
+`POST /v1/project/device/fill-light`, and exposes maintenance routes
+(`/v1/project/maintain/*`, pumps, `/v1/project/debug/mcode`) that
+should not be automated.
+
+
+---
+
 ## Bluetooth dongle (peripheral M-code reference)
 
 The optional xTool Bluetooth dongle exposes its own M-code family. Used by the S1 (and probably future models) to scan + pair external accessories like xTouch, foot pedal, remote scanner.
@@ -2714,6 +2823,7 @@ multi-package response (or an empty body if no update).
 | P3 | `xTool-p3-firmware` | single (machine_type `MXP`) |
 | MetalFab (HJ003) | `xTool-hj003-firmware` | single (machine_type `MHJ`) |
 | Apparel Printer (DT001) | `xTool-apparelprinter-firmware-1.5` | single (machine_type `MDT`) |
+| O1 Omni (DT002) | `xTool-dt002-firmware` | single (machine_type `DT002`; ID from the DT002 bundle, check not yet confirmed against the cloud) |
 | Bluetooth dongle (peripheral) | `xTool-dongle-firmware` | single |
 
 `xcs-ext-*` IDs that appear in some older XCS resources are XCS

@@ -88,6 +88,7 @@
           "processing_ready": "Ready",
           "processing": "Processing",
           "paused": "Paused",
+          "cleaning": "Cleaning",
           "firmware_update": "Updating firmware",
           "sleeping": "Sleeping",
           "cancelling": "Cancelling",
@@ -329,6 +330,36 @@
       },
       "inkjet_toner_sn": {
         "name": "Toner serial"
+      },
+      "ink_cartridge": {
+        "name": "{name} ink"
+      },
+      "moisturizing_tank": {
+        "name": "Moisturizing fluid {index}"
+      },
+      "print_head_temperature": {
+        "name": "Print head {head} temperature"
+      },
+      "active_alarms": {
+        "name": "Active alarms"
+      },
+      "job_name": {
+        "name": "Job name"
+      },
+      "job_progress": {
+        "name": "Job progress"
+      },
+      "job_time_remaining": {
+        "name": "Job time remaining"
+      },
+      "queued_jobs": {
+        "name": "Queued jobs"
+      },
+      "air_purifier_runtime": {
+        "name": "Air purifier runtime"
+      },
+      "uv_lamp_runtime": {
+        "name": "UV lamp runtime"
       }
     },
     "binary_sensor": {
@@ -415,6 +446,21 @@
       },
       "accessory_airpumpv2_connected": {
         "name": "Connected"
+      },
+      "front_door": {
+        "name": "Front door"
+      },
+      "rear_door": {
+        "name": "Rear door"
+      },
+      "waste_tank_full": {
+        "name": "Waste ink tank full"
+      },
+      "waste_tank_present": {
+        "name": "Waste ink tank installed"
+      },
+      "filter_installed": {
+        "name": "Air filter installed"
       }
     },
     "camera": {
@@ -862,4 +908,4 @@
       }
     }
   }
-}
+}

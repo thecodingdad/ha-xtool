@@ -59,7 +59,12 @@ from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_HA_MAX
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringBinarySensor
+from ...entity import (
+    XtoolEntity,
+    XtoolReadOnlyEntity,
+    XtoolRestoringBinarySensor,
+    XtoolRestoringSensor,
+)
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
@@ -127,6 +132,55 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
 )
 
 _INKJET_STATUS_OPTIONS = ["normal", "low", "empty"]
+
+# Lifetime-counter descriptions shared by ``has_runtime_stats`` and the
+# O1 Omni gate.
+_LAST_JOB_TIME_DESCRIPTION = XtoolSensorEntityDescription(
+    key="last_job_time",
+    translation_key="last_job_time",
+    icon="mdi:timer-check",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    native_unit_of_measurement=UnitOfTime.SECONDS,
+    value_fn=lambda state, _: state.last_job_time_seconds or None,
+)
+_WORKING_TIME_DESCRIPTION = XtoolSensorEntityDescription(
+    key="working_seconds",
+    translation_key="working_time",
+    icon="mdi:timer-cog",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    native_unit_of_measurement=UnitOfTime.SECONDS,
+    state_class=SensorStateClass.TOTAL_INCREASING,
+    value_fn=lambda state, _: state.working_seconds,
+)
+_STANDBY_TIME_DESCRIPTION = XtoolSensorEntityDescription(
+    key="standby_seconds",
+    translation_key="standby_time",
+    icon="mdi:timer-sand",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    native_unit_of_measurement=UnitOfTime.SECONDS,
+    state_class=SensorStateClass.TOTAL_INCREASING,
+    value_fn=lambda state, _: state.standby_seconds,
+)
+
+# Shared by the Apparel Printer (DT001) and O1 Omni (DT002) gates.
+_AMBIENT_TEMP_DESCRIPTION = XtoolSensorEntityDescription(
+    key="ambient_temp",
+    translation_key="ambient_temp",
+    icon="mdi:thermometer",
+    device_class=SensorDeviceClass.TEMPERATURE,
+    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+    state_class=SensorStateClass.MEASUREMENT,
+    value_fn=lambda state, _: state.ambient_temp,
+)
+_AMBIENT_HUMIDITY_DESCRIPTION = XtoolSensorEntityDescription(
+    key="ambient_humidity",
+    translation_key="ambient_humidity",
+    icon="mdi:water-percent",
+    device_class=SensorDeviceClass.HUMIDITY,
+    native_unit_of_measurement=PERCENTAGE,
+    state_class=SensorStateClass.MEASUREMENT,
+    value_fn=lambda state, _: state.ambient_humidity,
+)
 
 # Sensors that are gated by capability flags
 _GATED_SENSOR_DESCRIPTIONS: tuple[
@@ -255,41 +309,9 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         ),
         "has_gyro",
     ),
-    (
-        XtoolSensorEntityDescription(
-            key="last_job_time",
-            translation_key="last_job_time",
-            icon="mdi:timer-check",
-            entity_category=EntityCategory.DIAGNOSTIC,
-            native_unit_of_measurement=UnitOfTime.SECONDS,
-            value_fn=lambda state, _: state.last_job_time_seconds or None,
-        ),
-        "has_runtime_stats",
-    ),
-    (
-        XtoolSensorEntityDescription(
-            key="working_seconds",
-            translation_key="working_time",
-            icon="mdi:timer-cog",
-            entity_category=EntityCategory.DIAGNOSTIC,
-            native_unit_of_measurement=UnitOfTime.SECONDS,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-            value_fn=lambda state, _: state.working_seconds,
-        ),
-        "has_runtime_stats",
-    ),
-    (
-        XtoolSensorEntityDescription(
-            key="standby_seconds",
-            translation_key="standby_time",
-            icon="mdi:timer-sand",
-            entity_category=EntityCategory.DIAGNOSTIC,
-            native_unit_of_measurement=UnitOfTime.SECONDS,
-            state_class=SensorStateClass.TOTAL_INCREASING,
-            value_fn=lambda state, _: state.standby_seconds,
-        ),
-        "has_runtime_stats",
-    ),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_runtime_stats"),
+    (_WORKING_TIME_DESCRIPTION, "has_runtime_stats"),
+    (_STANDBY_TIME_DESCRIPTION, "has_runtime_stats"),
     (
         XtoolSensorEntityDescription(
             key="tool_runtime_seconds",
@@ -393,30 +415,8 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         "has_inkjet",
     ),
     # --- Apparel Printer inkjet sensors (gated on has_inkjet_sensors) ----
-    (
-        XtoolSensorEntityDescription(
-            key="ambient_temp",
-            translation_key="ambient_temp",
-            icon="mdi:thermometer",
-            device_class=SensorDeviceClass.TEMPERATURE,
-            native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-            state_class=SensorStateClass.MEASUREMENT,
-            value_fn=lambda state, _: state.ambient_temp,
-        ),
-        "has_inkjet_sensors",
-    ),
-    (
-        XtoolSensorEntityDescription(
-            key="ambient_humidity",
-            translation_key="ambient_humidity",
-            icon="mdi:water-percent",
-            device_class=SensorDeviceClass.HUMIDITY,
-            native_unit_of_measurement=PERCENTAGE,
-            state_class=SensorStateClass.MEASUREMENT,
-            value_fn=lambda state, _: state.ambient_humidity,
-        ),
-        "has_inkjet_sensors",
-    ),
+    (_AMBIENT_TEMP_DESCRIPTION, "has_inkjet_sensors"),
+    (_AMBIENT_HUMIDITY_DESCRIPTION, "has_inkjet_sensors"),
     (
         XtoolSensorEntityDescription(
             key="heating_status",
@@ -504,7 +504,230 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         ),
         "has_inkjet_sensors",
     ),
+    # --- O1 Omni sensors (gated on has_ink_cartridges) ---------------------
+    # Per-cartridge ink, moisturizing tanks and print-head temperatures
+    # are built per slot in ``build_wsv2_sensors`` from the first poll,
+    # because the slot layout differs between O1 editions.
+    (_AMBIENT_TEMP_DESCRIPTION, "has_ink_cartridges"),
+    (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ink_cartridges"),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_ink_cartridges"),
+    (_WORKING_TIME_DESCRIPTION, "has_ink_cartridges"),
+    (_STANDBY_TIME_DESCRIPTION, "has_ink_cartridges"),
+    (
+        XtoolSensorEntityDescription(
+            key="uv_lamp_runtime",
+            translation_key="uv_lamp_runtime",
+            icon="mdi:lightbulb-on-outline",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda state, _: state.uv_lamp_runtime_seconds,
+        ),
+        "has_ink_cartridges",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="job_name",
+            translation_key="job_name",
+            icon="mdi:file-document-outline",
+            value_fn=lambda state, _: state.job_name or None,
+        ),
+        "has_ink_cartridges",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="job_progress",
+            translation_key="job_progress",
+            icon="mdi:progress-clock",
+            native_unit_of_measurement=PERCENTAGE,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.job_progress,
+        ),
+        "has_ink_cartridges",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="job_time_remaining",
+            translation_key="job_time_remaining",
+            icon="mdi:timer-sand",
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            value_fn=lambda state, _: state.job_time_remaining,
+        ),
+        "has_ink_cartridges",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="queued_jobs",
+            translation_key="queued_jobs",
+            icon="mdi:tray-full",
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.queued_jobs,
+        ),
+        "has_ink_cartridges",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="air_purifier_runtime",
+            translation_key="air_purifier_runtime",
+            icon="mdi:air-filter",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda state, _: state.air_purifier_runtime_seconds,
+        ),
+        "has_ink_cartridges",
+    ),
 )
+
+
+# --- O1 Omni per-slot sensors ------------------------------------------
+
+
+class _DT002TankSensor(XtoolRestoringSensor, SensorEntity):
+    """Remaining % of one ink cartridge or moisturizing tank (O1 Omni).
+
+    One entity per slot reported by the first poll. The display name
+    carries the cartridge colour ("UV Cyan ink", "DTG White ink") via
+    a translation placeholder; raw millilitres and the low flag ride
+    along as attributes.
+    """
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        bucket: str,
+        slot_key: str,
+        translation_key: str,
+        placeholders: dict[str, str],
+        icon: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._bucket = bucket
+        self._slot_key = slot_key
+        self._attr_translation_key = translation_key
+        self._attr_translation_placeholders = placeholders
+        self._attr_icon = icon
+        prefix = "ink" if bucket == "ink_cartridges" else "moisturizing"
+        self._set_unique_id(f"{prefix}_{slot_key}")
+
+    def _slot(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        if data is None:
+            return {}
+        return getattr(data, self._bucket, {}).get(self._slot_key) or {}
+
+    @property
+    def native_value(self) -> float | None:
+        slot = self._slot()
+        live = slot.get("percent") if slot else None
+        return self._value_or_restored(live)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        slot = self._slot()
+        return {
+            "installed": slot.get("exist"),
+            "low": slot.get("low"),
+            "remaining_ml": slot.get("remain_ml"),
+            "capacity_ml": slot.get("full_ml"),
+        }
+
+
+class _DT002HeadTempSensor(XtoolRestoringSensor, SensorEntity):
+    """Print-head temperature for one ink path (O1 Omni)."""
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "print_head_temperature"
+    _attr_icon = "mdi:printer-3d-nozzle-heat"
+
+    def __init__(self, coordinator: XtoolCoordinator, head: int) -> None:
+        super().__init__(coordinator)
+        self._head = head
+        self._attr_translation_placeholders = {"head": str(head)}
+        self._set_unique_id(f"print_head_{head}_temperature")
+
+    @property
+    def native_value(self) -> float | None:
+        data = self.coordinator.data
+        live = None
+        if data is not None:
+            live = data.print_head_temperatures.get(self._head)
+        return self._value_or_restored(live)
+
+
+class _DT002AlarmsSensor(XtoolReadOnlyEntity, SensorEntity):
+    """Number of active alarms, with the code / level / message list.
+
+    The O1 pushes its full alarm list on every change (door open,
+    cartridge missing, waste tank full, …). The state is the count so
+    automations can trigger on ``> 0``; the attribute carries the
+    detail. Codes match the ones shown in xTool Studio.
+    """
+
+    _attr_translation_key = "active_alarms"
+    _attr_icon = "mdi:alert-circle-outline"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("active_alarms")
+
+    @property
+    def native_value(self) -> int | None:
+        data = self.coordinator.data
+        if data is None:
+            return None
+        return len(data.active_alarms)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        alarms = list(data.active_alarms) if data is not None else []
+        return {
+            "alarms": alarms,
+            "codes": [a.get("code") for a in alarms],
+        }
+
+
+def _build_dt002_slot_sensors(
+    coordinator: XtoolCoordinator,
+) -> list[SensorEntity]:
+    """Per-slot O1 sensors from the first poll's cartridge layout.
+
+    Empty slots that report no capacity (e.g. the spare DTG white slot
+    on the UV & DT edition) are skipped; a reload after installing a
+    cartridge there adds it.
+    """
+    data = coordinator.data
+    if data is None:
+        return []
+    entities: list[SensorEntity] = []
+    for key, slot in sorted(data.ink_cartridges.items()):
+        if not slot.get("exist") and not slot.get("full_ml"):
+            continue
+        entities.append(_DT002TankSensor(
+            coordinator, "ink_cartridges", key, "ink_cartridge",
+            {"name": str(slot.get("name") or key)}, "mdi:water",
+        ))
+    for key, slot in sorted(data.moisturizing_tanks.items()):
+        if not slot.get("exist") and not slot.get("full_ml"):
+            continue
+        entities.append(_DT002TankSensor(
+            coordinator, "moisturizing_tanks", key, "moisturizing_tank",
+            {"index": key}, "mdi:water-opacity",
+        ))
+    for head in sorted(data.print_head_temperatures):
+        entities.append(_DT002HeadTempSensor(coordinator, head))
+    entities.append(_DT002AlarmsSensor(coordinator))
+    return entities
 
 
 # --- Binary sensors ----------------------------------------------------
@@ -1400,6 +1623,8 @@ def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     for description, flag in _GATED_SENSOR_DESCRIPTIONS:
         if getattr(coordinator.model, flag, False):
             entities.append(XtoolSensor(coordinator, description))
+    if coordinator.model.has_ink_cartridges:
+        entities.extend(_build_dt002_slot_sensors(coordinator))
     return entities
 
 
@@ -1472,6 +1697,32 @@ def build_wsv2_binary_sensors(
             )(coordinator),
         ])
 
+    if model.has_ink_cartridges:
+        # O1 Omni: doors report True = open; waste tank ``level`` 2 =
+        # full; the air filter flag is True when installed.
+        entities.extend([
+            _bool_sensor_factory(
+                "front_door_open", "front_door",
+                BinarySensorDeviceClass.DOOR,
+            )(coordinator),
+            _bool_sensor_factory(
+                "rear_door_open", "rear_door",
+                BinarySensorDeviceClass.DOOR,
+            )(coordinator),
+            _bool_sensor_factory(
+                "waste_tank_full", "waste_tank_full",
+                BinarySensorDeviceClass.PROBLEM,
+            )(coordinator),
+            _bool_sensor_factory(
+                "waste_tank_present", "waste_tank_present",
+            )(coordinator),
+            _bool_sensor_factory(
+                "filter_installed", "filter_installed",
+                None,
+                EntityCategory.DIAGNOSTIC,
+            )(coordinator),
+        ])
+
     # Always-on binary sensors (V2 baseline)
     entities.append(
         _bool_sensor_factory(
@@ -1540,7 +1791,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     # writes and the ``_WSV2ConfigSwitch`` ``set_config`` retry
     # logic re-sends as bool if int is rejected. Gated on
     # ``has_flame_alarm`` so non-laser models stay clean.
-    entities.extend([
+    baseline_switches: list[SwitchEntity] = [
         _WSV2ConfigSwitch(
             coordinator, "beep_enable", "beepEnable", "beep_enabled_v2",
         ),
@@ -1557,7 +1808,9 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # them on the AP2 / AP2-Large / AP2-Max accessory whenever
         # one is currently paired (laser-state values are merged via
         # ``WSV2Coordinator._poll_accessories``).
-    ])
+    ]
+    if model.has_baseline_controls:
+        entities.extend(baseline_switches)
     if model.has_flame_alarm:
         # Disabled by default in the entity registry — disabling
         # this switch means no flame alarm will be triggered per
@@ -1683,6 +1936,8 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         # ``state.fire_level`` from M340 (separate code path).
     ]
     model = coordinator.model
+    if not model.has_baseline_controls:
+        entities = []
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
     # to the AirPump accessory child device (the per-job-mode default
     # gear is conceptually an AirPump setting even though the wire
@@ -1753,11 +2008,13 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     # for any V2 model in the Studio bundle, and the firmware rejects
     # them with `code 1: failed`. The classes are kept in this module
     # for future use if a real wire path is identified.
-    entities: list[ButtonEntity] = [
-        WSV2PauseJob(coordinator),
-        WSV2ResumeJob(coordinator),
-        WSV2CancelJob(coordinator),
-    ]
+    entities: list[ButtonEntity] = []
+    if coordinator.model.has_baseline_controls:
+        entities.extend([
+            WSV2PauseJob(coordinator),
+            WSV2ResumeJob(coordinator),
+            WSV2CancelJob(coordinator),
+        ])
     # XY-home + Move-to-origin only make sense on gantry models. Galvo
     # devices (F2 family, F1 portable …) have no XY motion path and
     # would only see ``code 1: failed`` if the buttons were pressed.
@@ -1839,8 +2096,9 @@ def build_wsv2_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
     entities: list[EventEntity] = [
         WSV2JobEvent(coordinator),
         WSV2ErrorEvent(coordinator),
-        WSV2FireWarningEvent(coordinator),
     ]
+    if coordinator.model.has_fire_warning_event:
+        entities.append(WSV2FireWarningEvent(coordinator))
     if coordinator.model.has_button_event:
         entities.insert(0, WSV2ButtonEvent(coordinator))
     return entities

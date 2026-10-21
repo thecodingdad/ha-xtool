@@ -88,6 +88,7 @@
           "processing_ready": "Verarbeitungsbereit",
           "processing": "Verarbeitung",
           "paused": "Pausiert",
+          "cleaning": "Reinigung",
           "firmware_update": "Firmware-Update",
           "sleeping": "Ruhemodus",
           "cancelling": "Abbrechen",
@@ -296,6 +297,42 @@
       },
       "inkjet_toner_sn": {
         "name": "Seriennummer Toner"
+      },
+      "ink_cartridge": {
+        "name": "Tinte {name}"
+      },
+      "moisturizing_tank": {
+        "name": "Befeuchtungsflüssigkeit {index}"
+      },
+      "print_head_temperature": {
+        "name": "Druckkopf {head} Temperatur"
+      },
+      "active_alarms": {
+        "name": "Aktive Alarme"
+      },
+      "job_name": {
+        "name": "Auftragsname"
+      },
+      "job_progress": {
+        "name": "Auftragsfortschritt"
+      },
+      "job_time_remaining": {
+        "name": "Verbleibende Auftragszeit"
+      },
+      "queued_jobs": {
+        "name": "Aufträge in Warteschlange"
+      },
+      "air_purifier_runtime": {
+        "name": "Laufzeit Luftreiniger"
+      },
+      "ambient_temp": {
+        "name": "Umgebungstemperatur"
+      },
+      "ambient_humidity": {
+        "name": "Luftfeuchtigkeit"
+      },
+      "uv_lamp_runtime": {
+        "name": "Laufzeit UV-Lampe"
       }
     },
     "binary_sensor": {
@@ -370,6 +407,21 @@
       },
       "accessory_airpumpv2_connected": {
         "name": "Verbunden"
+      },
+      "front_door": {
+        "name": "Fronttür"
+      },
+      "rear_door": {
+        "name": "Hintertür"
+      },
+      "waste_tank_full": {
+        "name": "Resttintenbehälter voll"
+      },
+      "waste_tank_present": {
+        "name": "Resttintenbehälter eingesetzt"
+      },
+      "filter_installed": {
+        "name": "Luftfilter eingesetzt"
       }
     },
     "camera": {
@@ -814,4 +866,4 @@
       }
     }
   }
-}
+}
