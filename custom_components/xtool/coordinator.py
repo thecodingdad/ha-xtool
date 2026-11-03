@@ -125,6 +125,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.device_name = device_name
         self.serial_number = serial_number
         self.laser_device_id: str | None = None
+        self.options_snapshot: dict[str, Any] = {}
         self.firmware_version = firmware_version
         self.model = model
         self.laser = LaserInfo()

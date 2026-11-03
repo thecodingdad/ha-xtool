@@ -102,6 +102,15 @@ WSV2_FILE_UPLOAD_TIMEOUT = 600.0
 WSV2_FIRST_MESSAGE_USER_KEY = "bWFrZWJsb2NrLXh0b29s"
 WSV2_USER_UUID = "mk-guest"
 WSV2_FIRST_MESSAGE_TIMEOUT = 10.0
+# Pairing (Studio 1.10 ParityService). Parity answers 406 when the
+# device wants a button press; the client then polls auth-status once
+# per second until the device returns the permanent token (code 0) or
+# gives up (410). 409 / 503 mean the pairing flow is blocked.
+WSV2_PATH_AUTH_STATUS = "/v1/user/auth-status"
+WSV2_AUTH_STATUS_TIMEOUT = 20.0
+WSV2_PAIRING_REQUIRED = 406
+WSV2_PAIRING_TIMED_OUT = 410
+WSV2_PAIRING_BLOCKED = (409, 503)
 # Heartbeat ping uses a fixed transactionId (0xFFE6 in Studio's
 # HEART_MESSAGE_ID constant) so the user-request rotation can skip it.
 WSV2_PING_TRANSACTION_ID = 65510
@@ -461,6 +470,50 @@ class _PendingRequest:
         self.deadline = deadline
 
 
+class WSV2RequestError(RuntimeError):
+    """Non-zero ``code`` in a V2 response; carries the response ``data``."""
+
+    def __init__(self, method: str, url: str, code: int, msg: str, data: Any) -> None:
+        super().__init__(f"V2 {method} {url} returned code {code}: {msg}")
+        self.code = code
+        self.data = data
+
+
+class WSV2PairingRequired(ConnectionError):
+    """The device wants a button press before it accepts this client."""
+
+
+class WSV2PairingFailed(ConnectionError):
+    """Pairing ended without a token — ``reason`` is ``timeout`` or ``blocked``."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"V2 pairing failed: {reason}")
+        self.reason = reason
+
+
+class _ParityFailed(Exception):
+    """Internal wrapper: parity failed after the socket opened."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__(str(error))
+        self.error = error
+
+
+_SECRET_KEYS = frozenset({"token", "sessionToken"})
+
+
+def _redact(value: Any) -> Any:
+    """Mask pairing secrets before a payload reaches the debug log."""
+    if isinstance(value, dict):
+        return {
+            k: ("***" if k in _SECRET_KEYS and v else _redact(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
+
 def _local_timezone() -> str:
     """Best-effort IANA timezone string for the parity handshake."""
     try:
@@ -568,6 +621,18 @@ class WSV2Protocol(XtoolProtocol):
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
+        # Permanent pairing token (persisted by the caller) and the
+        # per-connection session token parity hands out alongside it.
+        # ``on_pairing_token`` fires when the device issues a new token.
+        self.pairing_token = ""
+        self.on_pairing_token: Callable[[str], None] | None = None
+        self._session_token = ""
+        # Cleared when a firmware only completes parity without the
+        # ``token`` field; kept for the life of this protocol instance.
+        self._parity_with_token = True
+        # Set by ``pair()``: a 406 then waits for the button press until
+        # this monotonic deadline instead of failing.
+        self._pairing_deadline: float | None = None
         # Coordinator stamps the resolved XtoolDeviceModel via set_model();
         # poll_state reads it to gate per-model peripheral queries.
         self._model: Any = None
@@ -649,7 +714,53 @@ class WSV2Protocol(XtoolProtocol):
                 return
             await self._open_instruction_ws()
 
+    async def pair(self, timeout: float) -> None:
+        """Connect, waiting up to ``timeout`` s for a button press on 406.
+
+        Leaves the connection open on success; ``pairing_token`` then
+        holds the token the device issued (empty when it needs none).
+        """
+        self._pairing_deadline = time.monotonic() + timeout
+        try:
+            await self.connect()
+        finally:
+            self._pairing_deadline = None
+
     async def _open_instruction_ws(self) -> None:
+        try:
+            await self._open_and_handshake(self._parity_with_token)
+            return
+        except _ParityFailed as failure:
+            err = failure.error
+            self._raise_if_pairing_error(err)
+            # Older firmware might reject the token field Studio 1.10
+            # added; retry once without it before giving up.
+            if not self._parity_with_token or self.pairing_token:
+                raise ConnectionError(f"V2 parity handshake failed: {err}") from err
+        _LOGGER.info(
+            "V2 parity with token field failed for %s (%s) — retrying without it",
+            self.host, err,
+        )
+        try:
+            await self._open_and_handshake(False)
+        except _ParityFailed as failure:
+            self._raise_if_pairing_error(failure.error)
+            raise ConnectionError(
+                f"V2 parity handshake failed: {failure.error}"
+            ) from failure.error
+        self._parity_with_token = False
+
+    @staticmethod
+    def _raise_if_pairing_error(err: BaseException) -> None:
+        if isinstance(err, WSV2PairingFailed):
+            raise err
+        code = getattr(err, "code", None)
+        if code == WSV2_PAIRING_REQUIRED:
+            raise WSV2PairingRequired(str(err)) from err
+        if code in WSV2_PAIRING_BLOCKED:
+            raise WSV2PairingFailed("blocked") from err
+
+    async def _open_and_handshake(self, include_token: bool) -> None:
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
             f"?id={_CLIENT_SESSION_ID}&function=instruction"
@@ -693,19 +804,18 @@ class WSV2Protocol(XtoolProtocol):
         # The config read body that works is found again for each connection
         self._config_read_body = None
         self._config_read_known = False
+        self._session_token = ""
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
         try:
-            await self._send_first_message()
+            await self._send_first_message(include_token)
         except Exception as err:
             _LOGGER.info(
                 "V2 parity handshake failed for %s: %s", self.host, err,
             )
             await self._close_quiet()
-            raise ConnectionError(
-                f"V2 parity handshake failed: {err}"
-            ) from err
+            raise _ParityFailed(err) from err
         _LOGGER.debug("V2 parity handshake OK — starting heartbeat")
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
@@ -786,13 +896,15 @@ class WSV2Protocol(XtoolProtocol):
             "timestamp": int(time.time() * 1000),
             "transactionId": transaction_id,
         }
+        if self._session_token:
+            payload["sessionToken"] = self._session_token
         deadline = time.monotonic() + timeout
         pending = _PendingRequest(deadline)
         self._pending[transaction_id] = pending
         frame = _encode_frame(_json_compact(payload).encode("utf-8"))
         _LOGGER.debug(
             "V2 TX %s %s txn=%d params=%s data=%s",
-            method, url, transaction_id, params, data,
+            method, url, transaction_id, params, _redact(data),
         )
         try:
             await self._ws_instr.send_bytes(frame)
@@ -807,37 +919,84 @@ class WSV2Protocol(XtoolProtocol):
         code = response.get("code", 0) if isinstance(response, dict) else 0
         if code != 0:
             msg = response.get("msg") or response.get("message") or "unknown"
+            err_data = response.get("data") if isinstance(response, dict) else None
             _LOGGER.debug(
-                "V2 RX %s %s txn=%d code=%d msg=%s",
-                method, url, transaction_id, code, msg,
+                "V2 RX %s %s txn=%d code=%d msg=%s data=%r",
+                method, url, transaction_id, code, msg, _redact(err_data),
             )
-            raise RuntimeError(
-                f"V2 {method} {url} returned code {code}: {msg}"
-            )
+            raise WSV2RequestError(method.upper(), url, code, msg, err_data)
         result = (
             response.get("data") if isinstance(response, dict) else {}
         ) or {}
         _LOGGER.debug(
             "V2 RX %s %s txn=%d data=%r",
-            method, url, transaction_id, result,
+            method, url, transaction_id, _redact(result),
         )
         return result
 
-    async def _send_first_message(self) -> None:
-        """Studio's ``sendFirstMessageCode`` — must succeed before any
-        other request fires, otherwise V2 firmware tears down the WS.
+    async def _send_first_message(self, include_token: bool) -> None:
+        """Studio's parity handshake — must succeed before any other
+        request fires, otherwise V2 firmware tears down the WS.
+
+        Studio 1.10 always sends ``token`` (empty until the device has
+        issued one). A 406 means the device wants a button press; only
+        ``pair()`` waits for it, a plain connect raises.
         """
-        await self.request(
-            "/v1/user/parity",
-            "GET",
-            data={
-                "userID": WSV2_USER_UUID,
-                "userKey": WSV2_FIRST_MESSAGE_USER_KEY,
-                "timezone": _local_timezone(),
-            },
-            timeout=WSV2_FIRST_MESSAGE_TIMEOUT,
-            _skip_connect=True,
-        )
+        data: dict[str, Any] = {
+            "userID": WSV2_USER_UUID,
+            "userKey": WSV2_FIRST_MESSAGE_USER_KEY,
+            "timezone": _local_timezone(),
+        }
+        if include_token:
+            data["token"] = self.pairing_token
+        try:
+            result = await self.request(
+                "/v1/user/parity",
+                "GET",
+                data=data,
+                timeout=WSV2_FIRST_MESSAGE_TIMEOUT,
+                _skip_connect=True,
+            )
+        except WSV2RequestError as err:
+            if err.code != WSV2_PAIRING_REQUIRED or self._pairing_deadline is None:
+                raise
+            _LOGGER.info("V2 %s asks for a button press to pair", self.host)
+            result = await self._await_button_confirm()
+        self._apply_pairing_result(result)
+
+    async def _await_button_confirm(self) -> dict[str, Any]:
+        """Poll auth-status once per second until the device pairs or gives up."""
+        assert self._pairing_deadline is not None
+        while time.monotonic() < self._pairing_deadline:
+            await asyncio.sleep(1)
+            if self._ws_instr is None or self._ws_instr.closed:
+                raise ConnectionError(
+                    "V2 WebSocket closed while waiting for the button press"
+                )
+            try:
+                return await self.request(
+                    WSV2_PATH_AUTH_STATUS,
+                    "GET",
+                    timeout=WSV2_AUTH_STATUS_TIMEOUT,
+                    _skip_connect=True,
+                )
+            except WSV2RequestError as err:
+                if err.code == WSV2_PAIRING_TIMED_OUT:
+                    raise WSV2PairingFailed("timeout") from err
+                if err.code in WSV2_PAIRING_BLOCKED:
+                    raise WSV2PairingFailed("blocked") from err
+            except asyncio.TimeoutError as err:
+                raise WSV2PairingFailed("timeout") from err
+        raise WSV2PairingFailed("timeout")
+
+    def _apply_pairing_result(self, result: dict[str, Any]) -> None:
+        self._session_token = str(result.get("sessionToken") or "")
+        token = str(result.get("token") or "")
+        if token and token != self.pairing_token:
+            _LOGGER.info("V2 %s issued a new pairing token", self.host)
+            self.pairing_token = token
+            if self.on_pairing_token is not None:
+                self.on_pairing_token(token)
 
     # ── action helpers (entity write-paths) ──────────────────────────
 

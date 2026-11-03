@@ -19,6 +19,18 @@
         "title": "xTool Laser entdeckt",
         "description": "Ein xTool Laser **{name}** wurde in deinem Netzwerk gefunden. Möchtest du ihn einrichten?"
       },
+      "pair_confirm": {
+        "title": "Mit dem Gerät koppeln",
+        "description": "Das Gerät unter {host} akzeptiert nur gekoppelte Clients (neuere V2-Firmware, z. B. M2 40.141.012.01.ht05).\n\nKlicke auf **Absenden** und drücke dann die Taste am Gerät, sobald es die Verbindung bestätigen möchte."
+      },
+      "reconfigure": {
+        "title": "xTool-Gerät neu konfigurieren",
+        "description": "IP-Adresse ändern oder das Gerät neu koppeln.",
+        "data": {
+          "host": "IP-Adresse",
+          "pair_again": "Neu koppeln (Tastendruck am Gerät)"
+        }
+      },
       "pick_model": {
         "title": "xTool-Modell manuell auswählen",
         "description": "Auto-Discovery konnte das Gerät nicht identifizieren — erkannter Name `{name}`, Firmware `{firmware}`.\n\nWähle Modell und Firmware-Linie aus der Liste — V2-Eintrag wenn deine Firmware aktuell ist (40.x-Bereich mit neuem Communication-Framework), sonst V1.\n\nWenn dein Modell nicht in der Liste steht, [erstelle bitte ein Issue]({issue_url}) und füge den erkannten Namen und die Firmware bei, damit das Modell hinzugefügt werden kann.",
@@ -28,19 +40,30 @@
         }
       }
     },
+    "progress": {
+      "press_button": "Warte auf den Tastendruck am Gerät unter {host} …\n\nDrücke jetzt die Taste am Gerät, um die Verbindung zu bestätigen."
+    },
     "error": {
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen. Bitte prüfe die IP-Adresse und stelle sicher, dass das Gerät eingeschaltet und mit dem WLAN verbunden ist.",
       "udp_no_reply": "Keine UDP-Discovery-Antwort des Geräts auf Port 20000. IP prüfen, sicherstellen dass das Gerät eingeschaltet ist und sich im selben Subnetz befindet, und dass keine Firewall UDP-Broadcasts blockiert.",
       "unknown_model": "Das Gerät hat auf die Discovery geantwortet, aber sein Modellname wird von dieser Integration nicht erkannt. Bitte ein Issue mit dem gemeldeten Namen erstellen.",
       "protocol_failed": "Das Gerät wurde erkannt, aber der Protokoll-Handshake ist fehlgeschlagen. Möglicherweise ist das Gerät belegt (XCS / xTool Studio offen) oder die Firmware-Version wird nicht unterstützt.",
-      "already_configured": "Dieses Gerät ist bereits konfiguriert."
+      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "pairing_timeout": "Kopplung abgelaufen — die Taste am Gerät wurde nicht rechtzeitig gedrückt. Bitte erneut versuchen.",
+      "pairing_blocked": "Das Gerät lehnt die Kopplung gerade ab (evtl. koppelt ein anderer Client). XCS / xTool Studio schließen und erneut versuchen.",
+      "pairing_required": "Das Gerät muss neu gekoppelt werden."
     },
     "abort": {
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen.",
       "udp_no_reply": "Keine UDP-Discovery-Antwort auf Port 20000 — prüfe ob das Gerät online ist und im selben Subnetz hängt.",
       "unknown_model": "Das gefundene Gerätemodell wird von dieser Integration nicht erkannt.",
       "protocol_failed": "Protokoll-Handshake mit dem Gerät fehlgeschlagen — XCS / xTool Studio schließen und erneut versuchen.",
-      "already_configured": "Dieses Gerät ist bereits konfiguriert."
+      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "pairing_timeout": "Kopplung abgelaufen — die Taste am Gerät wurde nicht rechtzeitig gedrückt.",
+      "pairing_blocked": "Das Gerät lehnt die Kopplung gerade ab. XCS / xTool Studio schließen und erneut versuchen.",
+      "reauth_successful": "Das Gerät wurde neu gekoppelt.",
+      "reconfigure_successful": "Das Gerät wurde neu konfiguriert.",
+      "wrong_device": "Unter dieser Adresse antwortet ein anderes Gerät."
     }
   },
   "options": {

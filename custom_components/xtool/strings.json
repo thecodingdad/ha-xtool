@@ -19,6 +19,18 @@
         "title": "xTool Laser discovered",
         "description": "An xTool laser **{name}** was discovered on your network. Do you want to set it up?"
       },
+      "pair_confirm": {
+        "title": "Pair with the device",
+        "description": "The device at {host} only accepts paired clients (newer V2 firmware, e.g. M2 40.141.012.01.ht05).\n\nClick **Submit**, then press the button on the device when it asks you to confirm the connection."
+      },
+      "reconfigure": {
+        "title": "Reconfigure xTool device",
+        "description": "Change the IP address, or pair the device again.",
+        "data": {
+          "host": "IP Address",
+          "pair_again": "Pair again (button press on the device)"
+        }
+      },
       "pick_model": {
         "title": "Pick xTool model manually",
         "description": "Auto-discovery could not identify the device — discovered name `{name}`, firmware `{firmware}`.\n\nPick the model and firmware line from the list — pick the V2 entry if your firmware is recent (40.x range with the new communication framework), V1 otherwise.\n\nIf your model isn't listed, please [open an issue]({issue_url}) and include the discovered name and firmware so it can be added.",
@@ -28,19 +40,30 @@
         }
       }
     },
+    "progress": {
+      "press_button": "Waiting for the button press on the device at {host}…\n\nPress the button on the device now to confirm the connection."
+    },
     "error": {
       "cannot_connect": "Failed to connect to the device. Please check the IP address and ensure the device is powered on and connected to WiFi.",
       "udp_no_reply": "No UDP discovery reply from the device on port 20000. Verify the IP, that the device is powered on and on the same subnet, and that no firewall blocks UDP broadcasts.",
       "unknown_model": "The device replied to discovery but its model name is not recognised by this integration. Please open an issue with the reported name.",
       "protocol_failed": "The device was identified but the protocol handshake failed. The device may be busy (XCS / xTool Studio open) or the firmware version is unsupported.",
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured.",
+      "pairing_timeout": "Pairing timed out — the button on the device was not pressed in time. Try again.",
+      "pairing_blocked": "The device refused to pair right now (another client may be pairing). Close XCS / xTool Studio and try again.",
+      "pairing_required": "The device needs to be paired again."
     },
     "abort": {
       "cannot_connect": "Failed to connect to the device.",
       "udp_no_reply": "No UDP discovery reply on port 20000 — check that the device is online and on the same subnet.",
       "unknown_model": "The discovered device model is not recognised by this integration.",
       "protocol_failed": "Protocol handshake with the device failed — close XCS / xTool Studio and try again.",
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured.",
+      "pairing_timeout": "Pairing timed out — the button on the device was not pressed in time.",
+      "pairing_blocked": "The device refused to pair right now. Close XCS / xTool Studio and try again.",
+      "reauth_successful": "The device was paired again.",
+      "reconfigure_successful": "The device was reconfigured.",
+      "wrong_device": "A different device answered at this address."
     }
   },
   "options": {

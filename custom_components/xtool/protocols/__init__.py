@@ -41,6 +41,8 @@ from .rest import (
 from .s1 import S1Protocol, XTOOL_S1
 from .ws_v2 import (
     WSV2_MODELS,
+    WSV2PairingFailed,
+    WSV2PairingRequired,
     WSV2Protocol,
     probe_v2,
 )
@@ -114,9 +116,37 @@ def detect_model(device_name: str) -> XtoolDeviceModel:
 VALIDATION_ERROR_UDP_NO_REPLY = "udp_no_reply"
 VALIDATION_ERROR_UNKNOWN_MODEL = "unknown_model"
 VALIDATION_ERROR_PROTOCOL_FAILED = "protocol_failed"
+VALIDATION_ERROR_PAIRING_REQUIRED = "pairing_required"
+VALIDATION_ERROR_PAIRING_TIMEOUT = "pairing_timeout"
+VALIDATION_ERROR_PAIRING_BLOCKED = "pairing_blocked"
 
 
-async def validate_connection(host: str) -> ConnectionInfo | str:
+async def _connect_for_validation(
+    protocol: XtoolProtocol, pairing_token: str, pairing_timeout: float | None,
+) -> None:
+    """Connect; WS-V2 presents the stored token and, when ``pairing_timeout``
+    is set, waits that long for a button press if the device asks for one."""
+    if isinstance(protocol, WSV2Protocol):
+        protocol.pairing_token = pairing_token
+        if pairing_timeout is not None:
+            await protocol.pair(pairing_timeout)
+            return
+    await protocol.connect()
+
+
+def _pairing_error(err: Exception) -> str | None:
+    if isinstance(err, WSV2PairingRequired):
+        return VALIDATION_ERROR_PAIRING_REQUIRED
+    if isinstance(err, WSV2PairingFailed):
+        if err.reason == "blocked":
+            return VALIDATION_ERROR_PAIRING_BLOCKED
+        return VALIDATION_ERROR_PAIRING_TIMEOUT
+    return None
+
+
+async def validate_connection(
+    host: str, pairing_token: str = "", pairing_timeout: float | None = None,
+) -> ConnectionInfo | str:
     """Identify a device by UDP probe, then validate via its protocol.
 
     Selection algorithm:
@@ -180,7 +210,7 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
 
     protocol = chosen.protocol_class(host)
     try:
-        await protocol.connect()
+        await _connect_for_validation(protocol, pairing_token, pairing_timeout)
         info = await protocol.get_device_info()
         version = await protocol.get_version()
         firmware = info.main_firmware or version or ""
@@ -212,8 +242,12 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
             device_info=info,
             protocol_version=chosen.protocol_version,
             model_id=chosen.model_id,
+            pairing_token=getattr(protocol, "pairing_token", ""),
         )
     except Exception as err:
+        if (pairing_error := _pairing_error(err)) is not None:
+            _LOGGER.info("Pairing with %s as %s: %s", host, chosen.model_id, err)
+            return pairing_error
         _LOGGER.debug("Validation against %s as %s failed: %s",
                       host, chosen.model_id, err)
         return VALIDATION_ERROR_PROTOCOL_FAILED
@@ -223,6 +257,7 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
 
 async def validate_with_model(
     host: str, model_id: str, protocol_version: str,
+    pairing_token: str = "", pairing_timeout: float | None = None,
 ) -> ConnectionInfo | str:
     """Validate against an explicit model — bypasses UDP discovery.
 
@@ -241,7 +276,7 @@ async def validate_with_model(
 
     protocol = chosen.protocol_class(host)
     try:
-        await protocol.connect()
+        await _connect_for_validation(protocol, pairing_token, pairing_timeout)
         info = await protocol.get_device_info()
         version = await protocol.get_version()
         firmware = info.main_firmware or version or ""
@@ -271,8 +306,12 @@ async def validate_with_model(
             device_info=info,
             protocol_version=chosen.protocol_version,
             model_id=chosen.model_id,
+            pairing_token=getattr(protocol, "pairing_token", ""),
         )
     except Exception as err:
+        if (pairing_error := _pairing_error(err)) is not None:
+            _LOGGER.info("Pairing with %s as %s: %s", host, chosen.model_id, err)
+            return pairing_error
         _LOGGER.debug(
             "Manual validation against %s as %s/%s failed: %s",
             host, chosen.model_id, chosen.protocol_version, err,

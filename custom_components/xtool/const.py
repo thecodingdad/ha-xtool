@@ -23,6 +23,7 @@ CONF_SCAN_INTERVAL = "scan_interval"  # main poll cadence (seconds)
 CONF_FIRMWARE_CHECK_INTERVAL = "firmware_check_interval"  # cloud check (hours)
 CONF_STATS_POLL_INTERVAL = "stats_poll_interval"  # S1 M2008 (seconds)
 CONF_DONGLE_POLL_INTERVAL = "dongle_poll_interval"  # S1 M9098 (seconds)
+CONF_PAIRING_TOKEN = "pairing_token"  # WS-V2 permanent pairing token (entry data)
 
 # --- Network ----------------------------------------------------------------
 DEFAULT_SCAN_INTERVAL = 5  # seconds, used by the coordinator

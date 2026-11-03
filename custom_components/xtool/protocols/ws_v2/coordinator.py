@@ -6,8 +6,11 @@ import logging
 from dataclasses import replace as dataclass_replace
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
+
 from ...coordinator import XtoolCoordinator
 from ..base import XtoolDeviceState
+from .protocol import WSV2PairingFailed, WSV2PairingRequired
 
 if TYPE_CHECKING:
     from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -145,6 +148,13 @@ class WSV2Coordinator(XtoolCoordinator):
 
             await self._poll_accessories(state)
 
+        except (WSV2PairingRequired, WSV2PairingFailed) as err:
+            await self.protocol.disconnect()
+            # Stops polling and starts HA's reauth flow, which walks the
+            # user through the button press on the device.
+            raise ConfigEntryAuthFailed(
+                f"{self.device_name} needs to be paired again: {err}"
+            ) from err
         except Exception as err:
             _LOGGER.debug("WS-V2 poll failed: %s", err)
             state.available = False

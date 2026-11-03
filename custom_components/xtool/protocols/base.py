@@ -92,6 +92,8 @@ class ConnectionInfo:
     # candidate that won the V1/V2 selection). Persisted to entry data so
     # ``async_setup_entry`` re-resolves the exact entry on every reload.
     model_id: str = ""
+    # WS-V2 pairing token the device issued (empty when it needs none).
+    pairing_token: str = ""
 
 
 @dataclass
