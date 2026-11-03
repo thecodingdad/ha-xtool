@@ -2615,7 +2615,7 @@ Studio's DT002 bundle v0.6.8. Identifiers in the samples are redacted.
 V2 encrypted discovery answers with `deviceCode:"DT002"`,
 `deviceName:"xTool Omni Printer O1"`, `protocolVersion:"V2"`,
 `platformVersion:"2.0"`, `firmwareVersion:"40.101.013.01.ht1"` and a
-`wifiSignal` field. ha-xtool matches on `DT002` / `Omni Printer O1`.
+`wifiSignal` field. `DT002` / `Omni Printer O1` identify the device.
 
 ### Read routes
 
@@ -2687,13 +2687,13 @@ Three envelopes, all `type:"request"` on the instruction channel:
 every `uvPrintFlashCleanTime` seconds (300 s here) for a ~4 s flash
 clean: `process pause` → `state WorkPause` → `state Clean` +
 `clean/start` (~30 ms later) → `clean/result` → `state WorkPause` →
-`state WorkPlay` + `process resume`. ha-xtool maps `Clean` to its own
-`cleaning` status and only reports a Job `paused` event when no clean
-starts within 2 s of the pause.
+`state WorkPlay` + `process resume`. A client that wants to tell user
+pauses from these maintenance pauses can treat a `process pause` as
+automatic when `clean/start` follows within ~2 s.
 
 ### Write surface
 
-Not used by ha-xtool yet. The bundle drives jobs through
+Not verified on hardware yet. The bundle drives jobs through
 `/v1/project/device/control` (POST, `action`), config through
 `PUT /v1/platform/device/config`, the fill light through
 `POST /v1/project/device/fill-light`, and exposes maintenance routes
