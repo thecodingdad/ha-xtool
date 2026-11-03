@@ -398,12 +398,14 @@ class XtoolDeviceState:
     alarm_present: bool = False
 
     # F1 V2 push config + diagnostics
-    flame_alarm_v2_enabled: bool = False
-    beep_enabled_v2: bool = False
-    gap_check_enabled: bool = False
+    # None until the device has reported them, so their switches show
+    # unknown instead of a made-up "off" (or "on") at startup
+    flame_alarm_v2_enabled: bool | None = None
+    beep_enabled_v2: bool | None = None
+    gap_check_enabled: bool | None = None
     machine_lock_check_enabled: bool = False  # legacy — kept for state-restore compatibility
-    stops_when_moved: bool = False  # mirrors workingMode enum: HANDLE=True, NORMAL=False
-    auto_sleep_enable: bool = True  # mirrors autoSleepEnable config bool
+    stops_when_moved: bool | None = None  # mirrors workingMode enum: NORMAL=True, HANDLE=False
+    auto_sleep_enable: bool | None = None  # mirrors autoSleepEnable config bool
     purifier_timeout: int = 0
     working_mode: str = ""
     last_button_event: str = ""

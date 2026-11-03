@@ -470,6 +470,17 @@ def _local_timezone() -> str:
         return ""
 
 
+# The persistent settings the config read asks for (``/v1/device/configs``
+# with a ``kv`` key list); the same keys ``_apply_configs`` and the
+# DEVICE_CONFIG push latch
+CONFIG_READ_KEYS: tuple[str, ...] = (
+    "flameAlarm", "beepEnable", "gapCheck", "machineLockCheck", "autoSleepEnable",
+    "fillLightBrightFront", "fillLightBrightBack", "purifierTimeout", "workingMode",
+    "airAssistDelay", "airassistCut", "airassistGrave", "sleepTimeout",
+    "sleepTimeoutOpenGap", "printToolType", "mdMode",
+)
+
+
 class WSV2Protocol(XtoolProtocol):
     """V2 protocol — TLS WS request/response + push events.
 
@@ -588,6 +599,8 @@ class WSV2Protocol(XtoolProtocol):
         # `/v1/device/statistics`. Cached endpoints get skipped on
         # subsequent polls to suppress log noise.
         self._unsupported_endpoints: set[str] = set()
+        self._config_read_body: dict[str, Any] | None = None
+        self._config_read_known = False
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -677,6 +690,9 @@ class WSV2Protocol(XtoolProtocol):
         self._unsupported_peripheral_types.clear()
         self._unsupported_endpoints.clear()
         self._config_keys_bool.clear()
+        # The config read body that works is found again for each connection
+        self._config_read_body = None
+        self._config_read_known = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -1855,28 +1871,43 @@ class WSV2Protocol(XtoolProtocol):
     async def _poll_configs(self) -> None:
         """Fetch + apply the persistent config blob.
 
-        Default uses ``GET /v1/device/configs`` (F1/F2 norm) which
-        returns the full kv dict. P2S V2 firmware diverges: it uses
-        ``GET /v1/config/get`` with a body that lists which keys to
-        return — that override lives in :class:`P2SWSV2Protocol`.
+        Default uses ``GET /v1/device/configs`` (F1/F2 norm). Current
+        F-series firmware (such as the F2 Ultra UV's) answers only a read
+        that lists the keys it wants, in the same ``{alias, type, kv}``
+        body as the PUT; an empty read is rejected with ``key 'kv' not
+        found``. Firmware that returns the whole blob for an empty read
+        gets one when the key list is rejected. The body that works is
+        kept for the connection. P2S V2 firmware diverges: it uses
+        ``GET /v1/config/get`` — that override lives in
+        :class:`P2SWSV2Protocol`.
         """
         if self.PATH_CONFIGS_GET in self._unsupported_endpoints:
             return
-        try:
-            cfg = await self.request(self.PATH_CONFIGS_GET, "GET")
-        except RuntimeError as err:
-            msg = str(err)
-            if any(c in msg for c in ("code 1:", "code -2", "code -3", "code 404")):
-                _LOGGER.debug(
-                    "V2 %s rejected by firmware (%s) — caching as unsupported",
-                    self.PATH_CONFIGS_GET, msg,
-                )
-                self._unsupported_endpoints.add(self.PATH_CONFIGS_GET)
-            cfg = None
-        except Exception:
-            cfg = None
-        if isinstance(cfg, dict):
-            self._apply_configs(cfg)
+        key_list = {"alias": "config", "type": "user", "kv": list(CONFIG_READ_KEYS)}
+        bodies = [self._config_read_body] if self._config_read_known else [key_list, None]
+        for body in bodies:
+            try:
+                cfg = await self.request(self.PATH_CONFIGS_GET, "GET", data=body)
+            except RuntimeError as err:
+                msg = str(err)
+                if any(c in msg for c in ("code 1:", "code -2", "code -3", "code 404")):
+                    _LOGGER.debug(
+                        "V2 %s rejected a read %s (%s)",
+                        self.PATH_CONFIGS_GET, "with a key list" if body else "without a body", msg,
+                    )
+                    continue
+                return
+            except Exception:
+                return
+            if isinstance(cfg, dict):
+                self._config_read_body = body
+                self._config_read_known = True
+                self._apply_configs(cfg)
+            return
+        _LOGGER.debug(
+            "V2 %s rejected by firmware — caching as unsupported", self.PATH_CONFIGS_GET,
+        )
+        self._unsupported_endpoints.add(self.PATH_CONFIGS_GET)
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
         """Refresh state via V2 request endpoints + push cache."""
@@ -2273,10 +2304,13 @@ class WSV2Protocol(XtoolProtocol):
                 self._latest[dst] = kv[src]
         # ``workingMode`` enum → ``stops_when_moved`` bool mirror.
         # Polarity: ``NORMAL`` = stationary / enforcement on,
-        # ``HANDLE`` = handheld override / enforcement off.
+        # ``HANDLE`` = handheld override / enforcement off. The same as
+        # the DEVICE_CONFIG push handler and the switch's own writes;
+        # the poll used to read it inverted, so the switch flipped back
+        # at the next config poll after every push.
         if "workingMode" in kv:
             wm = str(kv["workingMode"] or "").upper()
-            self._latest["stops_when_moved"] = wm == "HANDLE"
+            self._latest["stops_when_moved"] = wm == "NORMAL"
 
         # Surface unknown keys at debug level so we can extend the map
         # when new firmware revisions add new persistent settings.
