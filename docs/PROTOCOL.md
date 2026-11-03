@@ -1063,18 +1063,45 @@ Right after `ws.open` and before any other request, Studio's
   "data": {
     "userID": "<userUuid e.g. mk-guest>",
     "userKey": "bWFrZWJsb2NrLXh0b29s",
-    "timezone": "<IANA timezone>"
+    "timezone": "<IANA timezone>",
+    "token": "<permanent pairing token, empty string if none>"
   },
   "timestamp": <ms>,
   "transactionId": <auto-incrementing number>
 }
 ```
 
-If the response carries `code !== 0` or fails, Studio closes with
-`CloseCode.FirstMessageError` and does not retry until reconnect. The
-old "raw text frame `bWFrZWJsb2NrLXh0b29s` after connect" claim from
-older docs was a misread — the token still exists, but it lives inside
-the parity request body.
+The old "raw text frame `bWFrZWJsb2NrLXh0b29s` after connect" claim
+from older docs was a misread — the key still exists, but it lives
+inside the parity request body.
+
+**Pairing (Studio 1.10+).** Studio 1.10 (`ParityService`) always
+sends the `token` field — the permanent token the device issued
+earlier for this serial number, or `""`. Studio versions before 1.10
+sent no `token` field at all. Firmware that enforces pairing (first
+seen on M2 `40.141.012.01.ht05`) answers parity by code:
+
+| Code | Meaning | Client action |
+|---|---|---|
+| `0` | Accepted. `data` carries `sessionToken` and, when the device issues or rotates one, the permanent `token` | Store `token`; add `"sessionToken": "<value>"` as a top-level field to every later request frame on this connection |
+| `406` | `authState:"DENIED"` — unknown or missing token, button press required | Keep the socket open, poll `GET /v1/user/auth-status` (empty `data`) once per second |
+| `409` / `503` | Pairing flow blocked (e.g. another client is pairing) | Give up |
+
+`/v1/user/auth-status` answers non-zero codes while waiting, `410`
+when the device stops waiting for the button press, `409` / `503` when
+blocked, and `0` with `{token, sessionToken}` once the user confirmed
+on the device. Studio times out each single poll after 20 s and has no
+overall limit — the device's `410` ends the window.
+
+A first connection over USB pairs without a button press (no token
+sent, code `0` with a fresh `token`). Studio caches the token per
+serial number and also syncs it to the user's xTool cloud account.
+
+Studio 1.10 additionally ships an HTTP pairing service
+(`POST <base>/ucp.v1.PairingService/Pair`, body `{token?, client_info}`,
+`authState` `AUTH_STATE_TOKEN_AUTHORIZED` / `AUTH_STATE_WAITING_BUTTON_CONFIRM`
+/ `AUTH_STATE_TIMEOUT`) for a separate device-connection type; the
+WS-V2 socket models use the parity flow above.
 
 **Step 3 — Request/response envelope:**
 
