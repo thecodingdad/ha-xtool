@@ -76,7 +76,11 @@ class WSV2Coordinator(XtoolCoordinator):
         self.protocol._apply_latest_to_state(state)  # type: ignore[attr-defined]
         self._drain_pending_accessory_pushes(state)
         self.data = state
-        self.async_set_updated_data(state)
+        self._drain_protocol_events()
+        # Not async_set_updated_data: that reschedules the poll timer,
+        # so a device pushing faster than the scan interval (O1: every
+        # second while printing) would starve poll_state indefinitely.
+        self.async_update_listeners()
 
     def _drain_pending_accessory_pushes(
         self, state: XtoolDeviceState,
