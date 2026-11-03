@@ -121,7 +121,6 @@ PURIFIER_ENTITIES = (
     AccessoryEntitySpec("sensor", "gear", field="gear",
                         icon="mdi:fan"),
     AccessoryEntitySpec("binary_sensor", "running", field="running",
-                        icon="mdi:fan",
                         device_class="running"),
     AccessoryEntitySpec("sensor", "filter_pre", field="filter_pre",
                         icon="mdi:air-filter", unit="%"),
@@ -161,7 +160,6 @@ PURIFIER_ENTITIES = (
     ),
     AccessoryEntitySpec(
         "switch", "check_enabled", field="purifier_check",
-        icon="mdi:air-purifier",
         write_action=lambda coord, val: _set_config(
             coord, "purifierCheck", bool(val),
         ),
@@ -169,7 +167,6 @@ PURIFIER_ENTITIES = (
     ),
     AccessoryEntitySpec(
         "switch", "auto_continue", field="purifier_continue",
-        icon="mdi:autorenew",
         write_action=lambda coord, val: _set_config(
             coord, "purifierContinue", bool(val),
         ),

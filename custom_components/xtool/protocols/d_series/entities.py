@@ -54,8 +54,6 @@ class _DSeriesSafetySwitch(XtoolEntity, SwitchEntity):
 
 
 class XtoolDSeriesTiltStop(_DSeriesSafetySwitch):
-    _attr_icon = "mdi:angle-acute"
-
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "tilt_stop")
 
@@ -68,8 +66,6 @@ class XtoolDSeriesTiltStop(_DSeriesSafetySwitch):
 
 
 class XtoolDSeriesLimitStop(_DSeriesSafetySwitch):
-    _attr_icon = "mdi:transit-skip"
-
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "limit_stop")
 
@@ -82,8 +78,6 @@ class XtoolDSeriesLimitStop(_DSeriesSafetySwitch):
 
 
 class XtoolDSeriesMovingStop(_DSeriesSafetySwitch):
-    _attr_icon = "mdi:hand-back-left"
-
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "move_stop")
 

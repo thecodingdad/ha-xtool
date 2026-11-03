@@ -108,7 +108,6 @@ SWITCH_DESCRIPTIONS: tuple[XtoolSwitchEntityDescription, ...] = (
     XtoolSwitchEntityDescription(
         key="buzzer",
         translation_key="buzzer",
-        icon="mdi:volume-high",
         entity_category=EntityCategory.CONFIG,
         is_on_fn=lambda state: state.beeper_enabled,
         turn_on_cmd=lambda _: f"{CMD_BEEPER} S1",
@@ -119,7 +118,6 @@ SWITCH_DESCRIPTIONS: tuple[XtoolSwitchEntityDescription, ...] = (
     XtoolSwitchEntityDescription(
         key="move_stop",
         translation_key="move_stop",
-        icon="mdi:hand-back-left",
         is_on_fn=lambda state: state.move_stop_enabled,
         turn_on_cmd=lambda _: f"{CMD_MOVE_STOP} N1",
         turn_off_cmd=lambda _: f"{CMD_MOVE_STOP} N0",
@@ -129,7 +127,6 @@ SWITCH_DESCRIPTIONS: tuple[XtoolSwitchEntityDescription, ...] = (
     XtoolSwitchEntityDescription(
         key="smoking_fan",
         translation_key="smoking_fan",
-        icon="mdi:fan",
         is_on_fn=lambda state: state.smoking_fan_on,
         turn_on_cmd=lambda state: f"{CMD_SMOKING_FAN} N1 D{state.smoking_fan_duration}",
         turn_off_cmd=lambda _: f"{CMD_SMOKING_FAN} N0",
@@ -508,7 +505,6 @@ class XtoolAlarmSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
 
     _attr_translation_key = "alarm"
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_icon = "mdi:alarm-light"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
@@ -535,7 +531,6 @@ class XtoolXcsCompatMode(XtoolRestoringBinarySensor, BinarySensorEntity):
     """
 
     _attr_translation_key = "xcs_compatibility_mode"
-    _attr_icon = "mdi:laptop"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:

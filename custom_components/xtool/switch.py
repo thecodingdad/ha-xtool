@@ -34,7 +34,6 @@ class XtoolPowerSwitch(XtoolEntity, SwitchEntity):
     """Proxy switch that controls the laser's power supply (e.g. a smart plug)."""
 
     _attr_translation_key = "power_switch"
-    _attr_icon = "mdi:power-plug"
     _attr_device_class = SwitchDeviceClass.OUTLET
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:

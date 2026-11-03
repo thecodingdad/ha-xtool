@@ -86,7 +86,6 @@ class XtoolIRLED(XtoolEntity, SwitchEntity):
         self._index = IR_LED_INDEX_CLOSEUP if kind == "close" else IR_LED_INDEX_GLOBAL
         self._set_unique_id(f"ir_led_{kind}")
         self._attr_translation_key = f"ir_led_{kind}"
-        self._attr_icon = "mdi:led-on"
 
     @property
     def is_on(self) -> bool | None:
@@ -116,7 +115,6 @@ class XtoolIRLED(XtoolEntity, SwitchEntity):
 
 class XtoolDigitalLock(XtoolEntity, SwitchEntity):
     _attr_translation_key = "digital_lock"
-    _attr_icon = "mdi:lock"
     _attr_device_class = SwitchDeviceClass.SWITCH
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
@@ -626,7 +624,6 @@ class XtoolAirAssistConnected(XtoolRestoringBinarySensor, BinarySensorEntity):
 
     _attr_translation_key = "air_assist_connected"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
-    _attr_icon = "mdi:weather-windy"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
@@ -648,7 +645,6 @@ class _RestCoverSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
 
     _attr_translation_key = "cover_open"
     _attr_device_class = BinarySensorDeviceClass.OPENING
-    _attr_icon = "mdi:window-shutter-open"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -675,24 +671,24 @@ def build_rest_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySenso
     # ``smoking_fan_running`` — those state fields never get set.
     if not _is_m1_legacy(coordinator):
         entities.extend([
-            _RestPushBinary(coordinator, "cooling_fan_running", "mdi:fan",
+            _RestPushBinary(coordinator, "cooling_fan_running",
                             "cooling_fan_running", BinarySensorDeviceClass.RUNNING),
-            _RestPushBinary(coordinator, "smoking_fan_running", "mdi:fan",
+            _RestPushBinary(coordinator, "smoking_fan_running",
                             "smoking_fan_running", BinarySensorDeviceClass.RUNNING),
         ])
     if model.has_drawer:
-        entities.append(_RestPushBinary(coordinator, "drawer_open", "mdi:archive-arrow-up",
+        entities.append(_RestPushBinary(coordinator, "drawer_open",
                                         "drawer_open", BinarySensorDeviceClass.OPENING))
     if model.has_cpu_fan:
-        entities.append(_RestPushBinary(coordinator, "cpu_fan_running", "mdi:fan",
+        entities.append(_RestPushBinary(coordinator, "cpu_fan_running",
                                         "cpu_fan_running", BinarySensorDeviceClass.RUNNING))
     if model.has_uv_fire:
-        entities.append(_RestPushBinary(coordinator, "uv_fire_alarm", "mdi:fire-alert",
+        entities.append(_RestPushBinary(coordinator, "uv_fire_alarm",
                                         "uv_fire_alarm", BinarySensorDeviceClass.PROBLEM))
     if model.has_water_cooling:
-        entities.append(_RestPushBinary(coordinator, "water_pump_running", "mdi:pump",
+        entities.append(_RestPushBinary(coordinator, "water_pump_running",
                                         "water_pump_running", BinarySensorDeviceClass.RUNNING))
-        entities.append(_RestPushBinary(coordinator, "water_line_ok", "mdi:waves",
+        entities.append(_RestPushBinary(coordinator, "water_line_ok",
                                         "water_line_ok", BinarySensorDeviceClass.PROBLEM))
     return entities
 
@@ -707,11 +703,10 @@ class _RestToggle(XtoolEntity, SwitchEntity):
     _state_attr: str = ""
     _setter: str = ""
 
-    def __init__(self, coordinator: XtoolCoordinator, key: str, icon: str) -> None:
+    def __init__(self, coordinator: XtoolCoordinator, key: str) -> None:
         super().__init__(coordinator)
         self._set_unique_id(f"{key}")
         self._attr_translation_key = key
-        self._attr_icon = icon
 
     @property
     def available(self) -> bool:
@@ -746,7 +741,7 @@ class XtoolBeepEnable(_RestToggle):
     _setter = "set_beep_enabled"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "beep_enable", "mdi:volume-high")
+        super().__init__(coordinator, "beep_enable")
 
 
 class XtoolDrawerCheck(_RestToggle):
@@ -754,7 +749,7 @@ class XtoolDrawerCheck(_RestToggle):
     _setter = "set_drawer_check"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "drawer_check", "mdi:archive-check")
+        super().__init__(coordinator, "drawer_check")
 
 
 class XtoolFilterCheck(_RestToggle):
@@ -762,7 +757,7 @@ class XtoolFilterCheck(_RestToggle):
     _setter = "set_filter_check"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "filter_check", "mdi:air-filter")
+        super().__init__(coordinator, "filter_check")
 
 
 class XtoolPurifierCheck(_RestToggle):
@@ -770,7 +765,7 @@ class XtoolPurifierCheck(_RestToggle):
     _setter = "set_purifier_check"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "purifier_check", "mdi:air-purifier")
+        super().__init__(coordinator, "purifier_check")
 
 
 class XtoolPurifierContinue(_RestToggle):
@@ -778,7 +773,7 @@ class XtoolPurifierContinue(_RestToggle):
     _setter = "set_purifier_continue"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "purifier_continue", "mdi:autorenew")
+        super().__init__(coordinator, "purifier_continue")
 
 
 class XtoolCoolingFan(_RestToggle):
@@ -787,7 +782,7 @@ class XtoolCoolingFan(_RestToggle):
     _attr_entity_category = None  # primary control, not config
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "cooling_fan", "mdi:fan")
+        super().__init__(coordinator, "cooling_fan")
 
 
 class XtoolSmokingFanRest(_RestToggle):
@@ -796,7 +791,7 @@ class XtoolSmokingFanRest(_RestToggle):
     _attr_entity_category = None
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "smoking_fan", "mdi:fan")
+        super().__init__(coordinator, "smoking_fan")
 
 
 # --- Generic REST numbers --------------------------------------------------
@@ -966,14 +961,12 @@ class _RestPushBinary(XtoolRestoringBinarySensor, BinarySensorEntity):
         self,
         coordinator: XtoolCoordinator,
         key: str,
-        icon: str,
         attr: str,
         device_class: BinarySensorDeviceClass | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._state_attr = attr
         self._attr_translation_key = key
-        self._attr_icon = icon
         self._set_unique_id(f"{key}")
         if device_class is not None:
             self._attr_device_class = device_class

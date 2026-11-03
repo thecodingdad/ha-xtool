@@ -515,7 +515,6 @@ class _WSV2CoverSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
 
     _attr_translation_key = "cover_open"
     _attr_device_class = BinarySensorDeviceClass.OPENING
-    _attr_icon = "mdi:window-shutter-open"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -599,7 +598,6 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         key: str,
         config_key: str,
         state_attr: str,
-        icon: str | None = None,
         enabled_default: bool = True,
     ) -> None:
         super().__init__(coordinator)
@@ -607,8 +605,6 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
         self._attr_translation_key = key
         self._config_key = config_key
         self._state_attr = state_attr
-        if icon is not None:
-            self._attr_icon = icon
         self._attr_entity_registry_enabled_default = enabled_default
 
     @property
@@ -652,7 +648,6 @@ class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
         state_attr: str,
         on_value: str,
         off_value: str,
-        icon: str | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._set_unique_id(f"{key}")
@@ -661,8 +656,6 @@ class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
         self._state_attr = state_attr
         self._on_value = on_value
         self._off_value = off_value
-        if icon is not None:
-            self._attr_icon = icon
 
     @property
     def is_on(self) -> bool | None:
@@ -697,7 +690,6 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
         key: str,
         peripheral_type: str,
         state_attr: str,
-        icon: str | None = None,
         device_class: SwitchDeviceClass | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
@@ -706,8 +698,6 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
         self._attr_translation_key = key
         self._peripheral_type = peripheral_type
         self._state_attr = state_attr
-        if icon is not None:
-            self._attr_icon = icon
         if device_class is not None:
             self._attr_device_class = device_class
         self._extra = extra or {}
@@ -1553,11 +1543,9 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     entities.extend([
         _WSV2ConfigSwitch(
             coordinator, "beep_enable", "beepEnable", "beep_enabled_v2",
-            "mdi:volume-high",
         ),
         _WSV2ConfigSwitch(
             coordinator, "gap_check", "gapCheck", "gap_check_enabled",
-            "mdi:window-shutter-alert",
         ),
         # ``filter_check`` (config key ``filterCheck``) removed in
         # v2.5.4 — confirmed absent from every xTool Studio bundle
@@ -1580,7 +1568,6 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
             _WSV2ConfigSwitch(
                 coordinator, "flame_alarm_v2", "flameAlarm",
                 "flame_alarm_v2_enabled",
-                "mdi:fire-alert",
                 enabled_default=False,
             )
         )
@@ -1594,7 +1581,6 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
             _WSV2ConfigSwitch(
                 coordinator, "md_mode", "mdMode",
                 "md_mode_enabled",
-                "mdi:key-variant",
             )
         )
     if model.has_machine_lock:
@@ -1608,21 +1594,19 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
                 coordinator, "stops_when_moved", "workingMode",
                 "stops_when_moved",
                 on_value="NORMAL", off_value="HANDLE",
-                icon="mdi:vibrate",
             )
         )
     if model.has_drawer:
         entities.append(
             _WSV2ConfigSwitch(
                 coordinator, "drawer_check", "drawerCheck", "drawer_check",
-                "mdi:archive-check",
             )
         )
     if model.has_device_sleep:
         entities.append(
             _WSV2ConfigSwitch(
                 coordinator, "device_sleep", "autoSleepEnable",
-                "auto_sleep_enable", "mdi:power-sleep",
+                "auto_sleep_enable",
             )
         )
 
@@ -1630,12 +1614,12 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     if model.has_cooling_fan:
         entities.append(_WSV2PeripheralSwitch(
             coordinator, "cooling_fan", "cooling_fan", "cooling_fan_running",
-            "mdi:fan", SwitchDeviceClass.SWITCH,
+            SwitchDeviceClass.SWITCH,
         ))
     if model.has_smoking_fan:
         entities.append(_WSV2PeripheralSwitch(
             coordinator, "smoking_fan", "smoking_fan", "smoking_fan_running",
-            "mdi:fan-chevron-up", SwitchDeviceClass.SWITCH,
+            SwitchDeviceClass.SWITCH,
         ))
 
     if model.has_ir_led:
@@ -1655,7 +1639,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         entities.append(
             _WSV2IRLedSwitch(
                 coordinator, "ir_led", "ir_led",
-                "ir_led_global", "mdi:laser-pointer",
+                "ir_led_global",
                 SwitchDeviceClass.SWITCH,
                 extra={"index": "global"},
             )
@@ -1664,7 +1648,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         entities.append(
             _WSV2PeripheralSwitch(
                 coordinator, "digital_lock", "digital_lock", "cover_locked",
-                "mdi:lock", SwitchDeviceClass.SWITCH,
+                SwitchDeviceClass.SWITCH,
             )
         )
     return entities

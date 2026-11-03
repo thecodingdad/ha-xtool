@@ -76,13 +76,11 @@ _ENTITIES = (
     AccessoryEntitySpec("sensor", "gear", field="gear",
                         icon="mdi:pump"),
     AccessoryEntitySpec("binary_sensor", "running", field="running",
-                        icon="mdi:fan",
                         device_class="running"),
     # ``connected`` = M15 ``A=1`` flag — the air-assist hardware
     # is plugged into the laser. Distinct from ``running`` which
     # requires both A=1 **and** gear > 0.
     AccessoryEntitySpec("binary_sensor", "connected", field="connected",
-                        icon="mdi:power-plug",
                         device_class="connectivity",
                         entity_category="diagnostic"),
     AccessoryEntitySpec("number", "close_delay", field="close_delay",

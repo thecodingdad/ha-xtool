@@ -273,7 +273,6 @@ _ENTITIES_V1 = (
                         icon="mdi:fan", options=("0", "1", "2", "3"),
                         write_mcode=lambda gear: f"{MCODE_FAN_SET_GEAR} A{gear}"),
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
-                        icon="mdi:bell-ring",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
                         entity_category="config"),
 )
@@ -307,7 +306,6 @@ _ENTITIES_V3 = (
         entity_category="config",
     ),
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
-                        icon="mdi:bell-ring",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
                         entity_category="config"),
     # Inline-fan post-run timer (read-only). Studio's

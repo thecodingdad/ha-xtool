@@ -1,0 +1,186 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "accessory_airpump_connected": {
+        "default": "mdi:power-plug",
+        "state": { "off": "mdi:power-plug-off" }
+      },
+      "accessory_airpump_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "accessory_airpumpv2_connected": {
+        "default": "mdi:power-plug",
+        "state": { "off": "mdi:power-plug-off" }
+      },
+      "accessory_airpumpv2_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "accessory_largepurifier_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "accessory_largepurifierv3_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "accessory_purifier_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "air_assist_connected": {
+        "default": "mdi:weather-windy"
+      },
+      "alarm": {
+        "default": "mdi:alarm-light",
+        "state": { "off": "mdi:alarm-light-off" }
+      },
+      "cooling_fan_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "cover_open": {
+        "default": "mdi:window-shutter-open",
+        "state": { "off": "mdi:window-shutter" }
+      },
+      "cpu_fan_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "drawer_open": {
+        "default": "mdi:archive-arrow-up",
+        "state": { "off": "mdi:archive" }
+      },
+      "smoking_fan_running": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "uv_fire_alarm": {
+        "default": "mdi:fire-alert",
+        "state": { "off": "mdi:fire-off" }
+      },
+      "water_line_ok": {
+        "default": "mdi:waves"
+      },
+      "water_pump_running": {
+        "default": "mdi:pump",
+        "state": { "off": "mdi:pump-off" }
+      },
+      "xcs_compatibility_mode": {
+        "default": "mdi:laptop",
+        "state": { "off": "mdi:laptop-off" }
+      }
+    },
+    "switch": {
+      "accessory_ductfan_buzzer": {
+        "default": "mdi:bell-ring",
+        "state": { "off": "mdi:bell-off" }
+      },
+      "accessory_ductfanv3_buzzer": {
+        "default": "mdi:bell-ring",
+        "state": { "off": "mdi:bell-off" }
+      },
+      "accessory_largepurifier_auto_continue": {
+        "default": "mdi:autorenew",
+        "state": { "off": "mdi:autorenew-off" }
+      },
+      "accessory_largepurifier_check_enabled": {
+        "default": "mdi:air-purifier",
+        "state": { "off": "mdi:air-purifier-off" }
+      },
+      "accessory_largepurifierv3_auto_continue": {
+        "default": "mdi:autorenew",
+        "state": { "off": "mdi:autorenew-off" }
+      },
+      "accessory_largepurifierv3_check_enabled": {
+        "default": "mdi:air-purifier",
+        "state": { "off": "mdi:air-purifier-off" }
+      },
+      "accessory_purifier_auto_continue": {
+        "default": "mdi:autorenew",
+        "state": { "off": "mdi:autorenew-off" }
+      },
+      "accessory_purifier_check_enabled": {
+        "default": "mdi:air-purifier",
+        "state": { "off": "mdi:air-purifier-off" }
+      },
+      "beep_enable": {
+        "default": "mdi:volume-high",
+        "state": { "off": "mdi:volume-off" }
+      },
+      "buzzer": {
+        "default": "mdi:volume-high",
+        "state": { "off": "mdi:volume-off" }
+      },
+      "cooling_fan": {
+        "default": "mdi:fan",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "device_sleep": {
+        "default": "mdi:power-sleep",
+        "state": { "off": "mdi:sleep-off" }
+      },
+      "digital_lock": {
+        "default": "mdi:lock",
+        "state": { "off": "mdi:lock-open-variant" }
+      },
+      "drawer_check": {
+        "default": "mdi:archive-check",
+        "state": { "off": "mdi:archive-off" }
+      },
+      "filter_check": {
+        "default": "mdi:air-filter"
+      },
+      "flame_alarm_v2": {
+        "default": "mdi:fire-alert",
+        "state": { "off": "mdi:fire-off" }
+      },
+      "gap_check": {
+        "default": "mdi:window-shutter-alert",
+        "state": { "off": "mdi:window-shutter-open" }
+      },
+      "ir_led": {
+        "default": "mdi:laser-pointer"
+      },
+      "ir_led_close": {
+        "default": "mdi:led-on",
+        "state": { "off": "mdi:led-off" }
+      },
+      "ir_led_global": {
+        "default": "mdi:led-on",
+        "state": { "off": "mdi:led-off" }
+      },
+      "limit_stop": {
+        "default": "mdi:transit-skip"
+      },
+      "md_mode": {
+        "default": "mdi:key-variant",
+        "state": { "off": "mdi:key-remove" }
+      },
+      "move_stop": {
+        "default": "mdi:hand-back-left",
+        "state": { "off": "mdi:hand-back-left-off" }
+      },
+      "purifier_check": {
+        "default": "mdi:air-purifier",
+        "state": { "off": "mdi:air-purifier-off" }
+      },
+      "purifier_continue": {
+        "default": "mdi:autorenew",
+        "state": { "off": "mdi:autorenew-off" }
+      },
+      "smoking_fan": {
+        "default": "mdi:fan-chevron-up",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "stops_when_moved": {
+        "default": "mdi:vibrate",
+        "state": { "off": "mdi:vibrate-off" }
+      },
+      "tilt_stop": {
+        "default": "mdi:angle-acute"
+      }
+    }
+  }
+}
