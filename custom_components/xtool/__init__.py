@@ -27,8 +27,14 @@ from .const import (
     DOMAIN,
     FIRMWARE_CHECK_INTERVAL,
 )
-from .coordinator import XtoolCoordinator
-from .protocols import DEVICE_MODELS, LaserInfo, detect_model
+
+# .protocols must be imported before .coordinator. Each protocol family
+# subclasses XtoolCoordinator, and coordinator.py imports protocols.base.
+# Imported the other way round, the family modules ask for XtoolCoordinator
+# before coordinator.py has defined it, and the first import of the package
+# fails (Home Assistant then retries it inside the event loop).
+from .protocols import DEVICE_MODELS, LaserInfo, detect_model  # isort: skip
+from .coordinator import XtoolCoordinator  # isort: skip
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
