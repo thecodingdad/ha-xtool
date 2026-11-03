@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -27,6 +30,7 @@ from .const import (
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
     CONF_FIRMWARE_CHECK_INTERVAL,
+    CONF_PAIRING_TOKEN,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
     CONF_STATS_POLL_INTERVAL,
@@ -40,6 +44,7 @@ from .const import (
 from .discovery import DiscoveredDevice, discover_devices
 from .protocols import (
     ConnectionInfo,
+    VALIDATION_ERROR_PAIRING_REQUIRED,
     VALIDATION_ERROR_UDP_NO_REPLY,
     VALIDATION_ERROR_UNKNOWN_MODEL,
     detect_models,
@@ -59,6 +64,22 @@ _ISSUE_TRACKER_URL = (
 
 _LOGGER = logging.getLogger(__name__)
 
+# How long the pairing step waits for the button press. The device
+# usually ends the window itself first (auth-status 410).
+PAIRING_TIMEOUT = 120.0
+
+
+def _entry_data(host: str, conn_info: ConnectionInfo) -> dict[str, Any]:
+    return {
+        CONF_HOST: host,
+        "serial_number": conn_info.serial_number,
+        "device_name": conn_info.name,
+        "firmware_version": conn_info.firmware_version,
+        "laser_power_watts": conn_info.laser_power_watts,
+        "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
+        CONF_PAIRING_TOKEN: conn_info.pairing_token,
+    }
+
 
 class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for xTool Laser."""
@@ -77,6 +98,15 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         # picker can render the discovered name + firmware verbatim
         # (helps the user file a complete bug report).
         self._fallback_discovered: DiscoveredDevice | None = None
+        # Pairing step state: target host, the model to validate against
+        # (``None`` = identify via UDP), the token to present, the running
+        # pairing task and its outcome.
+        self._pair_host: str | None = None
+        self._pair_model_key: str | None = None
+        self._pair_token = ""
+        self._pair_task: asyncio.Task[ConnectionInfo | str] | None = None
+        self._pair_result: ConnectionInfo | None = None
+        self._pair_error: str | None = None
 
     @staticmethod
     @callback
@@ -105,6 +135,10 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Discovery: %s (%s)", name or "unknown", host)
 
         conn_info = await validate_connection(host)
+        if conn_info == VALIDATION_ERROR_PAIRING_REQUIRED:
+            self._pair_host = host
+            self.context["title_placeholders"] = {"name": name or host}
+            return await self.async_step_pair_confirm()
         if not isinstance(conn_info, ConnectionInfo):
             # Discovery flow has no form to surface ``errors`` on, so the
             # granular reason rides through the abort dialog instead.
@@ -200,6 +234,9 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_manual()
 
         conn_info = await validate_connection(host)
+        if conn_info == VALIDATION_ERROR_PAIRING_REQUIRED:
+            self._pair_host = host
+            return await self.async_step_pair_confirm()
         if not isinstance(conn_info, ConnectionInfo):
             reason = conn_info or "cannot_connect"
             # Discovery couldn't identify the device — fall back to the
@@ -242,15 +279,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
 
         return self.async_create_entry(
-            title=conn_info.name,
-            data={
-                CONF_HOST: host,
-                "serial_number": conn_info.serial_number,
-                "device_name": conn_info.name,
-                "firmware_version": conn_info.firmware_version,
-                "laser_power_watts": conn_info.laser_power_watts,
-                "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
-            },
+            title=conn_info.name, data=_entry_data(host, conn_info),
         )
 
     async def async_step_pick_model(
@@ -269,20 +298,16 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             composite_key = user_input["model"]
             model_id, _, proto_ver = composite_key.rpartition("_")
             conn_info = await validate_with_model(host, model_id, proto_ver)
+            if conn_info == VALIDATION_ERROR_PAIRING_REQUIRED:
+                self._pair_host = host
+                self._pair_model_key = composite_key
+                return await self.async_step_pair_confirm()
             if isinstance(conn_info, ConnectionInfo):
                 if conn_info.serial_number:
                     await self.async_set_unique_id(conn_info.serial_number)
                     self._abort_if_unique_id_configured()
                 return self.async_create_entry(
-                    title=conn_info.name,
-                    data={
-                        CONF_HOST: host,
-                        "serial_number": conn_info.serial_number,
-                        "device_name": conn_info.name,
-                        "firmware_version": conn_info.firmware_version,
-                        "laser_power_watts": conn_info.laser_power_watts,
-                        "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
-                    },
+                    title=conn_info.name, data=_entry_data(host, conn_info),
                 )
             errors["base"] = conn_info or "cannot_connect"
             self._fallback_host = host
@@ -302,6 +327,112 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 "issue_url": _ISSUE_TRACKER_URL,
             },
             errors=errors,
+        )
+
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any],
+    ) -> ConfigFlowResult:
+        """The device rejected the stored pairing token — pair again."""
+        self._pair_host = entry_data[CONF_HOST]
+        self._pair_model_key = entry_data.get("model_key")
+        self._pair_token = ""
+        return await self.async_step_pair_confirm()
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Change the IP address and/or pair the device again."""
+        entry = self._get_reconfigure_entry()
+        if user_input is not None:
+            self._pair_host = user_input[CONF_HOST].strip()
+            self._pair_model_key = entry.data.get("model_key")
+            self._pair_token = (
+                "" if user_input.get("pair_again")
+                else entry.data.get(CONF_PAIRING_TOKEN, "")
+            )
+            return await self.async_step_pair_confirm()
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(CONF_HOST, default=entry.data[CONF_HOST]): str,
+                vol.Optional("pair_again", default=False): bool,
+            }),
+        )
+
+    async def async_step_pair_confirm(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Explain the button press, then start pairing on submit."""
+        if user_input is not None:
+            self._pair_error = None
+            return await self.async_step_pair()
+        errors = {"base": self._pair_error} if self._pair_error else {}
+        return self.async_show_form(
+            step_id="pair_confirm",
+            description_placeholders={"host": self._pair_host or ""},
+            errors=errors,
+        )
+
+    async def async_step_pair(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Connect and wait for the button press on the device."""
+        if self._pair_task is None:
+            self._pair_task = self.hass.async_create_task(self._async_pair())
+        if not self._pair_task.done():
+            return self.async_show_progress(
+                step_id="pair",
+                progress_action="press_button",
+                progress_task=self._pair_task,
+                description_placeholders={"host": self._pair_host or ""},
+            )
+        result = self._pair_task.result()
+        self._pair_task = None
+        if isinstance(result, ConnectionInfo):
+            self._pair_result = result
+            return self.async_show_progress_done(next_step_id="pair_finish")
+        self._pair_error = result or "cannot_connect"
+        return self.async_show_progress_done(next_step_id="pair_confirm")
+
+    async def _async_pair(self) -> ConnectionInfo | str:
+        host = self._pair_host or ""
+        if self._pair_model_key:
+            model_id, _, proto_ver = self._pair_model_key.rpartition("_")
+            return await validate_with_model(
+                host, model_id, proto_ver,
+                pairing_token=self._pair_token, pairing_timeout=PAIRING_TIMEOUT,
+            )
+        return await validate_connection(
+            host, pairing_token=self._pair_token, pairing_timeout=PAIRING_TIMEOUT,
+        )
+
+    async def async_step_pair_finish(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Store the paired device: new entry, or update the existing one."""
+        conn_info = self._pair_result
+        assert conn_info is not None and self._pair_host is not None
+        if self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
+            entry = (
+                self._get_reauth_entry() if self.source == SOURCE_REAUTH
+                else self._get_reconfigure_entry()
+            )
+            if conn_info.serial_number:
+                await self.async_set_unique_id(conn_info.serial_number)
+                self._abort_if_unique_id_mismatch(reason="wrong_device")
+            return self.async_update_reload_and_abort(
+                entry,
+                data_updates={
+                    CONF_HOST: self._pair_host,
+                    CONF_PAIRING_TOKEN: conn_info.pairing_token,
+                },
+            )
+        if conn_info.serial_number:
+            await self.async_set_unique_id(conn_info.serial_number)
+            self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=conn_info.name, data=_entry_data(self._pair_host, conn_info),
         )
 
 

@@ -77,6 +77,14 @@ Or add manually:
 4. Select a discovered device from the list, or choose **Enter IP address manually**
 5. Confirm to add the device
 
+### Pairing (newer V2 firmware)
+
+Some V2 firmware (first seen on the M2 with `40.141.012.01.ht05`) only accepts paired clients. When the device asks for it, setup shows a pairing step: click **Submit**, then press the button on the device to confirm. The device hands out a token that the integration stores and presents on every later connection.
+
+If the device rejects the stored token later (e.g. after a reset), Home Assistant shows **Re-authentication required** for the integration. Open it and press the button on the device again. Your device, entities and history stay as they are.
+
+To change the IP address or pair again at any time, use **Reconfigure** on the integration entry.
+
 ### Options
 
 After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool Laser** > **Configure**:
