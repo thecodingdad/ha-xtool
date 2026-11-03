@@ -1,6 +1,6 @@
 # xTool Laser
 
-Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P-family, MetalFab, Apparel Printer, Retail Marker, …).
+Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P-family, MetalFab, Apparel Printer, O1 Omni, Retail Marker, …).
 
 This integration communicates directly with your xTool device over the local network using the reverse-engineered WebSocket and REST protocols. No cloud connection required.
 
@@ -42,9 +42,11 @@ The integration supports four protocol families that cover all current xTool mod
 | WebSocket M-code | S1 | bidirectional WS (port 8081) + HTTP fallback (port 8080) |
 | HTTP REST + status push WS | D1, D1 Pro, D1 Pro 2.0 | HTTP `/cmd` writes (port 8080) + read-only WS status push (port 8081) |
 | REST API (V1 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (ports 8080 main / 8087 firmware / 8329 camera) |
-| WS-V2 (V2 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1, M1 Ultra, M2 (JS002), P2, P2S, P3, MetalFab, Apparel Printer | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
+| WS-V2 (V2 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1, M1 Ultra, M2 (JS002), P2, P2S, P3, MetalFab, Apparel Printer, O1 Omni (DT002) | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
 
 V1/V2 selection is automatic. UDP discovery tags each device as V1 or V2 (legacy plain probe vs. encrypted multicast).
+
+O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check. Job control, settings and the Pixel-Scan image are not exposed yet.
 
 ## Installation
 
@@ -100,7 +102,7 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Finished / Error / … Always available — shows "Off" when device is unreachable |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
 | Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
 | Last job time | Last completed job duration |
@@ -123,6 +125,13 @@ The available options are gated by the device's protocol family — only relevan
 | AP2 sensor D / AP2 sensor S | Particle sensors (requires AP2 air cleaner) |
 | Purifier speed (sensor) | Current AP2 speed reading (requires AP2 air cleaner) |
 | Ink level cyan / magenta / yellow / black | **M2 only.** Remaining ink volume per CMYK channel. Unit is best-effort PERCENTAGE until a real-hardware measurement confirms the firmware's scale. |
+| *&lt;cartridge&gt;* ink (e.g. UV Cyan ink, DTG White ink) | **O1 Omni only.** Remaining % per installed cartridge, one entity per slot (the set depends on the edition). Attributes: installed, low, remaining_ml, capacity_ml |
+| Moisturizing fluid 1 / 2 | **O1 Omni only.** Remaining % of each moisturizing-fluid tank |
+| Print head 1 / 2 temperature | **O1 Omni only.** Print-head temperature per ink path |
+| Ambient temperature / humidity | **Apparel Printer, O1 Omni.** Enclosure environment |
+| Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni only.** Active print job and queue length |
+| Active alarms | **O1 Omni only.** Number of active alarms; the `alarms` attribute lists code / level / message (codes match xTool Studio) |
+| UV lamp runtime / Air purifier runtime | **O1 Omni only.** Lifetime counters (diagnostic) |
 
 #### Diagnostic Sensors
 
@@ -144,6 +153,9 @@ The available options are gated by the device's protocol family — only relevan
 | Entity | Description |
 |---|---|
 | Cover | Cover / lid open detection |
+| Front door / Rear door | **O1 Omni only.** Door open detection |
+| Waste ink tank full / Waste ink tank installed | **O1 Omni only.** Waste-ink tank state |
+| Air filter installed | **O1 Omni only.** Air-filter presence (diagnostic) |
 | Drawer | Front-drawer position |
 | Safety key | USB safety-key presence (PLUG device class — `on` = plugged in / armed, `off` = unplugged / lockout). Sourced from `/peripheral/machine_lock` and the `/machine_lock/status` push |
 | Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |

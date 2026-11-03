@@ -185,6 +185,21 @@ class XtoolDeviceModel:
     has_button_event: bool = False  # WS-V2: /button/status push fires
     has_inkjet: bool = False  # M2: inkjet head + /v1/project/inkjet/*
     has_inkjet_sensors: bool = False  # DT001: ink/water bottles, heater, film sensors
+    # DT002 (O1 Omni): per-cartridge ink levels, moisturizing + waste
+    # tanks, front/rear doors, air filter, print-head temperatures,
+    # print queue and the active-alarm list.
+    has_ink_cartridges: bool = False
+    has_ambient_sensors: bool = False  # enclosure temperature + humidity
+    # Last job time, working / standby time, UV lamp + air purifier runtime
+    has_lifetime_counters: bool = False
+    # Hides the shared WS-V2 controls (Beep + Cover-check switches,
+    # exhaust post-run Number, Pause / Resume / Cancel buttons) on
+    # models whose write surface differs and isn't verified yet.
+    is_read_only: bool = False
+    # WS-V2 treats any alarm-list entry as a fire-warning edge. Set on
+    # models whose alarm list mostly carries door / consumable notices
+    # so no ``fire_warning`` event entity is created.
+    has_generic_alarms: bool = False
     # BT accessory subsystem. Default True — every Studio bundle (S1
     # / D-series / REST / WS-V2) defines ``getAllDangleConnectList``
     # (M9098), and the firmware returns an empty list when no dongle
@@ -372,6 +387,26 @@ class XtoolDeviceState:
     inkjet_toner_sn: str = ""
     inkjet_calibrated: bool | None = None
     machine_lock: bool | None = None
+
+    # DT002 (O1 Omni) — populated by ``DT002WSV2Protocol``. Cartridge
+    # dicts are keyed "<ink path>_<slot>" (1-based) and carry
+    # ``name, exist, remain_ml, full_ml, percent, low, serial``;
+    # moisturizing tanks are keyed "<index>" with the same fields.
+    ink_cartridges: dict[str, dict[str, Any]] = field(default_factory=dict)
+    moisturizing_tanks: dict[str, dict[str, Any]] = field(default_factory=dict)
+    waste_tank_present: bool | None = None
+    waste_tank_full: bool | None = None
+    front_door_open: bool | None = None
+    rear_door_open: bool | None = None
+    filter_installed: bool | None = None
+    print_head_temperatures: dict[int, float] = field(default_factory=dict)
+    active_alarms: list[dict[str, Any]] = field(default_factory=list)
+    job_name: str | None = None
+    job_progress: float | None = None
+    job_time_remaining: int | None = None
+    queued_jobs: int | None = None
+    air_purifier_runtime_seconds: int | None = None
+    uv_lamp_runtime_seconds: int | None = None
 
     # REST IR LEDs
     ir_led_close: bool = False

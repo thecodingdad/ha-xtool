@@ -54,6 +54,7 @@ class XtoolStatus(StrEnum):
     PROCESSING_READY = "processing_ready"
     PROCESSING = "processing"
     PAUSED = "paused"
+    CLEANING = "cleaning"  # inkjet printers: print-head cleaning cycle
     FIRMWARE_UPDATE = "firmware_update"
     SLEEPING = "sleeping"
     CANCELLING = "cancelling"
