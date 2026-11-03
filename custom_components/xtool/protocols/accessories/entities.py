@@ -11,7 +11,7 @@ Every accessory entity:
 
 - Sits under a **child device** in the HA device registry
   (``identifiers={(DOMAIN, "<laser_serial>:<type>:<acc_serial>")}``,
-  ``via_device=(DOMAIN, "<laser_serial>")``) so the laser device
+  ``via_device_id=<laser device registry id>``) so the laser device
   groups its accessories visually.
 - Reports ``available=False`` whenever the accessory is no longer
   in ``state.connected_accessories`` — entities aren't deleted so
@@ -62,6 +62,14 @@ from .base import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _via_device_info(coordinator: XtoolCoordinator) -> DeviceInfo:
+    """Link accessories to the laser across supported HA registry versions."""
+    if "via_device_id" in DeviceInfo.__annotations__:
+        return DeviceInfo(via_device_id=coordinator.laser_device_id)
+    # Home Assistant before 2026.8 only accepts the identifier tuple.
+    return {"via_device": (DOMAIN, coordinator.serial_number)}
 
 
 def _entity_category(value: str | None) -> EntityCategory | None:
@@ -149,7 +157,7 @@ class _AccessoryEntity(XtoolEntity):
         )
         return DeviceInfo(
             identifiers={(DOMAIN, f"{laser_sid}:{self._accessory_key}")},
-            via_device=(DOMAIN, laser_sid),
+            **_via_device_info(self.coordinator),
             name=self._definition.friendly_name,
             manufacturer="xTool",
             model=self._definition.friendly_name,
@@ -540,7 +548,7 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
         )
         return DeviceInfo(
             identifiers={(DOMAIN, f"{laser_sid}:{self._accessory_key}")},
-            via_device=(DOMAIN, laser_sid),
+            **_via_device_info(self.coordinator),
             name=self._definition.friendly_name,
             manufacturer="xTool",
             model=self._definition.friendly_name,
