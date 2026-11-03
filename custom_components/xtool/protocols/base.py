@@ -187,17 +187,19 @@ class XtoolDeviceModel:
     has_inkjet_sensors: bool = False  # DT001: ink/water bottles, heater, film sensors
     # DT002 (O1 Omni): per-cartridge ink levels, moisturizing + waste
     # tanks, front/rear doors, air filter, print-head temperatures,
-    # ambient temp/humidity, print queue and the active-alarm list.
+    # print queue and the active-alarm list.
     has_ink_cartridges: bool = False
-    # Shared V2 controls every WS-V2 model gets by default (Beep +
-    # Cover-check config switches, exhaust post-run Number, Pause /
-    # Resume / Cancel buttons). Models whose firmware uses a different
-    # write surface opt out until those writes are verified.
-    has_baseline_controls: bool = True
-    # V2 treats any entry in the alarm list as a fire-warning edge
-    # (``fire_warning`` event). Models whose alarm list is mostly
-    # consumable / door notices opt out.
-    has_fire_warning_event: bool = True
+    has_ambient_sensors: bool = False  # enclosure temperature + humidity
+    # Last job time, working / standby time, UV lamp + air purifier runtime
+    has_lifetime_counters: bool = False
+    # Hides the shared WS-V2 controls (Beep + Cover-check switches,
+    # exhaust post-run Number, Pause / Resume / Cancel buttons) on
+    # models whose write surface differs and isn't verified yet.
+    is_read_only: bool = False
+    # WS-V2 treats any alarm-list entry as a fire-warning edge. Set on
+    # models whose alarm list mostly carries door / consumable notices
+    # so no ``fire_warning`` event entity is created.
+    has_generic_alarms: bool = False
     # BT accessory subsystem. Default True — every Studio bundle (S1
     # / D-series / REST / WS-V2) defines ``getAllDangleConnectList``
     # (M9098), and the firmware returns an empty list when no dongle

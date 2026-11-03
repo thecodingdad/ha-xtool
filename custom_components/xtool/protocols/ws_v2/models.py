@@ -561,14 +561,15 @@ XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
     coordinator_class=WSV2Coordinator,
     # Top lid → the shared Cover binary sensor (True = open).
     has_cover_sensor=True,
-    # Also carries the O1's lifetime counters (working / standby / UV
-    # lamp time from /v1/project/device/config/all) and the last
-    # finished job's duration from the task history.
     has_ink_cartridges=True,
+    has_ambient_sensors=True,
+    # Working / standby / UV lamp time from /v1/project/device/config/all,
+    # last finished job's duration from the task history.
+    has_lifetime_counters=True,
     # Write paths (config PUT, job control) not verified yet.
-    has_baseline_controls=False,
+    is_read_only=True,
     # Alarm list is mostly door / cartridge / tank notices.
-    has_fire_warning_event=False,
+    has_generic_alarms=True,
     has_bt_accessories=False,
     firmware_content_id="xTool-dt002-firmware",
     firmware_machine_type="DT002",

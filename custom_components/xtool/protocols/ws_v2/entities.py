@@ -133,8 +133,8 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
 
 _INKJET_STATUS_OPTIONS = ["normal", "low", "empty"]
 
-# Lifetime-counter descriptions shared by ``has_runtime_stats`` and the
-# O1 Omni gate.
+# Lifetime-counter descriptions shared by ``has_runtime_stats`` and
+# ``has_lifetime_counters``.
 _LAST_JOB_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     key="last_job_time",
     translation_key="last_job_time",
@@ -162,7 +162,7 @@ _STANDBY_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     value_fn=lambda state, _: state.standby_seconds,
 )
 
-# Shared by the Apparel Printer (DT001) and O1 Omni (DT002) gates.
+# Shared by ``has_inkjet_sensors`` (DT001) and ``has_ambient_sensors``.
 _AMBIENT_TEMP_DESCRIPTION = XtoolSensorEntityDescription(
     key="ambient_temp",
     translation_key="ambient_temp",
@@ -508,11 +508,11 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     # Per-cartridge ink, moisturizing tanks and print-head temperatures
     # are built per slot in ``build_wsv2_sensors`` from the first poll,
     # because the slot layout differs between O1 editions.
-    (_AMBIENT_TEMP_DESCRIPTION, "has_ink_cartridges"),
-    (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ink_cartridges"),
-    (_LAST_JOB_TIME_DESCRIPTION, "has_ink_cartridges"),
-    (_WORKING_TIME_DESCRIPTION, "has_ink_cartridges"),
-    (_STANDBY_TIME_DESCRIPTION, "has_ink_cartridges"),
+    (_AMBIENT_TEMP_DESCRIPTION, "has_ambient_sensors"),
+    (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ambient_sensors"),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_lifetime_counters"),
+    (_WORKING_TIME_DESCRIPTION, "has_lifetime_counters"),
+    (_STANDBY_TIME_DESCRIPTION, "has_lifetime_counters"),
     (
         XtoolSensorEntityDescription(
             key="uv_lamp_runtime",
@@ -524,7 +524,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             state_class=SensorStateClass.TOTAL_INCREASING,
             value_fn=lambda state, _: state.uv_lamp_runtime_seconds,
         ),
-        "has_ink_cartridges",
+        "has_lifetime_counters",
     ),
     (
         XtoolSensorEntityDescription(
@@ -578,7 +578,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             state_class=SensorStateClass.TOTAL_INCREASING,
             value_fn=lambda state, _: state.air_purifier_runtime_seconds,
         ),
-        "has_ink_cartridges",
+        "has_lifetime_counters",
     ),
 )
 
@@ -1809,7 +1809,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # one is currently paired (laser-state values are merged via
         # ``WSV2Coordinator._poll_accessories``).
     ]
-    if model.has_baseline_controls:
+    if not model.is_read_only:
         entities.extend(baseline_switches)
     if model.has_flame_alarm:
         # Disabled by default in the entity registry — disabling
@@ -1936,7 +1936,7 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         # ``state.fire_level`` from M340 (separate code path).
     ]
     model = coordinator.model
-    if not model.has_baseline_controls:
+    if model.is_read_only:
         entities = []
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
     # to the AirPump accessory child device (the per-job-mode default
@@ -2009,7 +2009,7 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     # them with `code 1: failed`. The classes are kept in this module
     # for future use if a real wire path is identified.
     entities: list[ButtonEntity] = []
-    if coordinator.model.has_baseline_controls:
+    if not coordinator.model.is_read_only:
         entities.extend([
             WSV2PauseJob(coordinator),
             WSV2ResumeJob(coordinator),
@@ -2097,7 +2097,7 @@ def build_wsv2_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
         WSV2JobEvent(coordinator),
         WSV2ErrorEvent(coordinator),
     ]
-    if coordinator.model.has_fire_warning_event:
+    if not coordinator.model.has_generic_alarms:
         entities.append(WSV2FireWarningEvent(coordinator))
     if coordinator.model.has_button_event:
         entities.insert(0, WSV2ButtonEvent(coordinator))
