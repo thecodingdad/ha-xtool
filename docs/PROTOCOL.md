@@ -1533,7 +1533,7 @@ device model exposes the peripheral):
 | `drawer` | Drawer state. Same polarity as `gap`: `state:"on"` = closed (drawer in slot), `state:"off"` = open / pulled out. |
 | `airassistV2` | Air-Assist BLE connect state. **Not exposed on V2 firmware** — HJ003 / GS003 reject the GET with `code -3: error action type !`. |
 | `cooling_fan` | Cooling-fan run state. **Not exposed on HJ003** — same `code -3`. |
-| `smoking_fan` | Exhaust-fan run state. **Not exposed on HJ003** — same `code -3`. |
+| `smoking_fan` | Exhaust-fan run state. **Not exposed on HJ003** — same `code -3`. On the F2 Ultra UV (GS009-CLASS-4) it answers whether the fan is installed instead: `state:"install"` or `"uninstall"` (Studio's `addonStatus` → `smokingFanStatus`). The run state is never reported; pushes with `module:"SMOKING_FAN"`, `type:"DEVICE_ADD"` / `"DEVICE_REMOVE"` announce the fan being plugged in or removed. |
 | `cpu_fan` | CPU-fan run state. |
 | `uv_fire_sensor` | UV flame-detector trip. |
 | `water_pump` / `water_line` | Water-loop pump + flow OK. Returns `code 10: device not support` on models without water cooling. |

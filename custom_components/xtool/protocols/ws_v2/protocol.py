@@ -498,7 +498,8 @@ class WSV2Protocol(XtoolProtocol):
     _LATEST_STATE_FIELDS: tuple[str, ...] = (
         "status", "task_id", "task_time", "cover_open", "machine_lock",
         "last_job_time_seconds",
-        "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
+        "cooling_fan_running", "smoking_fan_running", "smoking_fan_installed",
+        "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
         "water_flow", "cpu_temp", "ambient_temp", "ambient_humidity",
         "heating_status", "film_buffer_ready", "film_position_ready",
@@ -689,6 +690,13 @@ class WSV2Protocol(XtoolProtocol):
         # firmware revisions might expose types the previous one didn't.
         self._unsupported_peripheral_types.clear()
         self._unsupported_endpoints.clear()
+        # The firmware never reports whether the exhaust fan runs, so
+        # it is assumed off on each new connection (after the laser
+        # powers on, or after HA or the network reconnects) and then
+        # follows HA's own commands. Drop any value from the last
+        # connection so it cannot overrule that.
+        self._latest.pop("smoking_fan_running", None)
+        self._assume_smoking_fan_off = True
         self._config_keys_bool.clear()
         # The config read body that works is found again for each connection
         self._config_read_body = None
@@ -1622,6 +1630,11 @@ class WSV2Protocol(XtoolProtocol):
                     wm = str(info["workingMode"] or "").upper()
                     self._latest["stops_when_moved"] = wm == "NORMAL"
 
+        elif module == "SMOKING_FAN" and typ in ("DEVICE_ADD", "DEVICE_REMOVE"):
+            # Exhaust fan plugged in or removed (Studio sets its
+            # ``smokingFanStatus`` from these).
+            self._latest["smoking_fan_installed"] = typ == "DEVICE_ADD"
+
         elif url.startswith("/peripheral/"):
             ptype = url.removeprefix("/peripheral/")
             self._apply_peripheral_push(ptype, data, info, typ)
@@ -1960,6 +1973,10 @@ class WSV2Protocol(XtoolProtocol):
                 ptypes.append(("digital_screen", None))
             if getattr(model, "has_fill_light", False):
                 ptypes.append(("fill_light", None))
+            if getattr(model, "has_smoking_fan_install_state", False):
+                # Studio's ``addonStatus`` read: ``state`` is
+                # ``install`` or ``uninstall``.
+                ptypes.append(("smoking_fan", None))
             if getattr(model, "has_ir_led", False):
                 # Studio's ``controlRedLed`` reads the IR LED state
                 # via ``/v1/peripheral/param?type=ir_led`` with
@@ -2139,6 +2156,11 @@ class WSV2Protocol(XtoolProtocol):
         # 7. Push-cached values (overrule poll if newer)
         self._apply_latest_to_state(state)
 
+        if getattr(self, "_assume_smoking_fan_off", False):
+            self._assume_smoking_fan_off = False
+            if model is not None and getattr(model, "has_smoking_fan", False):
+                state.smoking_fan_running = False
+
         _LOGGER.debug(
             "V2 poll resolved: status=%s task_id=%r task_time=%s "
             "working_mode=%r cover_open=%s drawer_open=%s "
@@ -2185,7 +2207,13 @@ class WSV2Protocol(XtoolProtocol):
         elif ptype == "cooling_fan":
             state.cooling_fan_running = is_on
         elif ptype == "smoking_fan":
-            state.smoking_fan_running = is_on
+            if st in ("install", "uninstall"):
+                state.smoking_fan_installed = st == "install"
+                self._latest["smoking_fan_installed"] = (
+                    state.smoking_fan_installed
+                )
+            else:
+                state.smoking_fan_running = is_on
         elif ptype == "uv_fire_sensor":
             state.uv_fire_alarm = is_on
         elif ptype == "water_pump":

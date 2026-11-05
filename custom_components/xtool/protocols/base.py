@@ -124,6 +124,11 @@ class XtoolDeviceModel:
     has_flame_alarm: bool = False
     has_air_assist_state: bool = False  # REST: poll /peripheral/airassist for connect state
     has_smoking_fan: bool = False
+    # The firmware answers ``/v1/peripheral/param?type=smoking_fan``
+    # with whether the exhaust fan is installed (``install`` or
+    # ``uninstall``), as Studio's GS009-CLASS-4 bundle reads it. The
+    # fan's on/off state is never reported.
+    has_smoking_fan_install_state: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
     # Some V2 firmwares only drive the fill-light LED array above a
@@ -310,6 +315,7 @@ class XtoolDeviceState:
     drawer_open: bool | None = None  # /peripheral/drawer
     cooling_fan_running: bool | None = None  # /peripheral/cooling_fan
     smoking_fan_running: bool | None = None  # /peripheral/smoking_fan (REST)
+    smoking_fan_installed: bool | None = None  # V2 smoking_fan install state
     cpu_fan_running: bool | None = None  # /peripheral/cpu_fan (M1U)
     uv_fire_alarm: bool | None = None  # /peripheral/uv_fire_sensor
     water_pump_running: bool | None = None  # /peripheral/water_pump (F1U)
