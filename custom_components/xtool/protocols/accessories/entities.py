@@ -250,18 +250,6 @@ async def _dispatch_write(entity: _AccessoryEntity, value: Any) -> None:
         return
     mcode = write(value) if callable(write) else write
     await _passthrough_write(entity, mcode)
-    # For DuctFanV3's M9064 writes (gear / Auto sub-mode), cache
-    # the resulting state on the accessory's fields so the Select
-    # / Fan entities reflect the click instantly — the M9082 poll
-    # is ~600 ms behind, and Auto sub-mode (Quiet/Regular) is not
-    # recoverable from the poll at all.
-    if (
-        entity._definition.type_id == "DuctFanV3"
-        and isinstance(mcode, str)
-        and mcode.startswith("M9064 ")
-    ):
-        _remember_fan_v3_state(entity, mcode[len("M9064 "):])
-        entity.async_write_ha_state()
 
 
 class _AccessorySwitch(_AccessoryEntity, SwitchEntity):
@@ -297,45 +285,19 @@ class _AccessorySelect(_AccessoryEntity, SelectEntity):
         await _dispatch_write(self, option)
 
 
-def _remember_fan_v3_state(
-    entity: "_AccessoryEntity", mcode_wire: str,
-) -> None:
-    """Cache the just-written sub-mode / gear / mode_class onto the
-    accessory state so HA reflects the user's click instantly,
-    before the M9082 poll or push event lands.
-
-    ``mcode_wire`` is the trailing token after ``M9064 `` (e.g.
-    ``"B1"``, ``"B3"``, ``"A0"``, ``"A1"``..``"A4"``).
-    """
-    state = entity._state
-    if state is None:
-        return
-    fields = state.fields
-    if mcode_wire == "B1":
-        fields["auto_submode"] = "Auto Quiet"
-        fields["mode_class"] = 4
-        fields["mode_speed"] = "Auto Quiet"
-    elif mcode_wire == "B3":
-        fields["auto_submode"] = "Auto Regular"
-        fields["mode_class"] = 4
-        fields["mode_speed"] = "Auto Regular"
-    elif mcode_wire == "A0":
-        fields["mode_class"] = 2
-        fields["mode_speed"] = "Off"
-    elif mcode_wire in ("A1", "A2", "A3", "A4"):
-        gear = int(mcode_wire[1])
-        fields["mode_class"] = 3
-        fields["current_gear"] = gear
-        fields["mode_speed"] = str(gear)
-
-
 class _AccessoryFan(_AccessoryEntity, FanEntity):
-    """HA Fan-domain wrapper for the DuctFanV3 IF2 surface.
+    """HA fan entity for the IF2 2.0 (``DuctFanV3``).
 
-    Sits alongside ``_AccessorySelect`` so users can pick either
-    UI. Maps the device's Manual/Auto + 0-4 gear layout onto HA's
-    ``preset_modes`` + ``percentage`` API. All writes route
-    through the same ``M9064 <mode><gear>`` path the Select uses.
+    One entity covers the whole fan control, as Studio's panel does:
+
+    - off is Manual Off,
+    - percentage 25/50/75/100 is Manual gear 1-4,
+    - the presets are Studio's Auto modes (regular and quiet).
+
+    In Auto the percentage follows the gear the IF2 reports. Writes
+    use the IF2 2.0 command shape (see ``duct_fan.fan_v3_manual_mcode``)
+    and update the cached state the same way the push parser would, so
+    the entity reacts at once and the next push or poll agrees.
     """
 
     _xtool_platform = "fan"
@@ -346,78 +308,114 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         | FanEntityFeature.TURN_OFF
     )
     _attr_speed_count = 4
-    _attr_preset_modes = ["Auto Regular", "Auto Quiet"]
-
-    # M9064 wire shapes — kept in lockstep with ``duct_fan.py``'s
-    # ``_FANV3_OPTION_WIRE`` table. Defining them inline avoids a
-    # circular import (accessories/duct_fan.py imports this file).
-    _PRESET_WIRE: dict[str, str] = {
-        "Auto Regular": "B3",
-        "Auto Quiet":   "B1",
-    }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        # Remember the last manual gear the user (or device) set,
-        # so ``turn_on`` without an explicit percentage restores
-        # the same speed. Initialised to gear 4 (max) as a sane
-        # default until we see a real manual write.
-        self._last_manual_gear: int = 4
+        from .duct_fan import FANV3_PRESETS
 
-    def _accessory_fields(self) -> dict[str, Any] | None:
+        self._attr_preset_modes = list(FANV3_PRESETS)
+        # What ``turn_on`` without arguments restores: the last Manual
+        # gear or Auto preset seen. Gear 4 until one is seen.
+        self._last_manual_gear: int = 4
+        self._last_preset: str | None = None
+
+    def _fields(self) -> dict[str, Any] | None:
         state = self._state
         return state.fields if state is not None else None
 
+    def _mode(self) -> int | None:
+        f = self._fields()
+        return None if f is None else f.get("mode_class")
+
     @property
     def is_on(self) -> bool | None:
-        f = self._accessory_fields()
-        if f is None:
-            return None
-        mode_class = f.get("mode_class")
-        if mode_class is None:
-            return None
-        # mode_class 3 = Manual running, 4 = Auto running. 2 = Off.
-        return mode_class in (3, 4)
+        from .duct_fan import FANV3_AUTO, FANV3_MANUAL, FANV3_OFF
+
+        mode = self._mode()
+        if mode in (FANV3_MANUAL, FANV3_AUTO):
+            return True
+        if mode == FANV3_OFF:
+            return False
+        return None
 
     @property
     def percentage(self) -> int | None:
-        f = self._accessory_fields()
-        if f is None:
+        from .duct_fan import FANV3_AUTO, FANV3_MANUAL, FANV3_OFF
+
+        f = self._fields()
+        mode = self._mode()
+        if f is None or mode is None:
             return None
-        mode_class = f.get("mode_class")
-        if mode_class != 3:
+        if mode == FANV3_OFF:
+            return 0
+        gear = f.get("current_gear") if mode == FANV3_MANUAL else (
+            f.get("auto_gear") if mode == FANV3_AUTO else None
+        )
+        if not isinstance(gear, int) or not 1 <= gear <= 4:
             return None
-        gear = int(f.get("current_gear") or 0)
-        return int(round(gear * 25))
+        return gear * 25
 
     @property
     def preset_mode(self) -> str | None:
-        f = self._accessory_fields()
-        if f is None or f.get("mode_class") != 4:
+        from .duct_fan import FANV3_AUTO, FANV3_PRESET_REGULAR
+
+        f = self._fields()
+        if f is None or self._mode() != FANV3_AUTO:
             return None
-        opt = f.get("mode_speed") or f.get("auto_submode")
-        if opt in self._attr_preset_modes:
-            return str(opt)
-        return None
+        preset = f.get("auto_submode")
+        if preset in self._attr_preset_modes:
+            return str(preset)
+        # The IF2 does not report which Auto preset is running; one set
+        # from Studio shows as the regular preset.
+        return FANV3_PRESET_REGULAR
+
+    def _handle_coordinator_update(self) -> None:
+        from .duct_fan import FANV3_AUTO, FANV3_MANUAL
+
+        f = self._fields()
+        if f is not None:
+            gear = f.get("current_gear")
+            if f.get("mode_class") == FANV3_MANUAL and isinstance(gear, int) and 1 <= gear <= 4:
+                self._last_manual_gear = gear
+                self._last_preset = None
+            elif f.get("mode_class") == FANV3_AUTO:
+                self._last_preset = self.preset_mode
+        super()._handle_coordinator_update()
+
+    def _remember(self, **values: Any) -> None:
+        f = self._fields()
+        if f is not None:
+            f.update(values)
+        self.async_write_ha_state()
+
+    async def _set_gear(self, gear: int) -> None:
+        from .duct_fan import FANV3_MANUAL, FANV3_OFF, fan_v3_manual_mcode
+
+        gear = max(0, min(4, gear))
+        await _passthrough_write(self, fan_v3_manual_mcode(gear))
+        if gear:
+            self._last_manual_gear = gear
+            self._last_preset = None
+            self._remember(mode_class=FANV3_MANUAL, current_gear=gear)
+        else:
+            self._remember(mode_class=FANV3_OFF, current_gear=0)
 
     async def async_set_percentage(self, percentage: int) -> None:
-        gear = max(0, min(4, int(round(percentage / 25))))
-        if gear > 0:
-            self._last_manual_gear = gear
-        from .base import MCODE_FAN_SET_GEAR
-        wire = f"A{gear}"
-        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
-        _remember_fan_v3_state(self, wire)
-        self.async_write_ha_state()
+        await self._set_gear(int(round(percentage / 25)))
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        wire = self._PRESET_WIRE.get(preset_mode)
-        if wire is None:
-            return
-        from .base import MCODE_FAN_SET_GEAR
-        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
-        _remember_fan_v3_state(self, wire)
-        self.async_write_ha_state()
+        from .duct_fan import FANV3_AUTO, FANV3_AUTO_GEAR, fan_v3_auto_mcode
+
+        mcode = fan_v3_auto_mcode(preset_mode)
+        if mcode is None:
+            raise HomeAssistantError(f"Unknown preset mode {preset_mode}")
+        await _passthrough_write(self, mcode)
+        self._last_preset = preset_mode
+        self._remember(
+            mode_class=FANV3_AUTO,
+            auto_gear=FANV3_AUTO_GEAR[preset_mode],
+            auto_submode=preset_mode,
+        )
 
     async def async_turn_on(
         self,
@@ -427,22 +425,15 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
     ) -> None:
         if preset_mode is not None:
             await self.async_set_preset_mode(preset_mode)
-            return
-        if percentage is not None:
+        elif percentage is not None:
             await self.async_set_percentage(percentage)
-            return
-        gear = self._last_manual_gear or 4
-        from .base import MCODE_FAN_SET_GEAR
-        wire = f"A{gear}"
-        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} {wire}")
-        _remember_fan_v3_state(self, wire)
-        self.async_write_ha_state()
+        elif self._last_preset is not None:
+            await self.async_set_preset_mode(self._last_preset)
+        else:
+            await self._set_gear(self._last_manual_gear or 4)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        from .base import MCODE_FAN_SET_GEAR
-        await _passthrough_write(self, f"{MCODE_FAN_SET_GEAR} A0")
-        _remember_fan_v3_state(self, "A0")
-        self.async_write_ha_state()
+        await self._set_gear(0)
 
 
 class _AccessoryNumber(_AccessoryEntity, NumberEntity):
@@ -846,4 +837,32 @@ def build_accessory_entities(
         out.append(cls(coordinator, definition, accessory.sn, spec))
     if has_update_entity:
         out.append(_AccessoryUpdate(coordinator, definition, accessory.sn))
+    _remove_retired_entities(coordinator, definition, accessory.sn)
     return out
+
+
+def _remove_retired_entities(
+    coordinator: XtoolCoordinator,
+    definition: AccessoryDefinition,
+    sn: str,
+) -> None:
+    """Remove registry entries of entities this accessory no longer has.
+
+    Without this, an entity dropped from the accessory's spec stays on
+    the device page as unavailable until the user deletes it.
+    """
+    if not definition.retired_entities:
+        return
+    hass = getattr(coordinator, "hass", None)
+    if hass is None:
+        return
+    from homeassistant.helpers import entity_registry as er
+
+    registry = er.async_get(hass)
+    sn_slug = sn.replace(":", "_").replace(" ", "_")
+    prefix = f"{coordinator.serial_number}_accessory_{definition.type_id.lower()}_{sn_slug}_"
+    for platform, key in definition.retired_entities:
+        entity_id = registry.async_get_entity_id(platform, DOMAIN, prefix + key)
+        if entity_id is not None:
+            _LOGGER.info("Removing retired accessory entity %s", entity_id)
+            registry.async_remove(entity_id)
