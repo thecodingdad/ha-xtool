@@ -303,10 +303,13 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
     - percentage 25/50/75/100 is Manual gear 1-4,
     - the presets are Studio's Auto modes (regular and quiet).
 
-    In Auto the percentage follows the gear the IF2 reports. Writes
-    use the IF2 2.0 command shape (see ``duct_fan.fan_v3_manual_mcode``)
-    and update the cached state the same way the push parser would, so
-    the entity reacts at once and the next push or poll agrees.
+    In Auto the IF2 spins only from job start until the post-run time
+    ends. The entity is on only then, at the gear the IF2 reports, and
+    off while Auto is idle; the preset stays shown either way. Turning
+    the fan on or off, or setting a speed, is a Manual command and
+    leaves Auto. Writes use the IF2 2.0 command shape (see
+    ``duct_fan.fan_v3_manual_mcode``) and update the cached state the
+    same way the push parser would, so the entity reacts at once.
     """
 
     _xtool_platform = "fan"
@@ -323,10 +326,10 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         from .duct_fan import FANV3_PRESETS
 
         self._attr_preset_modes = list(FANV3_PRESETS)
-        # What ``turn_on`` without arguments restores: the last Manual
-        # gear or Auto preset seen. Gear 4 until one is seen.
-        self._last_manual_gear: int = 4
-        self._last_preset: str | None = None
+        # What ``turn_on`` without arguments restores in Manual: the
+        # last gear the fan was seen spinning at, in Manual or in Auto.
+        # Gear 4 until one is seen.
+        self._last_gear: int = 4
 
     def _fields(self) -> dict[str, Any] | None:
         state = self._state
@@ -336,19 +339,8 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         f = self._fields()
         return None if f is None else f.get("mode_class")
 
-    @property
-    def is_on(self) -> bool | None:
-        from .duct_fan import FANV3_AUTO, FANV3_MANUAL, FANV3_OFF
-
-        mode = self._mode()
-        if mode in (FANV3_MANUAL, FANV3_AUTO):
-            return True
-        if mode == FANV3_OFF:
-            return False
-        return None
-
-    @property
-    def percentage(self) -> int | None:
+    def _spinning_gear(self) -> int | None:
+        """Gear the fan spins at now: 0 when stopped, None when unknown."""
         from .duct_fan import FANV3_AUTO, FANV3_MANUAL, FANV3_OFF
 
         f = self._fields()
@@ -357,12 +349,25 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
             return None
         if mode == FANV3_OFF:
             return 0
-        gear = f.get("current_gear") if mode == FANV3_MANUAL else (
-            f.get("auto_gear") if mode == FANV3_AUTO else None
-        )
-        if not isinstance(gear, int) or not 1 <= gear <= 4:
-            return None
-        return gear * 25
+        if mode == FANV3_MANUAL:
+            gear = f.get("current_gear")
+            return gear if isinstance(gear, int) and 1 <= gear <= 4 else None
+        if mode == FANV3_AUTO:
+            if not f.get("job_active"):
+                return 0
+            gear = f.get("auto_gear")
+            return gear if isinstance(gear, int) and 0 <= gear <= 4 else None
+        return None
+
+    @property
+    def is_on(self) -> bool | None:
+        gear = self._spinning_gear()
+        return None if gear is None else gear > 0
+
+    @property
+    def percentage(self) -> int | None:
+        gear = self._spinning_gear()
+        return None if gear is None else gear * 25
 
     @property
     def preset_mode(self) -> str | None:
@@ -374,21 +379,14 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         preset = f.get("auto_submode")
         if preset in self._attr_preset_modes:
             return str(preset)
-        # The IF2 does not report which Auto preset is running; one set
-        # from Studio shows as the regular preset.
+        # Auto set before any gear was seen (for example from Studio
+        # while HA was not running) shows as the regular preset.
         return FANV3_PRESET_REGULAR
 
     def _handle_coordinator_update(self) -> None:
-        from .duct_fan import FANV3_AUTO, FANV3_MANUAL
-
-        f = self._fields()
-        if f is not None:
-            gear = f.get("current_gear")
-            if f.get("mode_class") == FANV3_MANUAL and isinstance(gear, int) and 1 <= gear <= 4:
-                self._last_manual_gear = gear
-                self._last_preset = None
-            elif f.get("mode_class") == FANV3_AUTO:
-                self._last_preset = self.preset_mode
+        gear = self._spinning_gear()
+        if gear:
+            self._last_gear = gear
         super()._handle_coordinator_update()
 
     def _remember(self, **values: Any) -> None:
@@ -403,8 +401,7 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         gear = max(0, min(4, gear))
         await _passthrough_write(self, fan_v3_manual_mcode(gear))
         if gear:
-            self._last_manual_gear = gear
-            self._last_preset = None
+            self._last_gear = gear
             self._remember(mode_class=FANV3_MANUAL, current_gear=gear)
         else:
             self._remember(mode_class=FANV3_OFF, current_gear=0)
@@ -419,7 +416,6 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         if mcode is None:
             raise HomeAssistantError(f"Unknown preset mode {preset_mode}")
         await _passthrough_write(self, mcode)
-        self._last_preset = preset_mode
         self._remember(
             mode_class=FANV3_AUTO,
             auto_gear=FANV3_AUTO_GEAR[preset_mode],
@@ -436,10 +432,8 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
             await self.async_set_preset_mode(preset_mode)
         elif percentage is not None:
             await self.async_set_percentage(percentage)
-        elif self._last_preset is not None:
-            await self.async_set_preset_mode(self._last_preset)
         else:
-            await self._set_gear(self._last_manual_gear or 4)
+            await self._set_gear(self._last_gear or 4)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._set_gear(0)
