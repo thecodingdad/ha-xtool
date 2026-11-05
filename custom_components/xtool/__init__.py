@@ -208,8 +208,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         **XtoolEntity(coordinator).device_info,
     )
     coordinator.laser_device_id = laser_device.id
-    if coordinator.model.mac_from_wifi_interfaces and coordinator.mac_address:
-        _drop_stale_mac_connections(hass, laser_device, coordinator.mac_address)
+    if coordinator.model.has_wrong_machine_info_mac:
+        _drop_mac_connections(hass, laser_device)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -221,23 +221,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
 _LOGGER = logging.getLogger(__name__)
 
 
-def _drop_stale_mac_connections(
-    hass: HomeAssistant, device: dr.DeviceEntry, mac: str,
-) -> None:
-    """Keep only the current MAC on the laser's device entry.
+def _drop_mac_connections(hass: HomeAssistant, device: dr.DeviceEntry) -> None:
+    """Remove MAC connections an earlier release stored for the laser.
 
-    The registry merges connections, so a MAC from an earlier release
-    (machineInfo's, which is not the Wi-Fi MAC on some firmware) would
-    otherwise stay listed next to the right one.
+    The device registry merges connections, so a wrong MAC would stay
+    on the device page even after the integration stops reporting it.
     """
-    current = dr.format_mac(mac)
-    keep = {
-        c for c in device.connections
-        if c[0] != dr.CONNECTION_NETWORK_MAC or c[1] == current
-    }
+    keep = {c for c in device.connections if c[0] != dr.CONNECTION_NETWORK_MAC}
     if keep != device.connections:
         _LOGGER.info(
-            "Removing stale MAC connections from %s: %s",
+            "Removing wrong MAC connections from %s: %s",
             device.name, device.connections - keep,
         )
         dr.async_get(hass).async_update_device(device.id, new_connections=keep)

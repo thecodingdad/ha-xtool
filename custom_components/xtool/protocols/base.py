@@ -129,10 +129,9 @@ class XtoolDeviceModel:
     # ``uninstall``), as Studio's GS009-CLASS-4 bundle reads it. The
     # fan's on/off state is never reported.
     has_smoking_fan_install_state: bool = False
-    # machineInfo's ``mac`` is not the Wi-Fi MAC on this firmware;
-    # read it from ``/v1/wifi/interfaces`` (entry ``iface: wlan0``),
-    # where Studio reads the Wi-Fi details.
-    mac_from_wifi_interfaces: bool = False
+    # machineInfo's ``mac`` is not the laser's Wi-Fi MAC on this
+    # firmware, and no reply carries the real one: show no MAC.
+    has_wrong_machine_info_mac: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
     # Some V2 firmwares only drive the fill-light LED array above a

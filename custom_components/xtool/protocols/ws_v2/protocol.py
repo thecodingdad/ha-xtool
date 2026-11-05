@@ -60,7 +60,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import re
 import ssl
 import time
 import uuid
@@ -191,9 +190,6 @@ _CRC16_TABLE = [
     0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
     0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040,
 ]
-
-
-_MAC_RE = re.compile(r"[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}")
 
 
 def _json_compact(obj: Any) -> str:
@@ -1541,7 +1537,7 @@ class WSV2Protocol(XtoolProtocol):
                     self._latest["device_name"] = info["deviceName"]
                 if info.get("sn"):
                     self._latest["serial_number"] = info["sn"]
-                if info.get("mac") and not self._mac_from_wifi():
+                if info.get("mac") and not self._wrong_machine_info_mac():
                     self._latest["mac_address"] = info["mac"]
                 self._latch_worktime(info)
                 fw = info.get("firmware") or {}
@@ -1795,41 +1791,9 @@ class WSV2Protocol(XtoolProtocol):
         ):
             self._latest["working_seconds"] = int(v)
 
-    def _mac_from_wifi(self) -> bool:
+    def _wrong_machine_info_mac(self) -> bool:
         model = getattr(self, "_model", None)
-        return bool(getattr(model, "mac_from_wifi_interfaces", False))
-
-    async def _read_wifi_mac(self) -> str:
-        """Return the ``wlan0`` MAC from ``/v1/wifi/interfaces``, or "".
-
-        Studio reads the Wi-Fi IP from the entry whose ``iface`` is
-        ``wlan0``. The MAC field name is not in Studio's bundle, so
-        the common names are tried and the raw reply is logged.
-        """
-        try:
-            data: Any = await self.request("/v1/wifi/interfaces", "GET")
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("V2 /v1/wifi/interfaces failed: %s", err)
-            return ""
-        _LOGGER.debug("V2 /v1/wifi/interfaces raw response: %s", data)
-        items: Any = data
-        if isinstance(data, dict):
-            items = (
-                data.get("interfaces") or data.get("list")
-                or data.get("data") or []
-            )
-        if not isinstance(items, list):
-            return ""
-        for item in items:
-            if not isinstance(item, dict) or item.get("iface") != "wlan0":
-                continue
-            for key in ("mac", "hwaddr", "macAddress", "mac_address", "ether"):
-                value = item.get(key)
-                if isinstance(value, str) and _MAC_RE.fullmatch(value.strip()):
-                    mac = value.strip().lower()
-                    self._latest["mac_address"] = mac
-                    return mac
-        return ""
+        return bool(getattr(model, "has_wrong_machine_info_mac", False))
 
     async def get_device_info(self) -> DeviceInfo:
         info = DeviceInfo()
@@ -1843,7 +1807,7 @@ class WSV2Protocol(XtoolProtocol):
                 data.get("deviceName") or data.get("machine_name") or ""
             )
             info.serial_number = data.get("sn") or data.get("snCode") or ""
-            if not self._mac_from_wifi():
+            if not self._wrong_machine_info_mac():
                 info.mac_address = data.get("mac", "")
             self._latch_worktime(data)
             firmware = data.get("firmware") or {}
@@ -1891,11 +1855,6 @@ class WSV2Protocol(XtoolProtocol):
             info.device_name = self._latest.get("device_name", "")
         if not info.serial_number:
             info.serial_number = self._latest.get("serial_number", "")
-        if self._mac_from_wifi():
-            info.mac_address = (
-                await self._read_wifi_mac()
-                or self._latest.get("mac_address", "")
-            )
         if not info.mac_address:
             info.mac_address = self._latest.get("mac_address", "")
         if not info.main_firmware:
