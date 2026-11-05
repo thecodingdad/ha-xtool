@@ -462,8 +462,12 @@
       "filter_installed": {
         "name": "Air filter installed"
       },
-      "smoking_fan_install_abnormal": {
-        "name": "Exhaust fan installation abnormal"
+      "smoking_fan_installation": {
+        "name": "Exhaust fan installation",
+        "state": {
+          "off": "Normal",
+          "on": "Abnormal"
+        }
       }
     },
     "camera": {

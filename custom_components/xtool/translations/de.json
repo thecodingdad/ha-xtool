@@ -423,8 +423,12 @@
       "filter_installed": {
         "name": "Luftfilter eingesetzt"
       },
-      "smoking_fan_install_abnormal": {
-        "name": "Abluftventilator-Installation fehlerhaft"
+      "smoking_fan_installation": {
+        "name": "Abluftventilator-Installation",
+        "state": {
+          "off": "Normal",
+          "on": "Fehlerhaft"
+        }
       }
     },
     "camera": {
