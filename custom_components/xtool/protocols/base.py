@@ -124,10 +124,9 @@ class XtoolDeviceModel:
     has_flame_alarm: bool = False
     has_air_assist_state: bool = False  # REST: poll /peripheral/airassist for connect state
     has_smoking_fan: bool = False
-    # machineInfo's ``mac`` is not the Wi-Fi MAC on this firmware;
-    # read it from ``/v1/wifi/interfaces`` (entry ``iface: wlan0``),
-    # where Studio reads the Wi-Fi details.
-    mac_from_wifi_interfaces: bool = False
+    # machineInfo's ``mac`` is not the laser's Wi-Fi MAC on this
+    # firmware, and no reply carries the real one: show no MAC.
+    has_wrong_machine_info_mac: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
     # Some V2 firmwares only drive the fill-light LED array above a
