@@ -559,6 +559,9 @@ class WSV2Protocol(XtoolProtocol):
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._pending: dict[int, _PendingRequest] = {}
         self._heartbeat_pending: asyncio.Future[dict[str, Any]] | None = None
+        # True once /v1/device/statistics has given a working time;
+        # until then machineInfo's ``worktime`` is used.
+        self._statistics_has_time = False
         self._transaction_counter = 0
         # Single-byte channel counter for the file-transfer sliding-window
         # protocol (Studio ``Rv.MAX_CHANNEL = 255``). Each concurrent
@@ -1528,6 +1531,7 @@ class WSV2Protocol(XtoolProtocol):
                     self._latest["serial_number"] = info["sn"]
                 if info.get("mac"):
                     self._latest["mac_address"] = info["mac"]
+                self._latch_worktime(info)
                 fw = info.get("firmware") or {}
                 if isinstance(fw, dict):
                     pkg = (
@@ -1760,6 +1764,20 @@ class WSV2Protocol(XtoolProtocol):
             return ver or None
         return None
 
+    def _latch_worktime(self, data: dict[str, Any]) -> None:
+        """Cache machineInfo's ``worktime`` (seconds) as the working time.
+
+        Only used while ``/v1/device/statistics`` has given no time, so
+        the statistics value stays the source where it exists.
+        """
+        v = data.get("worktime")
+        if (
+            isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and not self._statistics_has_time
+        ):
+            self._latest["working_seconds"] = int(v)
+
     async def get_device_info(self) -> DeviceInfo:
         info = DeviceInfo()
         try:
@@ -1773,6 +1791,7 @@ class WSV2Protocol(XtoolProtocol):
             )
             info.serial_number = data.get("sn") or data.get("snCode") or ""
             info.mac_address = data.get("mac", "")
+            self._latch_worktime(data)
             firmware = data.get("firmware") or {}
             if isinstance(firmware, dict):
                 info.main_firmware = (
@@ -2092,6 +2111,20 @@ class WSV2Protocol(XtoolProtocol):
                     v = stats.get(src)
                     if isinstance(v, (int, float)):
                         self._latest[dst] = int(v)
+            self._statistics_has_time = isinstance(stats, dict) and any(
+                isinstance(stats.get(k), (int, float))
+                for k in ("timeModeWorking", "workingTime", "totalWorkTime")
+            )
+            if not self._statistics_has_time:
+                # Some firmware (F2 Ultra UV) has only counts in
+                # statistics; its working time is machineInfo's
+                # ``worktime``, as Studio shows it.
+                try:
+                    data = await self.request(self.PATH_DEVICE_INFO, "GET")
+                except Exception:
+                    data = None
+                if isinstance(data, dict):
+                    self._latch_worktime(data)
 
         # 5. Progress — only when a job is running.
         if state.status in (XtoolStatus.PROCESSING,
