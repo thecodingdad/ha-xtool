@@ -512,6 +512,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ambient_sensors"),
     (_LAST_JOB_TIME_DESCRIPTION, "has_lifetime_counters"),
     (_WORKING_TIME_DESCRIPTION, "has_lifetime_counters"),
+    (_WORKING_TIME_DESCRIPTION, "has_machine_info_worktime"),
     (_STANDBY_TIME_DESCRIPTION, "has_lifetime_counters"),
     (
         XtoolSensorEntityDescription(
