@@ -1207,7 +1207,7 @@ Standalone peripheral paths (mostly carried over from V1):
 | `/v1/wifi/ap-list` | `GET` | — | — | Array of visible APs (de-duplicated by SSID, kept by highest `level`). |
 | `/v1/wifi/connected-ssid` | `GET` | — | — | `{ssid}` — currently-joined SSID. |
 | `/v1/wifi/credentials` | `PUT` | — | `{ssid, psk}` | Set credentials (replaces V1 `M2001`). |
-| `/v1/wifi/interfaces` | `GET` | — | — | Array of interfaces (`[{iface:"wlan0", ip, …}]`). |
+| `/v1/wifi/interfaces` | `GET` | — | — | Array of interfaces (`[{iface:"wlan0", ip, …}]`). On the F2 Ultra UV the integration takes the Wi-Fi MAC from the `wlan0` entry, because machineInfo's `mac` is not the Wi-Fi MAC there. |
 | `/v1/net/wifi_signal_strength` | `POST` | — | `{name:"wlan0"}` | `{wifi_signal_strength:<rssi-int>}` |
 
 #### BLE accessories (parts / dongle)
