@@ -149,7 +149,9 @@ _WORKING_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     icon="mdi:timer-cog",
     entity_category=EntityCategory.DIAGNOSTIC,
     native_unit_of_measurement=UnitOfTime.SECONDS,
-    # A lifetime total reads best in hours (19.7 h, not 70922 s).
+    # A lifetime total reads best in hours (19.7 h, not 70922 s). HA
+    # converts units only for the duration device class.
+    device_class=SensorDeviceClass.DURATION,
     suggested_unit_of_measurement=UnitOfTime.HOURS,
     suggested_display_precision=1,
     state_class=SensorStateClass.TOTAL_INCREASING,
