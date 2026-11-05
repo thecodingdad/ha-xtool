@@ -162,7 +162,7 @@ The available options are gated by the device's protocol family — only relevan
 | Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
 | Cooling fan | Cooling fan currently running |
 | Exhaust fan | Smoke-extraction fan currently running (not on the F2 Ultra UV) |
-| Exhaust fan installation | **F2 Ultra UV only.** Normal, or Abnormal when the laser reports no exhaust fan installed (Studio warns "Exhaust fan installation abnormal" before a job) |
+| Exhaust fan installation | **F2 Ultra UV only.** OK, or Problem when the laser reports no exhaust fan installed (Studio warns "Exhaust fan installation abnormal" before a job) |
 | CPU fan | CPU cooling fan currently running |
 | UV fire sensor | UV-based flame-detector trip |
 | Water pump | Water-cooling pump running |
