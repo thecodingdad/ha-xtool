@@ -161,7 +161,8 @@ The available options are gated by the device's protocol family — only relevan
 | Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |
 | Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
 | Cooling fan | Cooling fan currently running |
-| Exhaust fan | Smoke-extraction fan currently running |
+| Exhaust fan | Smoke-extraction fan currently running (not on the F2 Ultra UV) |
+| Exhaust fan installation abnormal | **F2 Ultra UV only.** On when the laser reports no exhaust fan installed, as Studio warns before a job |
 | CPU fan | CPU cooling fan currently running |
 | UV fire sensor | UV-based flame-detector trip |
 | Water pump | Water-cooling pump running |
@@ -183,7 +184,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Power | Linked smart plug (only when configured in integration options) |
 | Buzzer reminders / Beep | Audio feedback enable |
 | Move stop | Emergency-movement-stop toggle |
-| Exhaust fan | Manual smoke-extraction fan toggle |
+| Exhaust fan | Manual smoke-extraction fan toggle. The F2 Ultra UV never reports whether the fan runs, so it shows off after the laser connects and then follows HA's own commands |
 | Cooling fan | Manual cooling-fan toggle |
 | Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
 | Purifier auto-continue | Keep purifier running after job ends |
