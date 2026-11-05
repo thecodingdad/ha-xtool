@@ -113,6 +113,10 @@ class WSV2Coordinator(XtoolCoordinator):
         try:
             if not self.protocol.connected:
                 await self.protocol.connect()
+                # A new connection may be to a laser that was
+                # power-cycled or updated meanwhile, even when it came
+                # back before any poll failed: read the identity again.
+                self._device_info_fetched = False
 
             # Re-attempt the machineInfo fetch each poll until it
             # actually returns identifying data — MetalFab's GET
