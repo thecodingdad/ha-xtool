@@ -75,6 +75,9 @@
   },
   "entity": {
     "sensor": {
+      "accessory_ductfanv3_post_run": {
+        "name": "Zeit, die der Inline-Lüfter weiterläuft"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -561,9 +564,6 @@
       },
       "accessory_ductfanv3_manual_gear": {
         "name": "Manuelle Stufe"
-      },
-      "accessory_ductfanv3_post_run": {
-        "name": "Zeit, die der Inline-Lüfter weiterläuft"
       },
       "accessory_ductfan_post_run": {
         "name": "Zeit, die der Inline-Lüfter weiterläuft"

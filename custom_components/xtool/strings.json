@@ -67,6 +67,7 @@
   },
   "entity": {
     "sensor": {
+      "accessory_ductfanv3_post_run": { "name": "Time the inline fan continues to work" },
       "status": {
         "name": "Status",
         "state": {
