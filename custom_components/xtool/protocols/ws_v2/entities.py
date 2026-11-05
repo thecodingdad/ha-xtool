@@ -784,17 +784,18 @@ class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
 
 
 class _WSV2ExhaustFanInstallSensor(_WSV2BoolSensor):
-    """On when the exhaust fan is not installed.
+    """Exhaust fan installation: Normal, or Abnormal when not installed.
 
-    Matches the warning Studio shows before a job, "Exhaust fan
-    installation abnormal" (``device.gs.fan_install_advice``).
+    Abnormal matches the warning Studio shows before a job, "Exhaust
+    fan installation abnormal" (``device.gs.fan_install_advice``). The
+    state names come from the entity's translations.
     """
 
     _state_attr = "smoking_fan_installed"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(
-            coordinator, "smoking_fan_install_abnormal",
+            coordinator, "smoking_fan_installation",
             BinarySensorDeviceClass.PROBLEM,
         )
 
