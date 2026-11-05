@@ -72,6 +72,14 @@ def _via_device_info(coordinator: XtoolCoordinator) -> DeviceInfo:
     return {"via_device": (DOMAIN, coordinator.serial_number)}
 
 
+def _firmware_version(state: AccessoryState | None) -> str | None:
+    """The accessory's firmware version from its info reply, for the device page."""
+    if state is None or not state.fields:
+        return None
+    version = state.fields.get("version")
+    return str(version) if version else None
+
+
 def _entity_category(value: str | None) -> EntityCategory | None:
     if value == "diagnostic":
         return EntityCategory.DIAGNOSTIC
@@ -162,6 +170,7 @@ class _AccessoryEntity(XtoolEntity):
             manufacturer="xTool",
             model=self._definition.friendly_name,
             serial_number=serial_for_info,
+            sw_version=_firmware_version(state),
         )
 
     @property
@@ -553,6 +562,7 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
             manufacturer="xTool",
             model=self._definition.friendly_name,
             serial_number=serial_for_info,
+            sw_version=_firmware_version(state),
         )
 
     @property
