@@ -784,11 +784,10 @@ class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
 
 
 class _WSV2ExhaustFanInstallSensor(_WSV2BoolSensor):
-    """Exhaust fan installation: Normal, or Abnormal when not installed.
+    """Exhaust fan installation: Problem when the fan is not installed.
 
-    Abnormal matches the warning Studio shows before a job, "Exhaust
-    fan installation abnormal" (``device.gs.fan_install_advice``). The
-    state names come from the entity's translations.
+    Matches the warning Studio shows before a job, "Exhaust fan
+    installation abnormal" (``device.gs.fan_install_advice``).
     """
 
     _state_attr = "smoking_fan_installed"
