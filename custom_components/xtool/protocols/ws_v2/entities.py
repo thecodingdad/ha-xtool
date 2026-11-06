@@ -39,6 +39,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
+    SensorEntityDescription,
     SensorStateClass,
 )
 from homeassistant.components.switch import (
@@ -1649,10 +1650,13 @@ class WSV2CalibrationSensor(XtoolEntity, SensorEntity):
     Read only; the integration never changes them.
     """
 
-    _attr_translation_key = "calibration"
-    _attr_icon = "mdi:tune-variant"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    entity_description = SensorEntityDescription(
+        key="calibration",
+        translation_key="calibration",
+        icon="mdi:tune-variant",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    )
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
