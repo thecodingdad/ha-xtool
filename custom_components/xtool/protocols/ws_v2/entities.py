@@ -952,6 +952,11 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
 class _WSV2IRLedSwitch(_WSV2PeripheralSwitch, RestoreEntity):
     """Red-dot / IR-LED switch that survives HA restarts.
 
+    The red dot is on whenever the laser powers on, so the protocol
+    assumes it on after each new connection (unless the laser reports
+    it), and HA's own commands are followed from there. The restored
+    value below covers only the time before the first poll.
+
     Studio's ``controlRedLed`` bundle only defines a PUT route —
     firmware exposes no GET or push for the IR LED state, so a
     fresh HA start has no way to learn whether the LED is

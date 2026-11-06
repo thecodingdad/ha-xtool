@@ -601,6 +601,11 @@ class WSV2Protocol(XtoolProtocol):
         self._unsupported_endpoints: set[str] = set()
         self._config_read_body: dict[str, Any] | None = None
         self._config_read_known = False
+        # The red dot is on whenever the laser powers on, and the
+        # firmware does not report it on every model, so it is assumed
+        # on for each new connection unless the laser reports it.
+        self._assume_red_dot_on = False
+        self._red_dot_reported = False
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -693,6 +698,8 @@ class WSV2Protocol(XtoolProtocol):
         # The config read body that works is found again for each connection
         self._config_read_body = None
         self._config_read_known = False
+        self._assume_red_dot_on = True
+        self._red_dot_reported = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -2139,6 +2146,16 @@ class WSV2Protocol(XtoolProtocol):
         # 7. Push-cached values (overrule poll if newer)
         self._apply_latest_to_state(state)
 
+        if self._assume_red_dot_on:
+            self._assume_red_dot_on = False
+            if (
+                model is not None
+                and getattr(model, "has_ir_led", False)
+                and not self._red_dot_reported
+            ):
+                state.ir_led_global = True
+                state.ir_led_close = True
+
         _LOGGER.debug(
             "V2 poll resolved: status=%s task_id=%r task_time=%s "
             "working_mode=%r cover_open=%s drawer_open=%s "
@@ -2247,9 +2264,11 @@ class WSV2Protocol(XtoolProtocol):
             if is_on is True:
                 state.ir_led_global = True
                 state.ir_led_close = True
+                self._red_dot_reported = True
             elif is_off is True:
                 state.ir_led_global = False
                 state.ir_led_close = False
+                self._red_dot_reported = True
         else:
             _LOGGER.debug(
                 "V2 peripheral/param type=%r returned shape we don't parse: "
