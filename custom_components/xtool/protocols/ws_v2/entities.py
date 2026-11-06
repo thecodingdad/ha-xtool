@@ -35,7 +35,7 @@ from homeassistant.components.light import (
     ColorMode,
     LightEntity,
 )
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, RestoreNumber
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -56,6 +56,8 @@ from homeassistant.const import (
     UnitOfTime,
     UnitOfVolumeFlowRate,
 )
+from homeassistant.core import callback
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_HA_MAX
@@ -85,6 +87,14 @@ MAX_SNAPSHOT_AGE = timedelta(seconds=60)
 # takes about 0.3 s on the F2 Ultra UV, and the protocol takes one
 # photo at a time, so this gives about 2.5 frames per second.
 LIVE_FRAME_INTERVAL = 0.4
+# Thumbnail refresh interval (seconds). Home Assistant changes each
+# camera's access token, and so its picture URL, every 5 minutes;
+# the device page reloads the picture only then. Each camera has a
+# number entity to change that.
+THUMBNAIL_REFRESH_DEFAULT = 300
+THUMBNAIL_REFRESH_MIN = 5
+THUMBNAIL_REFRESH_MAX = 600
+THUMBNAIL_REFRESH_STEP = 5
 # A live view whose viewer has not read a frame for this long is ended.
 LIVE_WRITE_TIMEOUT = 10.0
 
@@ -1419,6 +1429,82 @@ class WSV2SyncTime(_WSV2Button):
 # --- Cameras ------------------------------------------------------------
 
 
+class _ThumbnailRegistry:
+    """Links each camera with its thumbnail refresh number entity."""
+
+    def __init__(self) -> None:
+        self.seconds: dict[str, float] = {}
+        self.cameras: dict[str, Any] = {}
+
+
+def _thumbnail_registry(coordinator: XtoolCoordinator) -> _ThumbnailRegistry:
+    registry = getattr(coordinator, "_camera_thumbnails", None)
+    if registry is None:
+        registry = _ThumbnailRegistry()
+        coordinator._camera_thumbnails = registry
+    return registry
+
+
+class _WSV2CameraThumbnailRefresh(XtoolEntity, RestoreNumber):
+    """How often a camera's thumbnail refreshes on the device page.
+
+    Every refresh is a new camera state (a new access token in the
+    picture URL), which every open Home Assistant screen receives,
+    and one photo from the laser for each screen showing the picture.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_device_class = NumberDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_native_min_value = THUMBNAIL_REFRESH_MIN
+    _attr_native_max_value = THUMBNAIL_REFRESH_MAX
+    _attr_native_step = THUMBNAIL_REFRESH_STEP
+    _attr_icon = "mdi:image-refresh"
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, camera_key: str, camera_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        key = f"{camera_key}_thumbnail_refresh"
+        self._set_unique_id(key)
+        self._attr_translation_key = key
+        self._camera_name = camera_name
+        self._attr_native_value = THUMBNAIL_REFRESH_DEFAULT
+
+    @property
+    def available(self) -> bool:
+        # A setting of Home Assistant itself; it does not need the laser.
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._apply(last.native_value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._apply(value)
+        self.async_write_ha_state()
+
+    def _apply(self, value: float) -> None:
+        value = min(max(float(value), THUMBNAIL_REFRESH_MIN), THUMBNAIL_REFRESH_MAX)
+        self._attr_native_value = value
+        thumbnails = _thumbnail_registry(self.coordinator)
+        thumbnails.seconds[self._camera_name] = value
+        camera = thumbnails.cameras.get(self._camera_name)
+        if camera is not None:
+            camera.set_thumbnail_refresh(value)
+
+
+def _camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
+    """``(entity key, camera name)`` for each camera of the model."""
+    if not coordinator.model.has_camera:
+        return []
+    names = coordinator.model.camera_names
+    is_single = len(names) == 1
+    return [(f"camera{'' if is_single else '_' + name}", name) for name in names]
+
+
 class _WSV2Camera(XtoolEntity, Camera):
     """V2 camera: one entity per lens, built from still photos.
 
@@ -1454,10 +1540,62 @@ class _WSV2Camera(XtoolEntity, Camera):
         self._last_snapshot: bytes | None = None
         self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
         self._live_viewers = 0
+        self._thumbnail_seconds: float = THUMBNAIL_REFRESH_DEFAULT
+        self._cancel_thumbnail_timer: Any = None
 
     @property
     def is_streaming(self) -> bool:
         return self._live_viewers > 0
+
+    @callback
+    def async_update_token(self) -> None:
+        """Change the access token only on this camera's own schedule.
+
+        Home Assistant calls this every 5 minutes; the thumbnail
+        refresh interval decides instead. Without a change, HA's
+        following state write sends nothing.
+        """
+        if self.access_tokens and not getattr(self, "_rotating", False):
+            return
+        super().async_update_token()
+
+    @callback
+    def _refresh_thumbnail(self, _now: Any = None) -> None:
+        self._rotating = True
+        try:
+            self.async_update_token()
+        finally:
+            self._rotating = False
+        self.async_write_ha_state()
+
+    @callback
+    def set_thumbnail_refresh(self, seconds: float) -> None:
+        """Start (or restart) the thumbnail refresh timer."""
+        if self._cancel_thumbnail_timer is not None:
+            self._cancel_thumbnail_timer()
+            self._cancel_thumbnail_timer = None
+        self._thumbnail_seconds = seconds
+        if self.hass is None:
+            return
+        self._cancel_thumbnail_timer = async_track_time_interval(
+            self.hass, self._refresh_thumbnail, timedelta(seconds=seconds),
+            name=f"xTool {self._camera_name} thumbnail refresh",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        thumbnails = _thumbnail_registry(self.coordinator)
+        thumbnails.cameras[self._camera_name] = self
+        self.set_thumbnail_refresh(
+            thumbnails.seconds.get(self._camera_name, THUMBNAIL_REFRESH_DEFAULT)
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._cancel_thumbnail_timer is not None:
+            self._cancel_thumbnail_timer()
+            self._cancel_thumbnail_timer = None
+        _thumbnail_registry(self.coordinator).cameras.pop(self._camera_name, None)
+        await super().async_will_remove_from_hass()
 
     async def _image(self, max_age: timedelta) -> bytes | None:
         """Return a photo no older than ``max_age``, taking one if needed.
@@ -2008,6 +2146,10 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
             ])
     if model.has_display_screen:
         entities.append(WSV2DisplayBrightness(coordinator))
+    entities.extend(
+        _WSV2CameraThumbnailRefresh(coordinator, key, name)
+        for key, name in _camera_keys(coordinator)
+    )
     return entities
 
 

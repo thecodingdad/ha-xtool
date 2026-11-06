@@ -556,6 +556,30 @@
       }
     },
     "number": {
+      "camera_thumbnail_refresh": {
+        "name": "Kamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_main_thumbnail_refresh": {
+        "name": "Hauptkamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_deep_thumbnail_refresh": {
+        "name": "Tiefenkamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_overview_thumbnail_refresh": {
+        "name": "Übersichtskamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_closeup_thumbnail_refresh": {
+        "name": "Nahaufnahme-Kamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_far_thumbnail_refresh": {
+        "name": "Übersichtskamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_near_thumbnail_refresh": {
+        "name": "Nahkamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "camera_side_thumbnail_refresh": {
+        "name": "Seitenkamera Vorschaubild-Aktualisierungsintervall"
+      },
       "accessory_ductfan_manual_gear": {
         "name": "Manuelle Stufe"
       },
