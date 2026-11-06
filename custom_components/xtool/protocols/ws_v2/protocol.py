@@ -1038,8 +1038,16 @@ class WSV2Protocol(XtoolProtocol):
         lock = getattr(self, "_camera_lock", None)
         if lock is None:
             lock = self._camera_lock = asyncio.Lock()
+        queued = time.monotonic()
         async with lock:
-            return await self._camera_snap(camera_name)
+            started = time.monotonic()
+            image = await self._camera_snap(camera_name)
+        _LOGGER.debug(
+            "V2 camera_snap %s: %s bytes, waited %.2f s, took %.2f s",
+            camera_name, len(image) if image else 0,
+            started - queued, time.monotonic() - started,
+        )
+        return image
 
     async def _camera_snap(self, camera_name: str) -> bytes | None:
         try:
