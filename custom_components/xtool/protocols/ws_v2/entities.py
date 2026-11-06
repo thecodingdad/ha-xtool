@@ -1637,7 +1637,6 @@ class _WSV2CameraPerspectiveSwitch(_CameraDeviceEntity, SwitchEntity, RestoreEnt
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_translation_key = "perspective_correction"
-    _attr_icon = "mdi:perspective-less"
 
     def __init__(
         self, coordinator: XtoolCoordinator, camera_key: str, camera_name: str,

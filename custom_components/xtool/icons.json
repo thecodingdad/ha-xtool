@@ -73,6 +73,10 @@
       }
     },
     "switch": {
+      "perspective_correction": {
+        "default": "mdi:perspective-less",
+        "state": { "off": "mdi:perspective-more" }
+      },
       "accessory_ductfan_buzzer": {
         "default": "mdi:bell-ring",
         "state": { "off": "mdi:bell-off" }
