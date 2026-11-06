@@ -831,8 +831,16 @@ def build_accessory_entities(
         return []
     out: list[Any] = []
     fields = accessory.fields
-    has_update_entity = bool(definition.firmware_content_id)
+    # DT001 AP2 transport and status are hardware-verified; accessory
+    # controls and firmware writes still need separate validation.
+    status_only_ap2 = (
+        coordinator.model.model_id == "DT001"
+        and accessory.type_id == "LargePurifier"
+    )
+    has_update_entity = bool(definition.firmware_content_id) and not status_only_ap2
     for spec in definition.entities:
+        if status_only_ap2 and spec.platform not in ("sensor", "binary_sensor"):
+            continue
         cls = _PLATFORM_TO_CLASS.get(spec.platform)
         if cls is None:
             continue

@@ -488,7 +488,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             translation_key="clean_water",
             icon="mdi:water",
             device_class=SensorDeviceClass.ENUM,
-            options=_INKJET_STATUS_OPTIONS,
+            options=["normal", "empty"],
             value_fn=lambda state, _: state.clean_water,
         ),
         "has_inkjet_sensors",
@@ -499,8 +499,110 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             translation_key="waste_water",
             icon="mdi:water",
             device_class=SensorDeviceClass.ENUM,
-            options=_INKJET_STATUS_OPTIONS,
+            options=["normal", "full", "detach"],
             value_fn=lambda state, _: state.waste_water,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="heater_temperature",
+            translation_key="heater_temperature",
+            device_class=SensorDeviceClass.TEMPERATURE,
+            native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+            state_class=SensorStateClass.MEASUREMENT,
+            value_fn=lambda state, _: state.heater_temperature,
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="knife_cut_count",
+            translation_key="knife_cut_count",
+            icon="mdi:content-cut",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.printer_maintenance.get("numKnifeCut"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="print_head_collision_count",
+            translation_key="print_head_collision_count",
+            icon="mdi:alert-octagon-outline",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            value_fn=lambda state, _: state.printer_maintenance.get("bumpExceptions"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="standard_clean_count",
+            translation_key="standard_clean_count",
+            icon="mdi:spray",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.printer_maintenance.get("cleanNozzleStandard"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="deep_clean_count",
+            translation_key="deep_clean_count",
+            icon="mdi:spray",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.printer_maintenance.get("cleanNozzleDeep"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="wiping_maintenance_elapsed",
+            translation_key="wiping_maintenance_elapsed",
+            icon="mdi:timer-outline",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            suggested_unit_of_measurement=UnitOfTime.HOURS,
+            suggested_display_precision=2,
+            value_fn=lambda state, _: state.printer_maintenance.get("worktimeFromLastCleanMatain"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="fitting_replacement_elapsed",
+            translation_key="fitting_replacement_elapsed",
+            icon="mdi:timer-outline",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            device_class=SensorDeviceClass.DURATION,
+            native_unit_of_measurement=UnitOfTime.SECONDS,
+            suggested_unit_of_measurement=UnitOfTime.DAYS,
+            suggested_display_precision=2,
+            value_fn=lambda state, _: state.printer_maintenance.get("worktimeFromLastFittingChange"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="wiping_reminder_interval",
+            translation_key="wiping_reminder_interval",
+            icon="mdi:calendar-clock",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            native_unit_of_measurement=UnitOfTime.DAYS,
+            value_fn=lambda state, _: state.printer_maintenance.get("cleanRemindDay"),
+        ),
+        "has_inkjet_sensors",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="fitting_reminder_interval",
+            translation_key="fitting_reminder_interval",
+            icon="mdi:calendar-clock",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            native_unit_of_measurement=UnitOfTime.DAYS,
+            value_fn=lambda state, _: state.printer_maintenance.get("fittingRemindDay"),
         ),
         "has_inkjet_sensors",
     ),
@@ -1565,6 +1667,7 @@ WSV2_ERROR_EVENT_TYPES: tuple[str, ...] = (
     "temperature",
     "gyro",
     "laser_head_fault",
+    "print_head_collision",
     "z_axis_fault",
     "u_axis_fault",
     "conveyor_fault",
@@ -1682,14 +1785,41 @@ def build_wsv2_binary_sensors(
     if model.has_inkjet_sensors:
         entities.extend([
             _bool_sensor_factory(
+                "top_cover_open", "top_cover_open", BinarySensorDeviceClass.OPENING,
+            )(coordinator),
+            _bool_sensor_factory(
+                "left_panel_open", "left_panel_open", BinarySensorDeviceClass.OPENING,
+            )(coordinator),
+            _bool_sensor_factory(
+                "right_panel_open", "right_panel_open", BinarySensorDeviceClass.OPENING,
+            )(coordinator),
+            _bool_sensor_factory(
+                "waste_tank_full", "waste_tank_full", BinarySensorDeviceClass.PROBLEM,
+            )(coordinator),
+            _bool_sensor_factory(
+                "wiping_maintenance_due", "wiping_maintenance_due", BinarySensorDeviceClass.PROBLEM,
+            )(coordinator),
+            _bool_sensor_factory(
+                "fitting_replacement_due", "fitting_replacement_due", BinarySensorDeviceClass.PROBLEM,
+            )(coordinator),
+            _bool_sensor_factory(
                 "film_buffer_ready", "film_buffer_ready",
+                entity_category=EntityCategory.DIAGNOSTIC,
             )(coordinator),
             _bool_sensor_factory(
                 "film_position_ready", "film_position_ready",
+                entity_category=EntityCategory.DIAGNOSTIC,
             )(coordinator),
             _bool_sensor_factory(
                 "powder_loop_running", "powder_loop_running",
                 BinarySensorDeviceClass.RUNNING,
+            )(coordinator),
+            _bool_sensor_factory(
+                "oven_processing", "oven_processing", BinarySensorDeviceClass.RUNNING,
+            )(coordinator),
+            _bool_sensor_factory(
+                "oven_feed_active", "oven_feed_active", BinarySensorDeviceClass.RUNNING,
+                EntityCategory.DIAGNOSTIC,
             )(coordinator),
             _bool_sensor_factory(
                 "heater_connected", "heater_connected",

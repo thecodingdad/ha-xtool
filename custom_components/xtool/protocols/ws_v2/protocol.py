@@ -502,9 +502,13 @@ class WSV2Protocol(XtoolProtocol):
         "water_pump_running", "water_line_ok", "water_temperature",
         "water_flow", "cpu_temp", "ambient_temp", "ambient_humidity",
         "heating_status", "film_buffer_ready", "film_position_ready",
-        "powder_loop_running", "ink_cyan", "ink_black", "ink_magenta",
+        "powder_loop_running", "oven_processing", "oven_feed_active",
+        "ink_cyan", "ink_black", "ink_magenta",
         "ink_white", "ink_yellow", "clean_water", "waste_water",
-        "heater_connected", "drawer_open", "cpu_fan_running",
+        "heater_connected", "heater_temperature", "waste_tank_full",
+        "top_cover_open", "left_panel_open", "right_panel_open",
+        "wiping_maintenance_due", "fitting_replacement_due", "printer_maintenance",
+        "drawer_open", "cpu_fan_running",
         "gyro_x", "gyro_y", "gyro_z",
         "position_x", "position_y", "position_z",
         "last_distance_mm", "display_brightness",
@@ -534,6 +538,7 @@ class WSV2Protocol(XtoolProtocol):
     PATH_STATISTICS = "/v1/device/statistics"
     PATH_PROGRESS = "/v1/processing/progress"
     PATH_ALARMS = "/v1/device/alarms"
+    PARTS_LINK = "uart485"
     PATH_PROCESSING_STATE = "/v1/processing/state"
     PATH_CAMERA_SNAP = "/v1/camera/snap"
     PATH_UPGRADE_MODE = "/v1/device/upgrade-mode"
@@ -975,7 +980,8 @@ class WSV2Protocol(XtoolProtocol):
     ) -> str | None:
         """Tunnel an M-code to a BT accessory through ``/v1/parts/control``.
 
-        Body shape: ``{link:"uart485", data_b64:<F0F7-encoded>}``.
+        Body shape: ``{link:<PARTS_LINK>, data_b64:<F0F7-encoded>}``.
+        The default link is ``uart485``; DT001 overrides it with ``linkMotion``.
         Response carries the F0F7-framed reply under the same
         ``data_b64`` field. Returns the inner payload (stripped of
         the leading M-code token) or ``None`` on failure.
@@ -991,7 +997,7 @@ class WSV2Protocol(XtoolProtocol):
             result = await self.request(
                 "/v1/parts/control",
                 "POST",
-                data={"link": "uart485", "data_b64": encoded},
+                data={"link": self.PARTS_LINK, "data_b64": encoded},
                 timeout=timeout,
             )
         except Exception as err:
@@ -2044,54 +2050,7 @@ class WSV2Protocol(XtoolProtocol):
                 stats = None
             _LOGGER.debug("V2 %s raw: %s", self.PATH_STATISTICS, stats)
             if isinstance(stats, dict):
-                # Modern firmware (HJ003 / GS003 / F1U …) returns these
-                # exact field names per the Studio bundle's
-                # ``deviceInfo``/``getWorkingTime`` transformResult.
-                # `timeSystemWork` carries the device's total powered-on
-                # time; subtracting `timeModeWorking` gives standby.
-                v = stats.get("timeModeWorking")
-                if isinstance(v, (int, float)):
-                    try:
-                        self._latest["working_seconds"] = int(v)
-                    except (TypeError, ValueError):
-                        pass
-                tsw = stats.get("timeSystemWork")
-                tmw = stats.get("timeModeWorking")
-                if (
-                    isinstance(tsw, (int, float))
-                    and isinstance(tmw, (int, float))
-                ):
-                    try:
-                        self._latest["standby_seconds"] = max(0, int(tsw) - int(tmw))
-                    except (TypeError, ValueError):
-                        pass
-                online = stats.get("numOnlineWorking")
-                offline = stats.get("numOfflineWorking")
-                if (
-                    isinstance(online, (int, float))
-                    or isinstance(offline, (int, float))
-                ):
-                    try:
-                        self._latest["session_count"] = (
-                            int(online or 0) + int(offline or 0)
-                        )
-                    except (TypeError, ValueError):
-                        pass
-                # Legacy field names — kept as fallback for older
-                # firmware revisions whose bundles pre-date the rename.
-                for src, dst in (
-                    ("workingTime",     "working_seconds"),
-                    ("sessionCount",    "session_count"),
-                    ("standbyTime",     "standby_seconds"),
-                    ("toolRuntime",     "tool_runtime_seconds"),
-                    ("totalWorkTime",   "working_seconds"),
-                    ("totalStandbyTime", "standby_seconds"),
-                    ("toolUseTime",     "tool_runtime_seconds"),
-                    ("workCount",       "session_count"),
-                ):
-                    v = stats.get(src)
-                    if isinstance(v, (int, float)):
-                        self._latest[dst] = int(v)
+                self._apply_statistics(stats)
 
         # 5. Progress — only when a job is running.
         if state.status in (XtoolStatus.PROCESSING,
@@ -2153,6 +2112,57 @@ class WSV2Protocol(XtoolProtocol):
             state.water_temperature, state.water_flow,
             state.alarm_present,
         )
+
+    def _apply_statistics(self, stats: dict[str, Any]) -> None:
+        """Cache statistics; model dialects can add their own counters."""
+        # Modern firmware (HJ003 / GS003 / F1U …) returns these
+        # exact field names per the Studio bundle's
+        # ``deviceInfo``/``getWorkingTime`` transformResult.
+        # `timeSystemWork` carries the device's total powered-on
+        # time; subtracting `timeModeWorking` gives standby.
+        v = stats.get("timeModeWorking")
+        if isinstance(v, (int, float)):
+            try:
+                self._latest["working_seconds"] = int(v)
+            except (TypeError, ValueError):
+                pass
+        tsw = stats.get("timeSystemWork")
+        tmw = stats.get("timeModeWorking")
+        if (
+            isinstance(tsw, (int, float))
+            and isinstance(tmw, (int, float))
+        ):
+            try:
+                self._latest["standby_seconds"] = max(0, int(tsw) - int(tmw))
+            except (TypeError, ValueError):
+                pass
+        online = stats.get("numOnlineWorking")
+        offline = stats.get("numOfflineWorking")
+        if (
+            isinstance(online, (int, float))
+            or isinstance(offline, (int, float))
+        ):
+            try:
+                self._latest["session_count"] = (
+                    int(online or 0) + int(offline or 0)
+                )
+            except (TypeError, ValueError):
+                pass
+        # Legacy field names — kept as fallback for older
+        # firmware revisions whose bundles pre-date the rename.
+        for src, dst in (
+            ("workingTime",     "working_seconds"),
+            ("sessionCount",    "session_count"),
+            ("standbyTime",     "standby_seconds"),
+            ("toolRuntime",     "tool_runtime_seconds"),
+            ("totalWorkTime",   "working_seconds"),
+            ("totalStandbyTime", "standby_seconds"),
+            ("toolUseTime",     "tool_runtime_seconds"),
+            ("workCount",       "session_count"),
+        ):
+            v = stats.get(src)
+            if isinstance(v, (int, float)):
+                self._latest[dst] = int(v)
 
     def _apply_peripheral_param(
         self,
