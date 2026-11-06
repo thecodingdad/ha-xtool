@@ -218,8 +218,6 @@
       "accessory_ductfanv3_fan": { "name": "Fan" }
     },
     "switch": {
-      "perspective_correction": { "name": "Perspective correction" },
-      "camera_deep_perspective_correction": { "name": "Deep camera perspective correction" },
       "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },
       "move_stop": { "name": "Move stop" },
@@ -260,6 +258,14 @@
       "purifier_timeout": { "name": "Purifier auto-off" }
     },
     "select": {
+      "perspective": {
+        "name": "Perspective",
+        "state": {
+          "uncorrected": "Uncorrected",
+          "rotated": "Rotated",
+          "straightened": "Straightened"
+        }
+      },
       "flame_alarm_sensitivity": {
         "name": "Flame alarm sensitivity",
         "state": {
