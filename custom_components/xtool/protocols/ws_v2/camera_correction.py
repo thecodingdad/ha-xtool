@@ -20,6 +20,7 @@ import io
 import json
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 # Width of a turned (uncalibrated) photo served to Home Assistant.
@@ -101,50 +102,142 @@ class CameraView:
     center_y_mm: float = 0.0
 
 
-def _photo_extent(
-    first: float, second: float, last: float, before_last: float, size: int,
-) -> float:
-    """Grid cells that fit between the grid and both photo edges.
+class _SurfaceMap:
+    """Where a point of the work surface (mm) is in the raw photo (pixels).
 
-    ``first``/``second`` are the first two grid points along a line
-    through the photo, ``last``/``before_last`` the last two, in
-    pixels; ``size`` is the photo's size that way.
+    Inside the calibrated area each grid cell is mapped bilinearly, as
+    the calibration says. Outside it, the map continues from the nearest
+    edge point along a smooth (cubic) fit of the whole grid, so straight
+    lines stay smooth beyond the grid instead of following the small
+    differences between the outer cells.
     """
-    increasing = last >= first
-    start_gap = first if increasing else size - first
-    end_gap = size - last if increasing else last
-    start_cell = abs(second - first) or 1.0
-    end_cell = abs(last - before_last) or 1.0
-    return max(start_gap, 0.0) / start_cell + max(end_gap, 0.0) / end_cell
+
+    def __init__(self, calibration: CameraCalibration) -> None:
+        self.cal = calibration
+        self.cells_x = calibration.grid_w - 1
+        self.cells_y = calibration.grid_h - 1
+        self.cell_mm_x = CALIBRATED_AREA_MM / self.cells_x
+        self.cell_mm_y = (
+            CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / self.cells_y
+        )
+        self.width_mm = CALIBRATED_AREA_MM
+        self.height_mm = self.cell_mm_y * self.cells_y
+        samples = [
+            (col * self.cell_mm_x, row * self.cell_mm_y, calibration.point(row, col))
+            for row in range(calibration.grid_h)
+            for col in range(calibration.grid_w)
+        ]
+        rows = [self._terms(u, v) for u, v, _ in samples]
+        self._fit_x = _least_squares(rows, [point[0] for _, _, point in samples])
+        self._fit_y = _least_squares(rows, [point[1] for _, _, point in samples])
+
+    def _terms(self, u_mm: float, v_mm: float) -> list[float]:
+        s = (u_mm - self.width_mm / 2) / (self.width_mm / 2)
+        t = (v_mm - self.height_mm / 2) / (self.height_mm / 2)
+        if self.cal.grid_w < 4 or self.cal.grid_h < 4:
+            return [1.0, s, t, s * t]
+        return [1.0, s, t, s * s, s * t, t * t, s ** 3, s * s * t, s * t * t, t ** 3]
+
+    def _fitted(self, u_mm: float, v_mm: float) -> tuple[float, float]:
+        terms = self._terms(u_mm, v_mm)
+        return (
+            sum(c * k for c, k in zip(self._fit_x, terms)),
+            sum(c * k for c, k in zip(self._fit_y, terms)),
+        )
+
+    def _grid(self, u_mm: float, v_mm: float) -> tuple[float, float]:
+        u = u_mm / self.cell_mm_x
+        v = v_mm / self.cell_mm_y
+        col = min(max(int(u // 1), 0), self.cells_x - 1)
+        row = min(max(int(v // 1), 0), self.cells_y - 1)
+        a = u - col
+        b = v - row
+        x00, y00 = self.cal.point(row, col)
+        x01, y01 = self.cal.point(row, col + 1)
+        x10, y10 = self.cal.point(row + 1, col)
+        x11, y11 = self.cal.point(row + 1, col + 1)
+        x = (1 - a) * (1 - b) * x00 + a * (1 - b) * x01 + (1 - a) * b * x10 + a * b * x11
+        y = (1 - a) * (1 - b) * y00 + a * (1 - b) * y01 + (1 - a) * b * y10 + a * b * y11
+        return x, y
+
+    def photo_point(self, u_mm: float, v_mm: float) -> tuple[float, float]:
+        """Raw-photo pixel (at the calibration's photo size) of a point."""
+        edge_u = min(max(u_mm, 0.0), self.width_mm)
+        edge_v = min(max(v_mm, 0.0), self.height_mm)
+        x, y = self._grid(edge_u, edge_v)
+        if (edge_u, edge_v) != (u_mm, v_mm):
+            far_x, far_y = self._fitted(u_mm, v_mm)
+            near_x, near_y = self._fitted(edge_u, edge_v)
+            x += far_x - near_x
+            y += far_y - near_y
+        return x, y
+
+    def _in_photo(self, u_mm: float, v_mm: float) -> bool:
+        x, y = self.photo_point(u_mm, v_mm)
+        return 0 <= x <= self.cal.src_w and 0 <= y <= self.cal.src_h
+
+    def _reach(self, fixed: float, start: float, step: float, across: bool) -> float:
+        """How far (whole mm) from ``start`` the photo goes one way."""
+        distance = 0
+        while distance < 1000:
+            nxt = start + (distance + 1) * step
+            point = (nxt, fixed) if across else (fixed, nxt)
+            if not self._in_photo(*point):
+                break
+            distance += 1
+        return float(distance)
+
+    def photo_size_mm(self) -> tuple[float, float]:
+        """The widest area, centred on the calibrated area, that the photo
+        fills: across every grid row, and down every grid column."""
+        cx = self.width_mm / 2
+        cy = self.height_mm / 2
+        half_w = min(
+            min(self._reach(v, cx, -1, True), self._reach(v, cx, 1, True))
+            for v in (row * self.cell_mm_y for row in range(self.cal.grid_h))
+        )
+        half_h = min(
+            min(self._reach(u, cy, -1, False), self._reach(u, cy, 1, False))
+            for u in (col * self.cell_mm_x for col in range(self.cal.grid_w))
+        )
+        return 2 * half_w, 2 * half_h
+
+
+def _least_squares(rows: list[list[float]], values: list[float]) -> list[float]:
+    """Coefficients that best fit ``rows`` x coefficients = ``values``."""
+    n = len(rows[0])
+    matrix = [
+        [sum(r[i] * r[j] for r in rows) for j in range(n)]
+        + [sum(r[i] * v for r, v in zip(rows, values))]
+        for i in range(n)
+    ]
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(matrix[r][col]))
+        matrix[col], matrix[pivot] = matrix[pivot], matrix[col]
+        if abs(matrix[col][col]) < 1e-12:
+            continue
+        for r in range(n):
+            if r != col:
+                factor = matrix[r][col] / matrix[col][col]
+                matrix[r] = [a - factor * b for a, b in zip(matrix[r], matrix[col])]
+    return [
+        matrix[i][n] / matrix[i][i] if abs(matrix[i][i]) >= 1e-12 else 0.0
+        for i in range(n)
+    ]
+
+
+@lru_cache(maxsize=4)
+def _surface_map(calibration: CameraCalibration) -> _SurfaceMap:
+    return _SurfaceMap(calibration)
 
 
 def photo_size_mm(calibration: CameraCalibration) -> tuple[float, float]:
-    """The whole photo's width and height on the work surface, in mm.
+    """The widest area the photo fills, in whole mm (a crop side of 0).
 
-    Measured through the middle of the grid: the calibrated area plus
-    the photo beyond it, at the size of the outer grid cells (as
-    ``correct_image`` extends them). Rounded to whole millimetres.
+    Centred on the calibrated area, so no part of it is outside the
+    photo across the calibrated rows (width) and columns (height).
     """
-    cells_x = calibration.grid_w - 1
-    cells_y = calibration.grid_h - 1
-    cell_mm_x = CALIBRATED_AREA_MM / cells_x
-    cell_mm_y = CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / cells_y
-    row = calibration.grid_h // 2
-    col = calibration.grid_w // 2
-    across = _photo_extent(
-        calibration.point(row, 0)[0], calibration.point(row, 1)[0],
-        calibration.point(row, cells_x)[0], calibration.point(row, cells_x - 1)[0],
-        calibration.src_w,
-    )
-    down = _photo_extent(
-        calibration.point(0, col)[1], calibration.point(1, col)[1],
-        calibration.point(cells_y, col)[1], calibration.point(cells_y - 1, col)[1],
-        calibration.src_h,
-    )
-    return (
-        float(round((cells_x + across) * cell_mm_x)),
-        float(round((cells_y + down) * cell_mm_y)),
-    )
+    return _surface_map(calibration).photo_size_mm()
 
 
 def correct_image(
@@ -191,20 +284,11 @@ def correct_image(
     left_mm = CALIBRATED_AREA_MM / 2 + view.center_x_mm - view.width_mm / 2
     top_mm = area_h_mm / 2 + view.center_y_mm - view.height_mm / 2
 
+    surface = _surface_map(calibration)
+
     def src(x_mm: float, y_mm: float) -> tuple[float, float]:
-        """Photo pixel of a work-surface point (bilinear in its cell)."""
-        u = x_mm / cell_mm_x
-        v = y_mm / cell_mm_y
-        col = min(max(int(u // 1), 0), cells_x - 1)
-        row = min(max(int(v // 1), 0), cells_y - 1)
-        a = u - col
-        b = v - row
-        x00, y00 = calibration.point(row, col)
-        x01, y01 = calibration.point(row, col + 1)
-        x10, y10 = calibration.point(row + 1, col)
-        x11, y11 = calibration.point(row + 1, col + 1)
-        x = (1 - a) * (1 - b) * x00 + a * (1 - b) * x01 + (1 - a) * b * x10 + a * b * x11
-        y = (1 - a) * (1 - b) * y00 + a * (1 - b) * y01 + (1 - a) * b * y10 + a * b * y11
+        """Photo pixel of a work-surface point."""
+        x, y = surface.photo_point(x_mm, y_mm)
         return x * scale_x, y * scale_y
 
     # Mesh boxes of about one grid cell, aligned with the grid.
