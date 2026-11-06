@@ -1671,8 +1671,11 @@ class _WSV2Camera(XtoolEntity, Camera):
             _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
             image = None
         if image:
+            # Age counts from when the photo was asked for, so a live
+            # view's next frame (one interval later) takes a new photo
+            # instead of reusing this one.
             self._last_snapshot = image
-            self._last_snapshot_time = dt_util.utcnow()
+            self._last_snapshot_time = now
             return image
         if age < MAX_SNAPSHOT_AGE:
             return self._last_snapshot
@@ -1705,7 +1708,9 @@ class _WSV2Camera(XtoolEntity, Camera):
             },
         )
         await response.prepare(request)
-        interval = timedelta(seconds=LIVE_FRAME_INTERVAL)
+        # Reuse a photo only when another viewer asked for it during
+        # this frame's interval.
+        interval = timedelta(seconds=LIVE_FRAME_INTERVAL / 2)
         self._set_live_viewers(1)
         try:
             while True:
