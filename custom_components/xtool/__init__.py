@@ -35,6 +35,7 @@ from .const import (
 # fails (Home Assistant then retries it inside the event loop).
 from .protocols import DEVICE_MODELS, LaserInfo, detect_model  # isort: skip
 from .coordinator import XtoolCoordinator  # isort: skip
+from .services import async_setup_services  # isort: skip
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -59,6 +60,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the xTool integration."""
+    async_setup_services(hass)
     return True
 
 
