@@ -1526,7 +1526,7 @@ class WSV2Protocol(XtoolProtocol):
                     self._latest["device_name"] = info["deviceName"]
                 if info.get("sn"):
                     self._latest["serial_number"] = info["sn"]
-                if info.get("mac"):
+                if info.get("mac") and not self._wrong_machine_info_mac():
                     self._latest["mac_address"] = info["mac"]
                 fw = info.get("firmware") or {}
                 if isinstance(fw, dict):
@@ -1760,6 +1760,10 @@ class WSV2Protocol(XtoolProtocol):
             return ver or None
         return None
 
+    def _wrong_machine_info_mac(self) -> bool:
+        model = getattr(self, "_model", None)
+        return bool(getattr(model, "has_wrong_machine_info_mac", False))
+
     async def get_device_info(self) -> DeviceInfo:
         info = DeviceInfo()
         try:
@@ -1772,7 +1776,8 @@ class WSV2Protocol(XtoolProtocol):
                 data.get("deviceName") or data.get("machine_name") or ""
             )
             info.serial_number = data.get("sn") or data.get("snCode") or ""
-            info.mac_address = data.get("mac", "")
+            if not self._wrong_machine_info_mac():
+                info.mac_address = data.get("mac", "")
             firmware = data.get("firmware") or {}
             if isinstance(firmware, dict):
                 info.main_firmware = (
