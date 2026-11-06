@@ -67,6 +67,16 @@
   },
   "entity": {
     "sensor": {
+      "engraving_lens": {
+        "name": "Engraving lens",
+        "state": {
+          "big": "Surface engraving lens",
+          "small": "Inner engraving lens",
+          "none": "No engraving lens detected"
+        }
+      },
+      "wifi_signal": { "name": "Wi-Fi signal" },
+      "calibration": { "name": "Calibration" },
       "status": {
         "name": "Status",
         "state": {
