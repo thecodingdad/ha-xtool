@@ -101,7 +101,7 @@ def parse_purifier_info(text: str) -> dict[str, object]:
     order: pre / medium / carbon / dense_carbon / hepa.
     """
     parts = text.split(" ", 3)
-    return {
+    result = {
         "version": " ".join(parts[:2]) if len(parts) >= 2 else None,
         "gear": parts[2] if len(parts) >= 3 else None,
         "filter_pre": num(text, "H"),
@@ -111,6 +111,12 @@ def parse_purifier_info(text: str) -> dict[str, object]:
         "filter_hepa": num(text, "L"),
         "sn": quoted(text, "E:"),
     }
+    gear = result["gear"]
+    if isinstance(gear, str) and gear.startswith("C"):
+        result["mode"] = "auto"
+    elif isinstance(gear, str) and gear.startswith("A"):
+        result["mode"] = "off" if gear == "A0" else "manual"
+    return result
 
 
 PURIFIER_ENTITIES = (
@@ -119,7 +125,9 @@ PURIFIER_ENTITIES = (
     AccessoryEntitySpec("sensor", "sn", field="sn",
                         icon="mdi:identifier", entity_category="diagnostic"),
     AccessoryEntitySpec("sensor", "gear", field="gear",
-                        icon="mdi:fan"),
+                        icon="mdi:fan", entity_category="diagnostic"),
+    AccessoryEntitySpec("sensor", "mode", field="mode",
+                        icon="mdi:fan-auto"),
     AccessoryEntitySpec("binary_sensor", "running", field="running",
                         device_class="running"),
     AccessoryEntitySpec("sensor", "filter_pre", field="filter_pre",

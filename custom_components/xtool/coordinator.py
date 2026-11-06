@@ -70,6 +70,7 @@ _TE_TYPE_ID_BY_NUMERIC: dict[int, str] = {
     0x34: "Purifier",
     0x3D: "AirPump",
     0x40: "AirPumpV2",
+    0x45: "LargePurifier",  # AP2: Studio calls this accessory LargePurifier
     0x46: "DuctFan",
     0x4A: "Dongle",
     0x4B: "UvSensor",
@@ -296,6 +297,10 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         new_state: dict[str, AccessoryState] = {}
         loop_now = asyncio.get_event_loop().time()
         for row in rows:
+            # DT001 retains paired AP2 rows with status 0 when it is powered
+            # off. Do not poll it or create a second, MAC-keyed empty device.
+            if self.model.model_id == "DT001" and row.get("status") == 0:
+                continue
             type_id = _resolve_type_id(row)
             if type_id is None:
                 _LOGGER.debug(
@@ -344,6 +349,13 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
             # UX. Fall back to MAC when the info-mcode poll didn't
             # yield an SN (e.g. older DuctFanV1 without that field).
             product_sn = str(fields.get("sn") or "").strip()
+            if (self.model.model_id == "DT001" and type_id == "LargePurifier"
+                    and not product_sn):
+                # A temporary status-read failure must not change the device
+                # identity from its product serial to its Bluetooth address.
+                # Mark it unavailable this cycle and retry on the next poll.
+                _LOGGER.debug("DT001 AP2 identity unavailable; deferring registration")
+                continue
             sn = product_sn or mac_sn
             key = f"{type_id}:{sn}"
             # Carry forward sticky fields the poll reply can't

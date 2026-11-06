@@ -534,6 +534,7 @@ class WSV2Protocol(XtoolProtocol):
     PATH_STATISTICS = "/v1/device/statistics"
     PATH_PROGRESS = "/v1/processing/progress"
     PATH_ALARMS = "/v1/device/alarms"
+    PARTS_LINK = "uart485"
     PATH_PROCESSING_STATE = "/v1/processing/state"
     PATH_CAMERA_SNAP = "/v1/camera/snap"
     PATH_UPGRADE_MODE = "/v1/device/upgrade-mode"
@@ -975,7 +976,8 @@ class WSV2Protocol(XtoolProtocol):
     ) -> str | None:
         """Tunnel an M-code to a BT accessory through ``/v1/parts/control``.
 
-        Body shape: ``{link:"uart485", data_b64:<F0F7-encoded>}``.
+        Body shape: ``{link:<PARTS_LINK>, data_b64:<F0F7-encoded>}``.
+        The default link is ``uart485``; DT001 overrides it with ``linkMotion``.
         Response carries the F0F7-framed reply under the same
         ``data_b64`` field. Returns the inner payload (stripped of
         the leading M-code token) or ``None`` on failure.
@@ -991,7 +993,7 @@ class WSV2Protocol(XtoolProtocol):
             result = await self.request(
                 "/v1/parts/control",
                 "POST",
-                data={"link": "uart485", "data_b64": encoded},
+                data={"link": self.PARTS_LINK, "data_b64": encoded},
                 timeout=timeout,
             )
         except Exception as err:
