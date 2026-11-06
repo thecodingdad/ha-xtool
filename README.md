@@ -252,7 +252,7 @@ data:
 |---|---|
 | Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are turned upright (the camera is mounted upside down and about 28.5 degrees off) and cropped so no corners are empty. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are turned upright and their perspective is corrected (the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle), so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |

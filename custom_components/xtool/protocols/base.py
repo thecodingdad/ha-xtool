@@ -164,9 +164,14 @@ class XtoolDeviceModel:
     # (``global_calib.json``); photos are straightened with it, as
     # Studio does (F2 Ultra UV).
     has_camera_calibration: bool = False
-    # Cameras mounted at an angle: ``(camera name, degrees)`` to turn
-    # their photos counter-clockwise so the work surface is upright.
-    camera_rotations: tuple[tuple[str, float], ...] = ()
+    # Cameras that look at the bed at an angle: ``(camera name,
+    # perspective coefficients, photo size, result size)``. The eight
+    # Pillow perspective coefficients map the result to the photo and
+    # were measured on a cutting mat so its grid is straight, square
+    # and upright.
+    camera_perspectives: tuple[
+        tuple[str, tuple[float, ...], tuple[int, int], tuple[int, int]], ...
+    ] = ()
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False
