@@ -78,9 +78,9 @@
       "engraving_lens": {
         "name": "Gravurlinse",
         "state": {
-          "big": "Oberflächengravur-Linse",
-          "small": "Innengravur-Linse",
-          "none": "Keine Gravurlinse erkannt"
+          "big": "Oberfläche",
+          "small": "Innen",
+          "none": "Keine"
         }
       },
       "wifi_signal": {

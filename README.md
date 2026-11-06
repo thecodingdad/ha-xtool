@@ -132,7 +132,7 @@ The available options are gated by the device's protocol family — only relevan
 | Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni only.** Active print job and queue length |
 | Active alarms | **O1 Omni only.** Number of active alarms; the `alarms` attribute lists code / level / message (codes match xTool Studio) |
 | UV lamp runtime / Air purifier runtime | **O1 Omni only.** Lifetime counters (diagnostic) |
-| Engraving lens | **F2 Ultra UV**: the fitted lens, with Studio's names: Surface engraving lens, Inner engraving lens, or No engraving lens detected |
+| Engraving lens | **F2 Ultra UV**: the fitted lens: Surface, Inner, or None (Studio's Surface engraving lens, Inner engraving lens, or no lens detected) |
 
 #### Diagnostic Sensors
 

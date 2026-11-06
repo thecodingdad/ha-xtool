@@ -78,9 +78,9 @@
       "engraving_lens": {
         "name": "Engraving lens",
         "state": {
-          "big": "Surface engraving lens",
-          "small": "Inner engraving lens",
-          "none": "No engraving lens detected"
+          "big": "Surface",
+          "small": "Inner",
+          "none": "None"
         }
       },
       "wifi_signal": {

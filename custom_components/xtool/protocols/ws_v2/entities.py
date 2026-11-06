@@ -194,8 +194,8 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     tuple[XtoolSensorEntityDescription, str], ...
 ] = (
     (
-        # Studio's names: Surface engraving lens (big field lens),
-        # Inner engraving lens (small), or none detected.
+        # Studio's lens names, shortened: Surface (big field lens),
+        # Inner (small), or None (no lens detected).
         XtoolSensorEntityDescription(
             key="engraving_lens",
             translation_key="engraving_lens",
