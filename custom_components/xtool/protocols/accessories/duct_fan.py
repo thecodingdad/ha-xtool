@@ -166,7 +166,7 @@ def parse_fan_v3_push(text: str) -> dict[str, object]:
     - ``D`` = ``1`` from job start until the post-run time ends,
       otherwise ``0``. In Auto the fan spins only then.
     - ``S`` = alerts: ``1`` fan stall, ``2`` cleaning reminder,
-      ``3`` both. Kept as ``alert`` for a later event entity.
+      ``3`` both. Kept as ``alert`` for the Alert event entity.
     """
     f = _v3_tokens(text, include_a=True)
     out: dict[str, object] = {}
@@ -226,6 +226,9 @@ _ENTITIES_V3 = (
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
                         entity_category="config"),
+    # Fan stall / cleaning needed, from the M9064 push ``S`` bits
+    # (``field=None``: it builds before the first push carries them).
+    AccessoryEntitySpec("event", "alert", icon="mdi:fan-alert"),
     # Inline-fan post-run timer (read-only). Studio's
     # ``setFanV3RunDuration`` hard-wires ``M9085 T0`` and never
     # exposes a user-facing slider on the IF2 side — the value is

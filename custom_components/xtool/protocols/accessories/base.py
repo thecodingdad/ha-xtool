@@ -102,7 +102,7 @@ class AccessoryEntitySpec:
        accessory.
     """
 
-    platform: str  # "sensor" / "binary_sensor" / "switch" / "select" / "button" / "number"
+    platform: str  # "sensor" / "binary_sensor" / "switch" / "select" / "button" / "number" / "fan" / "event"
     key: str
     field: str | None = None  # AccessoryState.fields["..."] lookup
     icon: str | None = None

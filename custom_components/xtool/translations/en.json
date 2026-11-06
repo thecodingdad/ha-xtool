@@ -835,6 +835,17 @@
       }
     },
     "event": {
+      "accessory_ductfanv3_alert": {
+        "name": "Alert",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fan_stall": "Fan stall",
+              "cleaning_needed": "Cleaning needed"
+            }
+          }
+        }
+      },
       "button": {
         "name": "Button",
         "state_attributes": {
