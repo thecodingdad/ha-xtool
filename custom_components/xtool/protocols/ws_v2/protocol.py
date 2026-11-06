@@ -606,6 +606,8 @@ class WSV2Protocol(XtoolProtocol):
         # Raw work mode (``P_IDLE``, ``P_AUTOFOCUS`` …) from the last
         # poll or push.
         self._device_mode = ""
+        # True once the focus height was read on this connection.
+        self._focus_known = False
         # Per-connection cache of peripheral types the firmware refused
         # (`code -3`, `code -2`, `code 10`, `code 1`). Avoids re-hammering
         # endpoints the model doesn't expose. Cleared on every fresh
@@ -725,6 +727,8 @@ class WSV2Protocol(XtoolProtocol):
         # The config read body that works is found again for each connection
         self._config_read_body = None
         self._config_read_known = False
+        # Read the focus height again on the next poll.
+        self._focus_known = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -1012,6 +1016,7 @@ class WSV2Protocol(XtoolProtocol):
         z = r.get("value") if isinstance(r, dict) else None
         if isinstance(z, (int, float)) and not isinstance(z, bool):
             self._latest["focus_thickness"] = focus_thickness_from_z(float(z))
+            self._focus_known = True
 
     def focus_refusal(self) -> str | None:
         """Why Studio would refuse a focus move now, or None."""
@@ -2103,8 +2108,13 @@ class WSV2Protocol(XtoolProtocol):
         # firmware uses ``/v1/config/get`` with a kv-list body.
         if self._poll_counter % 6 == 0:
             await self._poll_configs()
-            if model is not None and getattr(model, "has_focus_control", False):
-                await self._poll_focus()
+        # The focus height is read on the same slow cadence, and also on
+        # every poll until it is known (after each connect), so it shows
+        # soon after the laser powers on.
+        if model is not None and getattr(model, "has_focus_control", False) and (
+            self._poll_counter % 6 == 0 or not self._focus_known
+        ):
+            await self._poll_focus()
 
         # 4. Statistics — lifetime counters, slow cadence. Skip on every
         # poll once cached as unsupported (GS006, P2S, DT001 don't
