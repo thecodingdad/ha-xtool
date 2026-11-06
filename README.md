@@ -206,6 +206,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | IR-light auto-off | IR illumination auto-off (0-3600 s) |
 | Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
 | Camera exposure (overview / close-up) | Camera exposure values (0-255) |
+| Camera thumbnail refresh interval | WS-V2 cameras, one per camera. How often the camera's picture on the device page refreshes, 5 s to 10 min (Home Assistant's standard is 5 min). Each refresh is a new camera state sent to every open Home Assistant screen, and a photo from the laser for each screen showing it |
 | Main camera view width / height / center X / center Y | **F2 Ultra UV.** The part of the work surface the straightened main camera shows, in mm. Default: the 200 × 200 mm calibrated area. The centre moves from the centre of that area (X right, Y down). Areas outside the calibrated area are extended from its edge and are less accurate. A wider shape (for example 267 × 200 mm) fits camera dialogs without scrolling |
 | Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
 | Display brightness | Built-in touchscreen brightness (0-100 %) |

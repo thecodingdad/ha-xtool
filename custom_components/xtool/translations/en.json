@@ -598,6 +598,30 @@
       }
     },
     "number": {
+      "camera_thumbnail_refresh": {
+        "name": "Camera thumbnail refresh interval"
+      },
+      "camera_main_thumbnail_refresh": {
+        "name": "Main camera thumbnail refresh interval"
+      },
+      "camera_deep_thumbnail_refresh": {
+        "name": "Deep camera thumbnail refresh interval"
+      },
+      "camera_overview_thumbnail_refresh": {
+        "name": "Overview camera thumbnail refresh interval"
+      },
+      "camera_closeup_thumbnail_refresh": {
+        "name": "Close-up camera thumbnail refresh interval"
+      },
+      "camera_far_thumbnail_refresh": {
+        "name": "Global camera thumbnail refresh interval"
+      },
+      "camera_near_thumbnail_refresh": {
+        "name": "Local camera thumbnail refresh interval"
+      },
+      "camera_side_thumbnail_refresh": {
+        "name": "Side camera thumbnail refresh interval"
+      },
       "camera_main_view_width": {
         "name": "Main camera view width"
       },
