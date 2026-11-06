@@ -75,7 +75,7 @@ from .camera_correction import (
     CameraView,
     correct_image,
     parse_calibration,
-    rotate_image,
+    perspective_image,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1543,28 +1543,33 @@ class _WSV2Camera(XtoolEntity, Camera):
         )
         self._calibration: CameraCalibration | None = None
         self._calibration_next_try = 0.0
-        # Turn photos of cameras mounted at an angle (degrees,
-        # counter-clockwise).
-        self._rotation = dict(
-            getattr(coordinator.model, "camera_rotations", ()) or ()
-        ).get(camera_name, 0.0)
+        # Fixed perspective of a camera that looks at the bed at an angle.
+        self._perspective = next(
+            (
+                spec[1:]
+                for spec in getattr(coordinator.model, "camera_perspectives", ()) or ()
+                if spec[0] == camera_name
+            ),
+            None,
+        )
 
     @property
     def is_streaming(self) -> bool:
         return self._live_viewers > 0
 
     async def _corrected(self, image: bytes) -> bytes:
-        """Return the photo straightened or turned, as the model needs."""
+        """Return the photo straightened, as the model needs."""
         if not self._uses_calibration:
-            if not self._rotation or self.hass is None:
+            if self._perspective is None or self.hass is None:
                 return image
             try:
                 return await self.hass.async_add_executor_job(
-                    rotate_image, image, self._rotation,
+                    perspective_image, image, *self._perspective,
                 )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug(
-                    "V2 camera %s: turning failed: %s", self._camera_name, err,
+                    "V2 camera %s: perspective correction failed: %s",
+                    self._camera_name, err,
                 )
                 return image
         if self._calibration is None and time.monotonic() >= self._calibration_next_try:

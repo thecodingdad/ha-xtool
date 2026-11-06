@@ -191,34 +191,31 @@ def correct_image(
     return out.getvalue()
 
 
-def rotate_image(jpeg: bytes, degrees: float, width: int = OUTPUT_WIDTH) -> bytes:
-    """Return the photo turned ``degrees`` counter-clockwise, as JPEG.
+def perspective_image(
+    jpeg: bytes,
+    coefficients: tuple[float, ...],
+    source_size: tuple[int, int],
+    output_size: tuple[int, int],
+) -> bytes:
+    """Return the photo with a fixed perspective correction, as JPEG.
 
-    The result keeps the photo's shape and is cropped to the largest
-    such rectangle inside the turned photo, so it has no empty
-    corners.
+    ``coefficients`` are the eight perspective values Pillow uses: they
+    map a point of the result to a point of a ``source_size`` photo.
+    They were measured once on a cutting mat, so its grid comes out
+    straight, square and upright. A photo of another size is scaled.
     """
-    import math
-
     from PIL import Image  # Home Assistant ships Pillow
 
     image = Image.open(io.BytesIO(jpeg))
     image.draft("RGB", (image.width // 2, image.height // 2))
     image = image.convert("RGB")
-    w, h = image.size
-    turned = image.rotate(degrees, Image.Resampling.BICUBIC, expand=True)
-    c = abs(math.cos(math.radians(degrees)))
-    s = abs(math.sin(math.radians(degrees)))
-    k = min(w / (w * c + h * s), h / (w * s + h * c))
-    cw, ch = w * k, h * k
-    left = (turned.width - cw) / 2
-    top = (turned.height - ch) / 2
-    cropped = turned.crop((round(left), round(top), round(left + cw), round(top + ch)))
-    if cropped.width > width:
-        cropped = cropped.resize(
-            (width, round(cropped.height * width / cropped.width)),
-            Image.Resampling.LANCZOS,
-        )
+    sx = image.width / source_size[0]
+    sy = image.height / source_size[1]
+    a, b, c, d, e, f, g, h = coefficients
+    scaled = (a * sx, b * sx, c * sx, d * sy, e * sy, f * sy, g, h)
+    result = image.transform(
+        output_size, Image.Transform.PERSPECTIVE, scaled, Image.Resampling.BICUBIC,
+    )
     out = io.BytesIO()
-    cropped.save(out, "JPEG", quality=JPEG_QUALITY)
+    result.save(out, "JPEG", quality=JPEG_QUALITY)
     return out.getvalue()
