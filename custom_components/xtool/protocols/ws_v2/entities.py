@@ -1168,9 +1168,9 @@ class WSV2FocusHeight(XtoolEntity, NumberEntity):
     ) -> dict[str, Any]:
         """Move to a thickness, or by ``step`` mm ``steps`` times.
 
-        A move past 0 or 150 mm stops at that limit. Returns the height
-        it moved to and, when it stopped at a limit, a message that says
-        so.
+        Returns the height it moved to. A move past 0 or 150 mm stops at
+        that limit and then raises an error that says so, so Home
+        Assistant shows the message.
         """
         protocol = self.coordinator.protocol
         reason = protocol.focus_refusal()
@@ -1193,21 +1193,22 @@ class WSV2FocusHeight(XtoolEntity, NumberEntity):
             if current is not None:
                 count = "1 step" if steps == 1 else f"{steps} steps"
                 message = (
-                    f"Stopped at {target:.1f} mm, the {limit} limit. "
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
                     f"{count} of {step:+.1f} mm from {current:.1f} mm "
                     f"would have gone to {round_focus(thickness):.1f} mm."
                 )
             else:
                 message = (
-                    f"Stopped at {target:.1f} mm, the {limit} limit. "
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
                     f"{round_focus(thickness):.1f} mm is outside 0-150 mm."
                 )
             _LOGGER.warning("%s: %s", self.entity_id, message)
         await protocol.focus_to(target)
-        result: dict[str, Any] = {"focus_height": target}
         if message is not None:
-            result["message"] = message
-        return result
+            # Reported as an error so Home Assistant shows it; the move
+            # itself was made.
+            raise HomeAssistantError(message)
+        return {"focus_height": target}
 
 
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
@@ -1479,6 +1480,23 @@ class _WSV2Button(XtoolEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self._action()
+
+
+class WSV2Autofocus(_WSV2Button):
+    """Autofocus, as Studio's button and the laser's own button.
+
+    Refused whenever Studio would refuse it (as Focus height moves).
+    """
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "autofocus", "mdi:image-filter-center-focus")
+
+    async def _action(self) -> None:
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Autofocus not started: {reason}")
+        await protocol.autofocus()
 
 
 class WSV2PauseJob(_WSV2Button):
@@ -2251,6 +2269,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
+    if coordinator.model.has_focus_control and not coordinator.model.is_read_only:
+        entities.append(WSV2Autofocus(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the

@@ -1206,6 +1206,22 @@ class WSV2Protocol(XtoolProtocol):
         )
         return target
 
+    async def autofocus(self) -> None:
+        """Start the laser's autofocus, as Studio's Autofocus button does.
+
+        Studio switches the laser to autofocus mode and sends
+        ``auto_start``; the laser measures the material and moves the
+        focus itself (the same as its own button). The new height comes
+        with the Z push. Nothing is stored on the laser.
+        """
+        sleeping = self._latest.get("status") == XtoolStatus.SLEEPING
+        await self.set_mode("P_AUTOFOCUS")
+        if sleeping:
+            await asyncio.sleep(0.3)  # Studio waits as long after a wake
+        await self.request(
+            PATH_FOCUS_CONTROL, "POST", data={"action": "auto_start"}, timeout=10.0,
+        )
+
     async def parts_control(
         self, mcode: str, prefix: bytes, timeout: float = 6.0,
     ) -> str | None:

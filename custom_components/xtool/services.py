@@ -25,8 +25,8 @@ FOCUS_SCHEMA = {
 async def _async_focus(entity, call: ServiceCall) -> ServiceResponse:
     """Move the focus by a signed step (times ``steps``) or to a thickness.
 
-    The response gives the height moved to and, when the move stopped at
-    0 or 150 mm, a message that says so.
+    The response gives the height moved to. A move that stopped at 0 or
+    150 mm is reported as an error that says so (the move was made).
     """
     focus = getattr(entity, "async_focus", None)
     if focus is None:
