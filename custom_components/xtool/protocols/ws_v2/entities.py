@@ -63,10 +63,11 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from ...const import BRIGHTNESS_HA_MAX
+from ...const import BRIGHTNESS_HA_MAX, DOMAIN
 from .protocol import round_focus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
@@ -1541,7 +1542,7 @@ def _thumbnail_registry(coordinator: XtoolCoordinator) -> _ThumbnailRegistry:
     return registry
 
 
-class _WSV2CameraThumbnailRefresh(XtoolEntity, RestoreNumber):
+class _WSV2CameraThumbnailRefresh(_CameraDeviceEntity, RestoreNumber):
     """How often a camera's thumbnail refreshes on the device page.
 
     Every refresh is a new camera state (a new access token in the
@@ -1563,7 +1564,10 @@ class _WSV2CameraThumbnailRefresh(XtoolEntity, RestoreNumber):
         super().__init__(coordinator)
         key = f"{camera_key}_thumbnail_refresh"
         self._set_unique_id(key)
-        self._attr_translation_key = key
+        # On the camera's own device the name needs no camera in it.
+        self._attr_translation_key = (
+            "thumbnail_refresh" if self._use_camera_device(camera_name) else key
+        )
         self._camera_name = camera_name
         self._attr_native_value = THUMBNAIL_REFRESH_DEFAULT
 
@@ -1601,19 +1605,81 @@ def _camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
     return [(f"camera{'' if is_single else '_' + name}", name) for name in names]
 
 
-# The main camera's view settings (millimetres): key, default, min, max.
-CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float], ...] = (
-    ("width", CALIBRATED_AREA_MM, 20, 460),
-    ("height", CALIBRATED_AREA_MM, 20, 460),
-    ("center_x", 0, -200, 200),
-    ("center_y", 0, -200, 200),
+# English names of the cameras; the device page shows the translated
+# ones (``device`` in strings.json).
+CAMERA_LABELS: dict[str, str] = {
+    "main": "Main camera",
+    "deep": "Deep camera",
+    "overview": "Overview camera",
+    "closeup": "Close-up camera",
+    "far": "Global camera",
+    "near": "Local camera",
+    "side": "Side camera",
+}
+
+
+def _camera_has_own_device(coordinator: XtoolCoordinator, camera_name: str) -> bool:
+    """Each camera of a model with several gets its own device.
+
+    A single camera stays on the laser's device page.
+    """
+    names = coordinator.model.camera_names if coordinator.model.has_camera else ()
+    return len(names) > 1 and camera_name in names
+
+
+def _camera_device_info(coordinator: XtoolCoordinator, camera_name: str) -> DeviceInfo:
+    """Device of one camera, connected to the laser.
+
+    Its name is the laser's name and the camera's, so entity IDs stay
+    as they were on the laser (``camera.<laser>_main_camera``).
+    """
+    from ..accessories.entities import _via_device_info
+
+    label = CAMERA_LABELS.get(camera_name, f"{camera_name.capitalize()} camera")
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{coordinator.serial_number}:camera_{camera_name}")},
+        **_via_device_info(coordinator),
+        name=f"{coordinator.device_name} {label}",
+        translation_key=f"camera_{camera_name}",
+        translation_placeholders={"laser": coordinator.device_name},
+        manufacturer="xTool",
+        model=f"{coordinator.model.name} {label}",
+    )
+
+
+class _CameraDeviceEntity(XtoolEntity):
+    """An entity on a camera's own device (when the camera has one)."""
+
+    _device_camera: str | None = None
+
+    def _use_camera_device(self, camera_name: str) -> bool:
+        if _camera_has_own_device(self.coordinator, camera_name):
+            self._device_camera = camera_name
+            return True
+        return False
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        if self._device_camera is None:
+            return super().device_info
+        return _camera_device_info(self.coordinator, self._device_camera)
+
+
+# The main camera's crop (millimetres): key, default, min, max, icon.
+# A width or height of 0 shows the whole photo across or down.
+CROP_MIN_SIDE = 20.0
+CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float, str], ...] = (
+    ("width", CALIBRATED_AREA_MM, 0, 460, "mdi:arrow-expand-horizontal"),
+    ("height", CALIBRATED_AREA_MM, 0, 460, "mdi:arrow-expand-vertical"),
+    ("center_x", 0, -200, 200, "mdi:arrow-left-right"),
+    ("center_y", 0, -200, 200, "mdi:arrow-up-down"),
 )
 
 
 def _camera_view_values(coordinator: XtoolCoordinator) -> dict[str, float]:
     values = getattr(coordinator, "_camera_view", None)
     if values is None:
-        values = {key: default for key, default, _, _ in CAMERA_VIEW_SETTINGS}
+        values = {key: spec[0] for key, *spec in CAMERA_VIEW_SETTINGS}
         coordinator._camera_view = values
     return values
 
@@ -1623,28 +1689,52 @@ def _camera_view(coordinator: XtoolCoordinator) -> CameraView:
     return CameraView(v["width"], v["height"], v["center_x"], v["center_y"])
 
 
-class _WSV2CameraViewNumber(XtoolEntity, RestoreNumber):
+def _clamp_crop(setting: str, value: float) -> float:
+    """A crop value within its limits (a side of 0 means the whole photo)."""
+    _, minimum, maximum, _ = next(
+        spec for key, *spec in CAMERA_VIEW_SETTINGS if key == setting
+    )
+    value = min(max(float(value), minimum), maximum)
+    if setting in ("width", "height") and 0 < value < CROP_MIN_SIDE:
+        value = CROP_MIN_SIDE
+    return value
+
+
+def _crop_numbers(coordinator: XtoolCoordinator) -> dict[str, Any]:
+    """The main camera's crop number entities, by setting."""
+    numbers = getattr(coordinator, "_camera_crop_numbers", None)
+    if numbers is None:
+        numbers = {}
+        coordinator._camera_crop_numbers = numbers
+    return numbers
+
+
+class _WSV2CameraViewNumber(_CameraDeviceEntity, RestoreNumber):
     """Part of the work surface the straightened main camera shows (mm).
 
-    Width and height set the area (and so the picture's shape); the
-    centre moves it from the centre of the calibrated area (X right,
-    Y down). Kept by Home Assistant; the laser is not involved.
+    Width and height set the area (and so the picture's shape); 0 shows
+    the whole photo that way. The centre moves the area from the centre
+    of the calibrated area (X right, Y down). Kept by Home Assistant;
+    the laser is not involved.
     """
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_device_class = NumberDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_native_step = 1
-    _attr_icon = "mdi:crop"
 
     def __init__(
         self, coordinator: XtoolCoordinator, setting: str,
-        default: float, minimum: float, maximum: float,
-    ) -> None:
+        default: float, minimum: float, maximum: float, icon: str,
+    ) -> None:  # one row of CAMERA_VIEW_SETTINGS
         super().__init__(coordinator)
-        key = f"camera_main_view_{setting}"
-        self._set_unique_id(key)
-        self._attr_translation_key = key
+        # The unique ID keeps its first name ("view"), so settings and
+        # history stay.
+        self._set_unique_id(f"camera_main_view_{setting}")
+        own_device = self._use_camera_device("main")
+        self._attr_translation_key = (
+            f"crop_{setting}" if own_device else f"camera_main_crop_{setting}"
+        )
+        self._attr_icon = icon
         self._setting = setting
         self._attr_native_min_value = minimum
         self._attr_native_max_value = maximum
@@ -1656,24 +1746,35 @@ class _WSV2CameraViewNumber(XtoolEntity, RestoreNumber):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        _crop_numbers(self.coordinator)[self._setting] = self
         last = await self.async_get_last_number_data()
         if last is not None and last.native_value is not None:
             self._apply(last.native_value)
 
+    async def async_will_remove_from_hass(self) -> None:
+        _crop_numbers(self.coordinator).pop(self._setting, None)
+        await super().async_will_remove_from_hass()
+
     async def async_set_native_value(self, value: float) -> None:
+        self.set_crop(value)
+        camera = _thumbnail_registry(self.coordinator).cameras.get("main")
+        if camera is not None:
+            # Show the new crop now, not at the next thumbnail refresh.
+            await camera.refresh_picture()
+
+    @callback
+    def set_crop(self, value: float) -> None:
+        """Store a new value and show it (the picture is not refreshed)."""
         self._apply(value)
         self.async_write_ha_state()
 
     def _apply(self, value: float) -> None:
-        value = min(
-            max(float(value), self._attr_native_min_value),
-            self._attr_native_max_value,
-        )
+        value = _clamp_crop(self._setting, value)
         self._attr_native_value = value
         _camera_view_values(self.coordinator)[self._setting] = value
 
 
-class _WSV2Camera(XtoolEntity, Camera):
+class _WSV2Camera(_CameraDeviceEntity, Camera):
     """V2 camera: one entity per lens, built from still photos.
 
     These lasers have no live video (the firmware answers
@@ -1702,6 +1803,9 @@ class _WSV2Camera(XtoolEntity, Camera):
         Camera.__init__(self)
         self._set_unique_id(f"{key}")
         self._attr_translation_key = translation_key or key
+        if self._use_camera_device(camera_name):
+            # The camera is its device: it takes the device's name.
+            self._attr_name = None
         self._camera_name = camera_name
         if icon is not None:
             self._attr_icon = icon
@@ -1780,18 +1884,51 @@ class _WSV2Camera(XtoolEntity, Camera):
             return
         super().async_update_token()
 
-    async def _refresh_thumbnail(self, _now: Any = None) -> None:
+    async def _refresh_thumbnail(
+        self, _now: Any = None, max_age: timedelta = MIN_SNAPSHOT_INTERVAL,
+    ) -> None:
         # Take the new photo before changing the token: the picture
         # request that follows the new state is then answered from the
         # cache at once, so the thumbnail does not go blank while the
         # laser takes a photo.
-        await self._image(MIN_SNAPSHOT_INTERVAL)
+        await self._image(max_age)
         self._rotating = True
         try:
             self.async_update_token()
         finally:
             self._rotating = False
         self.async_write_ha_state()
+
+    async def refresh_picture(self) -> None:
+        """Take a new photo now and refresh the picture (after a crop change)."""
+        await self._refresh_thumbnail(max_age=timedelta(0))
+
+    @property
+    def supports_crop(self) -> bool:
+        return self._uses_calibration
+
+    async def async_set_crop(
+        self,
+        width: float | None = None,
+        height: float | None = None,
+        center_x: float | None = None,
+        center_y: float | None = None,
+    ) -> None:
+        """Set the crop numbers given (mm), then refresh the picture once."""
+        numbers = _crop_numbers(self.coordinator)
+        values = {
+            "width": width, "height": height,
+            "center_x": center_x, "center_y": center_y,
+        }
+        for setting, value in values.items():
+            if value is None:
+                continue
+            number = numbers.get(setting)
+            if number is not None:
+                number.set_crop(value)
+            else:  # the number entity is disabled
+                _camera_view_values(self.coordinator)[setting] = _clamp_crop(setting, value)
+        await self.refresh_picture()
 
     @callback
     def set_thumbnail_refresh(self, seconds: float) -> None:
