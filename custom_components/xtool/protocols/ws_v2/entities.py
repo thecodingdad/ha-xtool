@@ -1755,8 +1755,12 @@ class _WSV2Camera(XtoolEntity, Camera):
             return
         super().async_update_token()
 
-    @callback
-    def _refresh_thumbnail(self, _now: Any = None) -> None:
+    async def _refresh_thumbnail(self, _now: Any = None) -> None:
+        # Take the new photo before changing the token: the picture
+        # request that follows the new state is then answered from the
+        # cache at once, so the thumbnail does not go blank while the
+        # laser takes a photo.
+        await self._image(MIN_SNAPSHOT_INTERVAL)
         self._rotating = True
         try:
             self.async_update_token()
