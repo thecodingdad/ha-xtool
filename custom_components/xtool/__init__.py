@@ -212,6 +212,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     coordinator.laser_device_id = laser_device.id
     if coordinator.model.has_wrong_machine_info_mac:
         _drop_mac_connections(hass, laser_device)
+    _rename_camera_crop_entities(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -237,6 +238,32 @@ def _drop_mac_connections(hass: HomeAssistant, device: dr.DeviceEntry) -> None:
         )
         dr.async_get(hass).async_update_device(device.id, new_connections=keep)
 
+
+_CROP_SETTINGS = ("width", "height", "center_x", "center_y")
+
+
+def _rename_camera_crop_entities(
+    hass: HomeAssistant, entry: XtoolConfigEntry, coordinator: XtoolCoordinator,
+) -> None:
+    """Rename the main camera's "view" numbers to "crop" in their IDs.
+
+    The numbers were named "Main camera view width" and so on; they are
+    now "Crop width" on the Main camera device. Only IDs Home Assistant
+    made from the old names change (``..._main_camera_view_width`` to
+    ``..._main_camera_crop_width``); IDs the user chose stay.
+    """
+    registry = er.async_get(hass)
+    for setting in _CROP_SETTINGS:
+        unique_id = f"{coordinator.serial_number}_camera_main_view_{setting}"
+        entity_id = registry.async_get_entity_id("number", DOMAIN, unique_id)
+        old_end = f"_main_camera_view_{setting}"
+        if entity_id is None or not entity_id.endswith(old_end):
+            continue
+        new_id = entity_id[: -len(old_end)] + f"_main_camera_crop_{setting}"
+        if registry.async_get(new_id) is not None:
+            continue
+        registry.async_update_entity(entity_id, new_entity_id=new_id)
+        _LOGGER.info("Renamed %s to %s", entity_id, new_id)
 
 _OBJECT_ID_MODEL_SLUG_RE = re.compile(r"[^a-z0-9]")
 

@@ -91,13 +91,60 @@ class CameraView:
     """The area of the work surface to show, in millimetres.
 
     The centre is measured from the centre of the calibrated area,
-    with X to the right and Y downwards.
+    with X to the right and Y downwards. A width or height of 0 means
+    the whole photo across or down (see ``photo_size_mm``).
     """
 
     width_mm: float = CALIBRATED_AREA_MM
     height_mm: float = CALIBRATED_AREA_MM
     center_x_mm: float = 0.0
     center_y_mm: float = 0.0
+
+
+def _photo_extent(
+    first: float, second: float, last: float, before_last: float, size: int,
+) -> float:
+    """Grid cells that fit between the grid and both photo edges.
+
+    ``first``/``second`` are the first two grid points along a line
+    through the photo, ``last``/``before_last`` the last two, in
+    pixels; ``size`` is the photo's size that way.
+    """
+    increasing = last >= first
+    start_gap = first if increasing else size - first
+    end_gap = size - last if increasing else last
+    start_cell = abs(second - first) or 1.0
+    end_cell = abs(last - before_last) or 1.0
+    return max(start_gap, 0.0) / start_cell + max(end_gap, 0.0) / end_cell
+
+
+def photo_size_mm(calibration: CameraCalibration) -> tuple[float, float]:
+    """The whole photo's width and height on the work surface, in mm.
+
+    Measured through the middle of the grid: the calibrated area plus
+    the photo beyond it, at the size of the outer grid cells (as
+    ``correct_image`` extends them). Rounded to whole millimetres.
+    """
+    cells_x = calibration.grid_w - 1
+    cells_y = calibration.grid_h - 1
+    cell_mm_x = CALIBRATED_AREA_MM / cells_x
+    cell_mm_y = CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / cells_y
+    row = calibration.grid_h // 2
+    col = calibration.grid_w // 2
+    across = _photo_extent(
+        calibration.point(row, 0)[0], calibration.point(row, 1)[0],
+        calibration.point(row, cells_x)[0], calibration.point(row, cells_x - 1)[0],
+        calibration.src_w,
+    )
+    down = _photo_extent(
+        calibration.point(0, col)[1], calibration.point(1, col)[1],
+        calibration.point(cells_y, col)[1], calibration.point(cells_y - 1, col)[1],
+        calibration.src_h,
+    )
+    return (
+        float(round((cells_x + across) * cell_mm_x)),
+        float(round((cells_y + down) * cell_mm_y)),
+    )
 
 
 def correct_image(
@@ -114,6 +161,14 @@ def correct_image(
     from PIL import Image  # Home Assistant ships Pillow
 
     view = view or CameraView()
+    if view.width_mm <= 0 or view.height_mm <= 0:
+        photo_w, photo_h = photo_size_mm(calibration)
+        view = CameraView(
+            view.width_mm if view.width_mm > 0 else photo_w,
+            view.height_mm if view.height_mm > 0 else photo_h,
+            view.center_x_mm,
+            view.center_y_mm,
+        )
     image = Image.open(io.BytesIO(jpeg))
     # Decode at reduced size when the result needs fewer pixels than
     # the photo has (JPEG can skip detail while decoding).
