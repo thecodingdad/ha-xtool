@@ -85,6 +85,8 @@ MAX_SNAPSHOT_AGE = timedelta(seconds=60)
 # takes about 0.3 s on the F2 Ultra UV, and the protocol takes one
 # photo at a time, so this gives about 2.5 frames per second.
 LIVE_FRAME_INTERVAL = 0.4
+# A live view whose viewer has not read a frame for this long is ended.
+LIVE_WRITE_TIMEOUT = 10.0
 
 
 # --- Sensors -----------------------------------------------------------
@@ -1514,19 +1516,30 @@ class _WSV2Camera(XtoolEntity, Camera):
                 started = time.monotonic()
                 jpeg = await self._image(interval)
                 if jpeg:
-                    await response.write(
-                        boundary.encode()
-                        + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                        + str(len(jpeg)).encode()
-                        + b"\r\n\r\n"
-                        + jpeg
-                        + b"\r\n"
+                    # A viewer that stops reading (for example the iOS
+                    # app after its view closes) leaves the write
+                    # waiting; end the live view instead.
+                    await asyncio.wait_for(
+                        response.write(
+                            boundary.encode()
+                            + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                            + str(len(jpeg)).encode()
+                            + b"\r\n\r\n"
+                            + jpeg
+                            + b"\r\n"
+                        ),
+                        timeout=LIVE_WRITE_TIMEOUT,
                     )
                 await asyncio.sleep(
                     max(0.0, LIVE_FRAME_INTERVAL - (time.monotonic() - started))
                 )
         except (asyncio.CancelledError, ConnectionResetError):
             pass
+        except TimeoutError:
+            _LOGGER.debug(
+                "V2 camera %s: live viewer stopped reading; ending it",
+                self._camera_name,
+            )
         finally:
             self._set_live_viewers(-1)
         return response
