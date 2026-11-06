@@ -31,6 +31,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.components.button import ButtonEntity
+from homeassistant.components.event import EventEntity
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.select import SelectEntity
@@ -250,6 +251,51 @@ async def _dispatch_write(entity: _AccessoryEntity, value: Any) -> None:
         return
     mcode = write(value) if callable(write) else write
     await _passthrough_write(entity, mcode)
+
+
+# IF2 2.0 alert bits (M9064 push ``S``) and their event types.
+ALERT_EVENTS: tuple[tuple[int, str], ...] = (
+    (1, "fan_stall"),
+    (2, "cleaning_needed"),
+)
+
+
+class _AccessoryAlertEvent(_AccessoryReadOnlyEntity, EventEntity):
+    """Fires when the accessory raises an alert.
+
+    The IF2 2.0 reports its alerts as bits in the ``S`` token of the
+    M9064 push (1 = fan stall, 2 = cleaning needed), as Studio reads
+    them. An event fires when a bit turns on. The alerts present when
+    Home Assistant first sees the accessory are not fired, so a restart
+    does not repeat them.
+    """
+
+    _xtool_platform = "event"
+    _attr_event_types = [name for _, name in ALERT_EVENTS]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._last_alert: int | None = None
+
+    def _alert(self) -> int | None:
+        s = self._state
+        value = s.fields.get("alert") if s is not None and s.fields else None
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._last_alert = self._alert()
+
+    def _handle_coordinator_update(self) -> None:
+        alert = self._alert()
+        if alert is not None:
+            previous = self._last_alert
+            self._last_alert = alert
+            if previous is not None:
+                for bit, name in ALERT_EVENTS:
+                    if alert & bit and not previous & bit:
+                        self._trigger_event(name)
+        super()._handle_coordinator_update()
 
 
 class _AccessorySwitch(_AccessoryEntity, SwitchEntity):
@@ -748,6 +794,7 @@ _PLATFORM_TO_CLASS: dict[str, type] = {
     "number": _AccessoryNumber,
     "button": _AccessoryButton,
     "fan": _AccessoryFan,
+    "event": _AccessoryAlertEvent,
 }
 
 

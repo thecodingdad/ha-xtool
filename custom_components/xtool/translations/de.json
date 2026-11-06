@@ -793,6 +793,17 @@
       }
     },
     "event": {
+      "accessory_ductfanv3_alert": {
+        "name": "Warnung",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fan_stall": "Lüfter blockiert",
+              "cleaning_needed": "Reinigung erforderlich"
+            }
+          }
+        }
+      },
       "button": {
         "name": "Taste",
         "state_attributes": {

@@ -196,6 +196,8 @@ During a job you can:
 
 Choosing a preset while no job is running only stores its speed; the next job replaces it with its own.
 
+The IF2 2.0 also has an **Alert** event entity. It fires **Fan stall** or **Cleaning needed** when the IF2 reports that alert (the same alerts Studio shows), so an automation can notify you. Alerts already present when Home Assistant starts are not fired again.
+
 ### Switch
 
 | Entity | Description |

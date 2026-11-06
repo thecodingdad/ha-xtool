@@ -31,7 +31,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up xTool event entities."""
     coordinator = entry.runtime_data
+    coordinator.register_platform_add("event", async_add_entities)
     entities: list[EventEntity] = list(coordinator.build_events())
+    entities.extend(coordinator.initial_accessory_entities("event"))
     if entities:
         async_add_entities(entities)
 
