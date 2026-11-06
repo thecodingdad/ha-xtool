@@ -164,6 +164,10 @@ class XtoolDeviceModel:
     camera_perspectives: tuple[
         tuple[str, tuple[float, ...], tuple[int, int], tuple[int, int]], ...
     ] = ()
+    # ``(camera name, degrees)``: the turn (counter-clockwise) that sets
+    # such a camera upright, used when its perspective correction is
+    # switched off.
+    camera_rotations: tuple[tuple[str, float], ...] = ()
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False

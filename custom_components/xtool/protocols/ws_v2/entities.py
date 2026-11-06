@@ -87,6 +87,7 @@ from .camera_correction import (
     correct_image,
     parse_calibration,
     perspective_image,
+    rotate_image,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1617,6 +1618,63 @@ class _CameraDeviceEntity(XtoolEntity):
         return _camera_device_info(self.coordinator, self._device_camera)
 
 
+def _perspective_settings(coordinator: XtoolCoordinator) -> dict[str, bool]:
+    """Perspective correction on or off, by camera name (default on)."""
+    settings = getattr(coordinator, "_camera_perspective_on", None)
+    if settings is None:
+        settings = {}
+        coordinator._camera_perspective_on = settings
+    return settings
+
+
+class _WSV2CameraPerspectiveSwitch(_CameraDeviceEntity, SwitchEntity, RestoreEntity):
+    """Correct the perspective of a camera that looks at the bed at an angle.
+
+    On (the default), the picture is straight and square, as measured on
+    a cutting mat. Off, it is only turned upright. Kept by Home
+    Assistant; the laser is not involved.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "perspective_correction"
+    _attr_icon = "mdi:perspective-less"
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, camera_key: str, camera_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id(f"{camera_key}_perspective_correction")
+        if not self._use_camera_device(camera_name):
+            self._attr_translation_key = f"{camera_key}_perspective_correction"
+        self._camera_name = camera_name
+        self._attr_is_on = True
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("on", "off"):
+            self._attr_is_on = last.state == "on"
+        _perspective_settings(self.coordinator)[self._camera_name] = self._attr_is_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)
+
+    async def _set(self, on: bool) -> None:
+        self._attr_is_on = on
+        _perspective_settings(self.coordinator)[self._camera_name] = on
+        self.async_write_ha_state()
+        camera = _thumbnail_registry(self.coordinator).cameras.get(self._camera_name)
+        if camera is not None:
+            await camera.refresh_picture()
+
+
 class _ThumbnailRegistry:
     """Links each camera with its thumbnail refresh number entity."""
 
@@ -1861,6 +1919,15 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             ),
             None,
         )
+        # The turn that sets the camera upright without the perspective.
+        self._rotation = next(
+            (
+                spec[1]
+                for spec in getattr(coordinator.model, "camera_rotations", ()) or ()
+                if spec[0] == camera_name
+            ),
+            None,
+        )
 
     @property
     def is_streaming(self) -> bool:
@@ -1871,7 +1938,14 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         if not self._uses_calibration:
             if self._perspective is None or self.hass is None:
                 return image
+            corrected = _perspective_settings(self.coordinator).get(self._camera_name, True)
             try:
+                if not corrected:
+                    if self._rotation is None:
+                        return image
+                    return await self.hass.async_add_executor_job(
+                        rotate_image, image, self._rotation,
+                    )
                 return await self.hass.async_add_executor_job(
                     perspective_image, image, *self._perspective,
                 )
@@ -2375,6 +2449,11 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     ]
     if not model.is_read_only:
         entities.extend(baseline_switches)
+    entities.extend(
+        _WSV2CameraPerspectiveSwitch(coordinator, key, name)
+        for key, name in _camera_keys(coordinator)
+        if any(spec[0] == name for spec in getattr(model, "camera_perspectives", ()) or ())
+    )
     if model.has_flame_alarm:
         # Disabled by default in the entity registry — disabling
         # this switch means no flame alarm will be triggered per

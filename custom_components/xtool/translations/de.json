@@ -553,6 +553,12 @@
       },
       "accessory_largepurifierv3_auto_continue": {
         "name": "Auto-Weiterlauf"
+      },
+      "perspective_correction": {
+        "name": "Perspektivkorrektur"
+      },
+      "camera_deep_perspective_correction": {
+        "name": "Tiefenkamera Perspektivkorrektur"
       }
     },
     "number": {
