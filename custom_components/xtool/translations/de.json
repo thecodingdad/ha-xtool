@@ -668,6 +668,9 @@
       },
       "accessory_largepurifierv3_auto_off_timeout": {
         "name": "Abschalt-Verzögerung"
+      },
+      "focus_height": {
+        "name": "Fokushöhe"
       }
     },
     "select": {
@@ -884,6 +887,34 @@
           }
         }
       }
+    }
+  },
+  "services": {
+    "focus": {
+      "name": "Fokus",
+      "description": "Bewegt den Fokus des Lasers wie die manuelle Fokussierung in xTool Studio: um einen Schritt mit Vorzeichen (mehrfach wiederholt) oder direkt auf eine Materialstärke. Hält bei 0 oder 150 mm an. Abgelehnt, während ein Auftrag läuft, der Laser fokussiert oder misst, oder wenn er einen Fehler meldet.",
+      "fields": {
+        "step": {
+          "name": "Schritt",
+          "description": "Schritt in mm mit Vorzeichen: positiv nach oben, negativ nach unten."
+        },
+        "steps": {
+          "name": "Schritte",
+          "description": "Wie oft der Schritt angewendet wird."
+        },
+        "thickness": {
+          "name": "Materialstärke",
+          "description": "Materialstärke für den Fokus in mm (0-150), wie Studio sie anzeigt."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "focus_wrong_entity": {
+      "message": "Diese Entität ist keine xTool-Fokushöhe."
+    },
+    "focus_needs_step_or_thickness": {
+      "message": "Gib entweder einen Schritt oder eine Materialstärke an."
     }
   }
 }
