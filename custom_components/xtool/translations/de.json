@@ -422,6 +422,9 @@
       },
       "filter_installed": {
         "name": "Luftfilter eingesetzt"
+      },
+      "smoking_fan_installation": {
+        "name": "Abluftventilator-Installation"
       }
     },
     "camera": {

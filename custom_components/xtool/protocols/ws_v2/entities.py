@@ -783,6 +783,56 @@ class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
         return self._is_on_or_restored(live)
 
 
+class _WSV2ExhaustFanInstallSensor(_WSV2BoolSensor):
+    """Exhaust fan installation: Problem when the fan is not installed.
+
+    Matches the warning Studio shows before a job, "Exhaust fan
+    installation abnormal" (``device.gs.fan_install_advice``).
+    """
+
+    _state_attr = "smoking_fan_installed"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "smoking_fan_installation",
+            BinarySensorDeviceClass.PROBLEM,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        installed = (
+            None if self.coordinator.data is None
+            else self.coordinator.data.smoking_fan_installed
+        )
+        return self._is_on_or_restored(
+            None if installed is None else not installed
+        )
+
+
+def _remove_retired_entity(
+    coordinator: XtoolCoordinator, platform: str, key: str,
+) -> None:
+    """Remove the registry entry of an entity this model no longer has.
+
+    Without this, it stays on the device page as unavailable until
+    the user deletes it.
+    """
+    hass = getattr(coordinator, "hass", None)
+    if hass is None:
+        return
+    from homeassistant.helpers import entity_registry as er
+
+    from ...const import DOMAIN
+
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        platform, DOMAIN, f"{coordinator.serial_number}_{key}",
+    )
+    if entity_id is not None:
+        _LOGGER.info("Removing retired entity %s", entity_id)
+        registry.async_remove(entity_id)
+
+
 def _bool_sensor_factory(
     state_attr: str,
     key: str,
@@ -1672,7 +1722,14 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.RUNNING,
             )(coordinator)
         )
-    if model.has_smoking_fan:
+    if model.has_smoking_fan_install_state:
+        # The firmware reports whether the exhaust fan is installed,
+        # never whether it runs; the Exhaust fan switch shows that.
+        entities.append(_WSV2ExhaustFanInstallSensor(coordinator))
+        _remove_retired_entity(
+            coordinator, "binary_sensor", "smoking_fan_running",
+        )
+    elif model.has_smoking_fan:
         entities.append(
             _bool_sensor_factory(
                 "smoking_fan_running", "smoking_fan_running",

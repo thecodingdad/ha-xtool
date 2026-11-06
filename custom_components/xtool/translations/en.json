@@ -461,6 +461,9 @@
       },
       "filter_installed": {
         "name": "Air filter installed"
+      },
+      "smoking_fan_installation": {
+        "name": "Exhaust fan installation"
       }
     },
     "camera": {
