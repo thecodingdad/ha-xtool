@@ -1033,6 +1033,15 @@ class WSV2Protocol(XtoolProtocol):
            ``PUT /v1/filetransfer/download`` + the ``function=
            file_stream`` WS + ``PUT /v1/filetransfer/finish``.
         """
+        # One photo at a time: each one opens its own file transfer,
+        # and live views of both lenses would otherwise overlap them.
+        lock = getattr(self, "_camera_lock", None)
+        if lock is None:
+            lock = self._camera_lock = asyncio.Lock()
+        async with lock:
+            return await self._camera_snap(camera_name)
+
+    async def _camera_snap(self, camera_name: str) -> bytes | None:
         try:
             snap = await self.request(
                 self.PATH_CAMERA_SNAP,
