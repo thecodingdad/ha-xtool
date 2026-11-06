@@ -164,6 +164,9 @@ class XtoolDeviceModel:
     # (``global_calib.json``); photos are straightened with it, as
     # Studio does (F2 Ultra UV).
     has_camera_calibration: bool = False
+    # Cameras mounted at an angle: ``(camera name, degrees)`` to turn
+    # their photos counter-clockwise so the work surface is upright.
+    camera_rotations: tuple[tuple[str, float], ...] = ()
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False

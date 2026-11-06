@@ -75,7 +75,14 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
-from .camera_correction import CameraCalibration, correct_image, parse_calibration
+from .camera_correction import (
+    CALIBRATED_AREA_MM,
+    CameraCalibration,
+    CameraView,
+    correct_image,
+    parse_calibration,
+    rotate_image,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1704,6 +1711,78 @@ def _camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
     return [(f"camera{'' if is_single else '_' + name}", name) for name in names]
 
 
+# The main camera's view settings (millimetres): key, default, min, max.
+CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float], ...] = (
+    ("width", CALIBRATED_AREA_MM, 20, 460),
+    ("height", CALIBRATED_AREA_MM, 20, 460),
+    ("center_x", 0, -200, 200),
+    ("center_y", 0, -200, 200),
+)
+
+
+def _camera_view_values(coordinator: XtoolCoordinator) -> dict[str, float]:
+    values = getattr(coordinator, "_camera_view", None)
+    if values is None:
+        values = {key: default for key, default, _, _ in CAMERA_VIEW_SETTINGS}
+        coordinator._camera_view = values
+    return values
+
+
+def _camera_view(coordinator: XtoolCoordinator) -> CameraView:
+    v = _camera_view_values(coordinator)
+    return CameraView(v["width"], v["height"], v["center_x"], v["center_y"])
+
+
+class _WSV2CameraViewNumber(XtoolEntity, RestoreNumber):
+    """Part of the work surface the straightened main camera shows (mm).
+
+    Width and height set the area (and so the picture's shape); the
+    centre moves it from the centre of the calibrated area (X right,
+    Y down). Kept by Home Assistant; the laser is not involved.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_step = 1
+    _attr_icon = "mdi:crop"
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, setting: str,
+        default: float, minimum: float, maximum: float,
+    ) -> None:
+        super().__init__(coordinator)
+        key = f"camera_main_view_{setting}"
+        self._set_unique_id(key)
+        self._attr_translation_key = key
+        self._setting = setting
+        self._attr_native_min_value = minimum
+        self._attr_native_max_value = maximum
+        self._attr_native_value = default
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._apply(last.native_value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._apply(value)
+        self.async_write_ha_state()
+
+    def _apply(self, value: float) -> None:
+        value = min(
+            max(float(value), self._attr_native_min_value),
+            self._attr_native_max_value,
+        )
+        self._attr_native_value = value
+        _camera_view_values(self.coordinator)[self._setting] = value
+
+
 class _WSV2Camera(XtoolEntity, Camera):
     """V2 camera: one entity per lens, built from still photos.
 
@@ -1748,6 +1827,11 @@ class _WSV2Camera(XtoolEntity, Camera):
         )
         self._calibration: CameraCalibration | None = None
         self._calibration_next_try = 0.0
+        # Turn photos of cameras mounted at an angle (degrees,
+        # counter-clockwise).
+        self._rotation = dict(
+            getattr(coordinator.model, "camera_rotations", ()) or ()
+        ).get(camera_name, 0.0)
 
     @property
     def is_streaming(self) -> bool:
@@ -1812,9 +1896,19 @@ class _WSV2Camera(XtoolEntity, Camera):
         await super().async_will_remove_from_hass()
 
     async def _corrected(self, image: bytes) -> bytes:
-        """Return the photo straightened, or unchanged without a calibration."""
+        """Return the photo straightened or turned, as the model needs."""
         if not self._uses_calibration:
-            return image
+            if not self._rotation or self.hass is None:
+                return image
+            try:
+                return await self.hass.async_add_executor_job(
+                    rotate_image, image, self._rotation,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "V2 camera %s: turning failed: %s", self._camera_name, err,
+                )
+                return image
         if self._calibration is None and time.monotonic() >= self._calibration_next_try:
             raw = await self.coordinator.protocol.camera_calibration_file()
             self._calibration = parse_calibration(raw) if raw else None
@@ -1829,6 +1923,7 @@ class _WSV2Camera(XtoolEntity, Camera):
         try:
             return await self.hass.async_add_executor_job(
                 correct_image, image, self._calibration,
+                _camera_view(self.coordinator),
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug(
@@ -2445,6 +2540,11 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         _WSV2CameraThumbnailRefresh(coordinator, key, name)
         for key, name in _camera_keys(coordinator)
     )
+    if getattr(model, "has_camera_calibration", False) and "main" in model.camera_names:
+        entities.extend(
+            _WSV2CameraViewNumber(coordinator, *setting)
+            for setting in CAMERA_VIEW_SETTINGS
+        )
     return entities
 
 

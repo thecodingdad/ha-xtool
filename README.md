@@ -211,6 +211,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
 | Camera exposure (overview / close-up) | Camera exposure values (0-255) |
 | Camera thumbnail refresh interval | WS-V2 cameras, one per camera. How often the camera's picture on the device page refreshes, 5 s to 10 min (Home Assistant's standard is 5 min). Each refresh is a new camera state sent to every open Home Assistant screen, and a photo from the laser for each screen showing it |
+| Main camera view width / height / center X / center Y | **F2 Ultra UV.** The part of the work surface the straightened main camera shows, in mm. Default: the 200 × 200 mm calibrated area. The centre moves from the centre of that area (X right, Y down). Areas outside the calibrated area are extended from its edge and are less accurate. A wider shape (for example 267 × 200 mm) fits camera dialogs without scrolling |
 | Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
@@ -251,7 +252,7 @@ data:
 |---|---|
 | Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are turned upright (the camera is mounted upside down and about 28.5 degrees off) and cropped so no corners are empty. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
