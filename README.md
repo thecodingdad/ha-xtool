@@ -212,6 +212,20 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
 | Work area limit (left / right / up / down) | M311 work-area limits (mm) |
+| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Nothing is stored on the laser |
+
+#### Action `xtool.focus`
+
+Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to, and `message` says when it stopped at a limit (the same message is logged as a warning).
+
+```yaml
+action: xtool.focus
+target:
+  entity_id: number.xtool_f2_ultra_uv_focus_height
+data:
+  step: -0.5
+  steps: 2
+```
 
 ### Select
 

@@ -38,6 +38,7 @@ from homeassistant.components.light import (
 from homeassistant.components.number import (
     NumberDeviceClass,
     NumberEntity,
+    NumberMode,
     RestoreNumber,
 )
 from homeassistant.components.select import SelectEntity
@@ -61,10 +62,12 @@ from homeassistant.const import (
     UnitOfVolumeFlowRate,
 )
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_HA_MAX
+from .protocol import round_focus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -1072,6 +1075,85 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         if self.coordinator.data is not None:
             setattr(self.coordinator.data, self._state_attr, int(value))
         self.async_write_ha_state()
+
+
+class WSV2FocusHeight(XtoolEntity, NumberEntity):
+    """Focus height as Studio's manual focus: the material thickness in mm.
+
+    Shows what Studio shows (laser-head Z minus 6). Setting it moves the
+    head as Studio does; the ``xtool.focus`` action also moves it in
+    steps. Moves are refused whenever Studio would refuse them.
+    """
+
+    _attr_translation_key = "focus_height"
+    _attr_icon = "mdi:arrow-expand-vertical"
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 150.0
+    _attr_native_step = 0.1
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("focus_height")
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        return None if d is None else getattr(d, "focus_thickness", None)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.async_focus(thickness=value)
+
+    async def async_focus(
+        self,
+        step: float | None = None,
+        steps: int = 1,
+        thickness: float | None = None,
+    ) -> dict[str, Any]:
+        """Move to a thickness, or by ``step`` mm ``steps`` times.
+
+        A move past 0 or 150 mm stops at that limit. Returns the height
+        it moved to and, when it stopped at a limit, a message that says
+        so.
+        """
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Focus not moved: {reason}")
+        current: float | None = None
+        if thickness is None:
+            current = self.native_value
+            if current is None:
+                raise HomeAssistantError(
+                    "Focus not moved: the current focus height is not known yet"
+                )
+            thickness = current + (step or 0.0) * steps
+        lowest = self._attr_native_min_value
+        highest = self._attr_native_max_value
+        target = round_focus(min(max(thickness, lowest), highest))
+        message: str | None = None
+        if target != round_focus(thickness):
+            limit = "lower" if target == lowest else "upper"
+            if current is not None:
+                count = "1 step" if steps == 1 else f"{steps} steps"
+                message = (
+                    f"Stopped at {target:.1f} mm, the {limit} limit. "
+                    f"{count} of {step:+.1f} mm from {current:.1f} mm "
+                    f"would have gone to {round_focus(thickness):.1f} mm."
+                )
+            else:
+                message = (
+                    f"Stopped at {target:.1f} mm, the {limit} limit. "
+                    f"{round_focus(thickness):.1f} mm is outside 0-150 mm."
+                )
+            _LOGGER.warning("%s: %s", self.entity_id, message)
+        await protocol.focus_to(target)
+        result: dict[str, Any] = {"focus_height": target}
+        if message is not None:
+            result["message"] = message
+        return result
 
 
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
@@ -2252,6 +2334,8 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     model = coordinator.model
     if model.is_read_only:
         entities = []
+    if getattr(model, "has_focus_control", False) and not model.is_read_only:
+        entities.append(WSV2FocusHeight(coordinator))
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
     # to the AirPump accessory child device (the per-job-mode default
     # gear is conceptually an AirPump setting even though the wire

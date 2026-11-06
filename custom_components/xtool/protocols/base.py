@@ -175,6 +175,9 @@ class XtoolDeviceModel:
     has_camera_exposure: bool = False
     has_fire_record: bool = False
     has_laser_head_position: bool = False
+    # Focus height read and moved as Studio's manual focus does
+    # (``/v1/laser-head/focus/control``; F2 Ultra UV).
+    has_focus_control: bool = False
     has_mode_switch: bool = False
     has_purifier_timeout: bool = False
     has_water_cooling: bool = False  # REST: F1 Ultra fiber-laser water loop
@@ -263,6 +266,9 @@ class XtoolDeviceState:
     position_x: float = 0.0
     position_y: float = 0.0
     position_z: float = 0.0
+    # Material thickness the laser is focused on, in mm, as Studio
+    # shows it (laser-head Z minus 6). None until the laser reports it.
+    focus_thickness: float | None = None
 
     # Settings
     # ``flame_alarm`` carries the legacy 3-state sensitivity int

@@ -225,6 +225,7 @@
       "md_mode": { "name": "Auto mode (access control)" }
     },
     "number": {
+      "focus_height": { "name": "Focus height" },
       "camera_thumbnail_refresh": { "name": "Camera thumbnail refresh interval" },
       "camera_main_thumbnail_refresh": { "name": "Main camera thumbnail refresh interval" },
       "camera_deep_thumbnail_refresh": { "name": "Deep camera thumbnail refresh interval" },
@@ -344,6 +345,34 @@
           }
         }
       }
+    }
+  },
+  "services": {
+    "focus": {
+      "name": "Focus",
+      "description": "Moves the laser's focus as xTool Studio's manual focus does: by a signed step (repeated a number of times), or straight to a material thickness. Stops at 0 or 150 mm. Refused while a job runs, while the laser focuses or measures, or when it reports an error.",
+      "fields": {
+        "step": {
+          "name": "Step",
+          "description": "Signed step in mm: positive moves up, negative moves down."
+        },
+        "steps": {
+          "name": "Steps",
+          "description": "How many times to apply the step."
+        },
+        "thickness": {
+          "name": "Thickness",
+          "description": "Material thickness to focus on, in mm (0-150), as Studio shows it."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "focus_wrong_entity": {
+      "message": "This entity is not an xTool focus height."
+    },
+    "focus_needs_step_or_thickness": {
+      "message": "Give either a step or a thickness."
     }
   }
 }
