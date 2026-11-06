@@ -42,6 +42,7 @@ PLATFORMS = [
     Platform.CAMERA,
     Platform.EVENT,
     Platform.FAN,
+    Platform.IMAGE,
     Platform.SENSOR,
     Platform.LIGHT,
     Platform.SWITCH,

@@ -269,6 +269,7 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
 | Flame record | Snapshot of the most recent flame-detection event |
+| Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
 
 ### Button
 

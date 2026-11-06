@@ -842,6 +842,14 @@
         "name": "Autofokus"
       }
     },
+    "image": {
+      "calibration_image": {
+        "name": "Kalibrierung"
+      },
+      "camera_main_calibration_image": {
+        "name": "Kalibrierung der Hauptkamera"
+      }
+    },
     "event": {
       "button": {
         "name": "Taste",

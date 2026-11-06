@@ -29,6 +29,7 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.components.button import ButtonEntity
 from aiohttp import web
 from homeassistant.components.camera import Camera
+from homeassistant.components.image import ImageEntity
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -84,6 +85,7 @@ from .camera_correction import (
     CALIBRATED_AREA_MM,
     CameraCalibration,
     CameraView,
+    calibration_overlay,
     correct_image,
     parse_calibration,
     perspective_image,
@@ -2737,6 +2739,56 @@ def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
                         "mdi:fire-alert")
         )
     return cameras
+
+
+class WSV2CalibrationImage(_CameraDeviceEntity, ImageEntity):
+    """The main camera's raw photo with its calibration grid drawn on it.
+
+    Diagnostic: shows the area Studio's camera calibration covers and
+    how the lens bends it. Made once after Home Assistant starts, from a
+    new photo and the laser's calibration file, when it is first shown.
+    Nothing on the laser changes.
+    """
+
+    _attr_translation_key = "calibration_image"
+    _attr_content_type = "image/jpeg"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        _CameraDeviceEntity.__init__(self, coordinator)
+        ImageEntity.__init__(self, coordinator.hass)
+        self._set_unique_id("camera_main_calibration_image")
+        if not self._use_camera_device("main"):
+            self._attr_translation_key = "camera_main_calibration_image"
+        self._image: bytes | None = None
+        self._attr_image_last_updated = dt_util.utcnow()
+
+    async def async_image(self) -> bytes | None:
+        if self._image is not None:
+            return self._image
+        protocol = self.coordinator.protocol
+        raw = await protocol.camera_calibration_file()
+        calibration = parse_calibration(raw) if raw else None
+        if calibration is None:
+            return None
+        photo = await protocol.camera_snap("main")
+        if not photo:
+            return None
+        self._image = await self.hass.async_add_executor_job(
+            calibration_overlay, photo, calibration,
+        )
+        return self._image
+
+
+def build_wsv2_images(coordinator: XtoolCoordinator) -> list[ImageEntity]:
+    """The main camera's calibration image, where the laser has one."""
+    model = coordinator.model
+    if (
+        getattr(model, "has_camera_calibration", False)
+        and "main" in (getattr(model, "camera_names", ()) or ())
+    ):
+        return [WSV2CalibrationImage(coordinator)]
+    return []
 
 
 def build_wsv2_updates(coordinator: XtoolCoordinator) -> list[UpdateEntity]:
