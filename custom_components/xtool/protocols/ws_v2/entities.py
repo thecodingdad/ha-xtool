@@ -1526,6 +1526,66 @@ class WSV2SyncTime(_WSV2Button):
 # --- Cameras ------------------------------------------------------------
 
 
+# English names of the cameras; the device page shows the translated
+# ones (``device`` in strings.json).
+CAMERA_LABELS: dict[str, str] = {
+    "main": "Main camera",
+    "deep": "Deep camera",
+    "overview": "Overview camera",
+    "closeup": "Close-up camera",
+    "far": "Global camera",
+    "near": "Local camera",
+    "side": "Side camera",
+}
+
+
+def _camera_has_own_device(coordinator: XtoolCoordinator, camera_name: str) -> bool:
+    """Each camera of a model with several gets its own device.
+
+    A single camera stays on the laser's device page.
+    """
+    names = coordinator.model.camera_names if coordinator.model.has_camera else ()
+    return len(names) > 1 and camera_name in names
+
+
+def _camera_device_info(coordinator: XtoolCoordinator, camera_name: str) -> DeviceInfo:
+    """Device of one camera, connected to the laser.
+
+    Its name is the laser's name and the camera's, so entity IDs stay
+    as they were on the laser (``camera.<laser>_main_camera``).
+    """
+    from ..accessories.entities import _via_device_info
+
+    label = CAMERA_LABELS.get(camera_name, f"{camera_name.capitalize()} camera")
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{coordinator.serial_number}:camera_{camera_name}")},
+        **_via_device_info(coordinator),
+        name=f"{coordinator.device_name} {label}",
+        translation_key=f"camera_{camera_name}",
+        translation_placeholders={"laser": coordinator.device_name},
+        manufacturer="xTool",
+        model=f"{coordinator.model.name} {label}",
+    )
+
+
+class _CameraDeviceEntity(XtoolEntity):
+    """An entity on a camera's own device (when the camera has one)."""
+
+    _device_camera: str | None = None
+
+    def _use_camera_device(self, camera_name: str) -> bool:
+        if _camera_has_own_device(self.coordinator, camera_name):
+            self._device_camera = camera_name
+            return True
+        return False
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        if self._device_camera is None:
+            return super().device_info
+        return _camera_device_info(self.coordinator, self._device_camera)
+
+
 class _ThumbnailRegistry:
     """Links each camera with its thumbnail refresh number entity."""
 
@@ -1603,66 +1663,6 @@ def _camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
     names = coordinator.model.camera_names
     is_single = len(names) == 1
     return [(f"camera{'' if is_single else '_' + name}", name) for name in names]
-
-
-# English names of the cameras; the device page shows the translated
-# ones (``device`` in strings.json).
-CAMERA_LABELS: dict[str, str] = {
-    "main": "Main camera",
-    "deep": "Deep camera",
-    "overview": "Overview camera",
-    "closeup": "Close-up camera",
-    "far": "Global camera",
-    "near": "Local camera",
-    "side": "Side camera",
-}
-
-
-def _camera_has_own_device(coordinator: XtoolCoordinator, camera_name: str) -> bool:
-    """Each camera of a model with several gets its own device.
-
-    A single camera stays on the laser's device page.
-    """
-    names = coordinator.model.camera_names if coordinator.model.has_camera else ()
-    return len(names) > 1 and camera_name in names
-
-
-def _camera_device_info(coordinator: XtoolCoordinator, camera_name: str) -> DeviceInfo:
-    """Device of one camera, connected to the laser.
-
-    Its name is the laser's name and the camera's, so entity IDs stay
-    as they were on the laser (``camera.<laser>_main_camera``).
-    """
-    from ..accessories.entities import _via_device_info
-
-    label = CAMERA_LABELS.get(camera_name, f"{camera_name.capitalize()} camera")
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"{coordinator.serial_number}:camera_{camera_name}")},
-        **_via_device_info(coordinator),
-        name=f"{coordinator.device_name} {label}",
-        translation_key=f"camera_{camera_name}",
-        translation_placeholders={"laser": coordinator.device_name},
-        manufacturer="xTool",
-        model=f"{coordinator.model.name} {label}",
-    )
-
-
-class _CameraDeviceEntity(XtoolEntity):
-    """An entity on a camera's own device (when the camera has one)."""
-
-    _device_camera: str | None = None
-
-    def _use_camera_device(self, camera_name: str) -> bool:
-        if _camera_has_own_device(self.coordinator, camera_name):
-            self._device_camera = camera_name
-            return True
-        return False
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        if self._device_camera is None:
-            return super().device_info
-        return _camera_device_info(self.coordinator, self._device_camera)
 
 
 # The main camera's crop (millimetres): key, default, min, max, icon.
