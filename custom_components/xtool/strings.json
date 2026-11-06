@@ -299,6 +299,10 @@
       "autofocus": { "name": "Autofocus" },
       "quit_lightburn": { "name": "Quit LightBurn mode" }
     },
+    "image": {
+      "calibration_image": { "name": "Calibration" },
+      "camera_main_calibration_image": { "name": "Main camera calibration" }
+    },
     "event": {
       "button": {
         "name": "Button",

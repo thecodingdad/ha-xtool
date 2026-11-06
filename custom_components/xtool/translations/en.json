@@ -904,6 +904,14 @@
         "name": "Autofocus"
       }
     },
+    "image": {
+      "calibration_image": {
+        "name": "Calibration"
+      },
+      "camera_main_calibration_image": {
+        "name": "Main camera calibration"
+      }
+    },
     "event": {
       "button": {
         "name": "Button",

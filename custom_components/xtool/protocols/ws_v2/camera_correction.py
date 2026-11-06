@@ -330,6 +330,44 @@ def correct_image(
     return out.getvalue()
 
 
+def calibration_overlay(
+    jpeg: bytes, calibration: CameraCalibration, width: int = OUTPUT_WIDTH,
+) -> bytes:
+    """Return the raw photo with the calibration grid drawn on it, as JPEG.
+
+    Shows which part of the bed the camera calibration covers, and how
+    the lens bends its straight lines: each calibration point is a dot,
+    joined to its neighbours along the grid rows and columns.
+    """
+    from PIL import Image, ImageDraw  # Home Assistant ships Pillow
+
+    image = Image.open(io.BytesIO(jpeg))
+    image.draft("RGB", (image.width // 2, image.height // 2))
+    image = image.convert("RGB")
+    sx = image.width / calibration.src_w
+    sy = image.height / calibration.src_h
+    points = [(x * sx, y * sy) for x, y in calibration.points]
+    draw = ImageDraw.Draw(image)
+    line = max(1, round(image.width / 800))
+    color = (0, 255, 64)
+    w, h = calibration.grid_w, calibration.grid_h
+    for row in range(h):
+        draw.line(points[row * w:(row + 1) * w], fill=color, width=line)
+    for col in range(w):
+        draw.line(points[col::w], fill=color, width=line)
+    r = line * 2
+    for x, y in points:
+        draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 32, 32))
+    if image.width > width:
+        image = image.resize(
+            (width, round(image.height * width / image.width)),
+            Image.Resampling.LANCZOS,
+        )
+    out = io.BytesIO()
+    image.save(out, "JPEG", quality=JPEG_QUALITY)
+    return out.getvalue()
+
+
 def rotate_image(jpeg: bytes, degrees: float, width: int = OUTPUT_WIDTH) -> bytes:
     """Return the photo turned ``degrees`` counter-clockwise, as JPEG.
 
