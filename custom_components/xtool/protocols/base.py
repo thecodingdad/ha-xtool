@@ -192,6 +192,9 @@ class XtoolDeviceModel:
     has_ambient_sensors: bool = False  # enclosure temperature + humidity
     # Last job time, working / standby time, UV lamp + air purifier runtime
     has_lifetime_counters: bool = False
+    # WS-V2: working time only, from machineInfo's ``worktime`` (F2
+    # Ultra UV; its statistics carry no time)
+    has_machine_info_worktime: bool = False
     # Hides the shared WS-V2 controls (Beep + Cover-check switches,
     # exhaust post-run Number, Pause / Resume / Cancel buttons) on
     # models whose write surface differs and isn't verified yet.

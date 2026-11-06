@@ -149,6 +149,11 @@ _WORKING_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     icon="mdi:timer-cog",
     entity_category=EntityCategory.DIAGNOSTIC,
     native_unit_of_measurement=UnitOfTime.SECONDS,
+    # A lifetime total reads best in hours (19.7 h, not 70922 s). HA
+    # converts units only for the duration device class.
+    device_class=SensorDeviceClass.DURATION,
+    suggested_unit_of_measurement=UnitOfTime.HOURS,
+    suggested_display_precision=1,
     state_class=SensorStateClass.TOTAL_INCREASING,
     value_fn=lambda state, _: state.working_seconds,
 )
@@ -512,6 +517,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ambient_sensors"),
     (_LAST_JOB_TIME_DESCRIPTION, "has_lifetime_counters"),
     (_WORKING_TIME_DESCRIPTION, "has_lifetime_counters"),
+    (_WORKING_TIME_DESCRIPTION, "has_machine_info_worktime"),
     (_STANDBY_TIME_DESCRIPTION, "has_lifetime_counters"),
     (
         XtoolSensorEntityDescription(
