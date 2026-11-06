@@ -89,6 +89,7 @@
           "processing": "Processing",
           "paused": "Paused",
           "cleaning": "Cleaning",
+          "calibrating": "Calibration / test print",
           "firmware_update": "Updating firmware",
           "sleeping": "Sleeping",
           "cancelling": "Cancelling",
@@ -290,10 +291,15 @@
         "name": "Ink yellow"
       },
       "clean_water": {
-        "name": "Cleaning fluid"
+        "name": "Moisturizing liquid"
       },
       "waste_water": {
-        "name": "Waste fluid"
+        "name": "Waste fluid",
+        "state": {
+          "normal": "Normal",
+          "full": "Full",
+          "detach": "Removed"
+        }
       },
       "gyro_x": {
         "name": "Gyro X"
@@ -360,6 +366,58 @@
       },
       "uv_lamp_runtime": {
         "name": "UV lamp runtime"
+      },
+      "knife_cut_count": {
+        "name": "Knife cuts"
+      },
+      "standard_clean_count": {
+        "name": "Standard nozzle cleans"
+      },
+      "deep_clean_count": {
+        "name": "Deep nozzle cleans"
+      },
+      "wiping_maintenance_elapsed": {
+        "name": "Time since wiping maintenance"
+      },
+      "fitting_replacement_elapsed": {
+        "name": "Time since accessory replacement"
+      },
+      "wiping_reminder_interval": {
+        "name": "Wiping reminder interval"
+      },
+      "fitting_reminder_interval": {
+        "name": "Accessory replacement reminder interval"
+      },
+      "heater_temperature": {
+        "name": "Oven temperature"
+      },
+      "print_head_collision_count": { "name": "Print-head collision detections" },
+      "accessory_largepurifier_version": {
+        "name": "Firmware version"
+      },
+      "accessory_largepurifier_sn": {
+        "name": "Serial number"
+      },
+      "accessory_largepurifier_gear": {
+        "name": "Airflow code"
+      },
+      "accessory_largepurifier_mode": {
+        "name": "Mode"
+      },
+      "accessory_largepurifier_filter_pre": {
+        "name": "Pre-filter life"
+      },
+      "accessory_largepurifier_filter_medium": {
+        "name": "Medium efficiency filter life"
+      },
+      "accessory_largepurifier_filter_carbon": {
+        "name": "Activated carbon filter life"
+      },
+      "accessory_largepurifier_filter_dense_carbon": {
+        "name": "Ultra dense carbon mesh filter life"
+      },
+      "accessory_largepurifier_filter_hepa": {
+        "name": "High efficiency filter life"
       }
     },
     "binary_sensor": {
@@ -403,14 +461,16 @@
         "name": "Water line"
       },
       "film_buffer_ready": {
-        "name": "Film buffer ready"
+        "name": "Film buffer signal"
       },
       "film_position_ready": {
-        "name": "Film position ready"
+        "name": "Film position signal"
       },
       "powder_loop_running": {
         "name": "Powder loop running"
       },
+      "oven_processing": { "name": "Oven processing" },
+      "oven_feed_active": { "name": "Oven feed/eject active" },
       "heater_connected": {
         "name": "Heater connected"
       },
@@ -461,6 +521,21 @@
       },
       "filter_installed": {
         "name": "Air filter installed"
+      },
+      "wiping_maintenance_due": {
+        "name": "Wiping maintenance due"
+      },
+      "fitting_replacement_due": {
+        "name": "Accessory replacement due"
+      },
+      "top_cover_open": {
+        "name": "Top cover"
+      },
+      "left_panel_open": {
+        "name": "Left maintenance panel"
+      },
+      "right_panel_open": {
+        "name": "Right waste-tank panel"
       }
     },
     "camera": {
@@ -883,6 +958,7 @@
               "temperature": "Temperature alarm",
               "gyro": "Gyro tilt alarm",
               "laser_head_fault": "Laser head fault",
+              "print_head_collision": "Print-head collision detected",
               "z_axis_fault": "Z-axis fault",
               "u_axis_fault": "U-axis fault",
               "conveyor_fault": "Conveyor fault",

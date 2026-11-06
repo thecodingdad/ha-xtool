@@ -55,6 +55,7 @@ class XtoolStatus(StrEnum):
     PROCESSING = "processing"
     PAUSED = "paused"
     CLEANING = "cleaning"  # inkjet printers: print-head cleaning cycle
+    CALIBRATING = "calibrating"  # inkjet calibration / nozzle-test print
     FIRMWARE_UPDATE = "firmware_update"
     SLEEPING = "sleeping"
     CANCELLING = "cancelling"

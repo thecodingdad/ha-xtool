@@ -291,6 +291,8 @@ class XtoolDeviceState:
     film_buffer_ready: bool | None = None
     film_position_ready: bool | None = None
     powder_loop_running: bool | None = None
+    oven_processing: bool | None = None
+    oven_feed_active: bool | None = None
     ink_cyan: str | None = None
     ink_black: str | None = None
     ink_magenta: str | None = None
@@ -299,6 +301,13 @@ class XtoolDeviceState:
     clean_water: str | None = None
     waste_water: str | None = None
     heater_connected: bool | None = None
+    heater_temperature: float | None = None
+    top_cover_open: bool | None = None
+    left_panel_open: bool | None = None
+    right_panel_open: bool | None = None
+    wiping_maintenance_due: bool | None = None
+    fitting_replacement_due: bool | None = None
+    printer_maintenance: dict[str, int | float] = field(default_factory=dict)
     water_temperature: float | None = None  # F1 Ultra
     water_flow: float | None = None  # F1 Ultra
     z_temperature: float | None = None  # M1 Ultra
