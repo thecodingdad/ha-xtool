@@ -1627,7 +1627,7 @@ PERSPECTIVE_OPTIONS = [
 
 
 def _perspective_settings(coordinator: XtoolCoordinator) -> dict[str, str]:
-    """Perspective option by camera name (default Rotated)."""
+    """Perspective option by camera name (default Straightened)."""
     settings = getattr(coordinator, "_camera_perspective", None)
     if settings is None:
         settings = {}
@@ -1638,9 +1638,10 @@ def _perspective_settings(coordinator: XtoolCoordinator) -> dict[str, str]:
 class _WSV2CameraPerspectiveSelect(_CameraDeviceEntity, SelectEntity, RestoreEntity):
     """How a camera that looks at the bed at an angle is shown.
 
-    Uncorrected: the photo as the camera takes it. Rotated (the default):
-    turned upright. Straightened: turned upright and its perspective
-    corrected, so a flat surface looks straight and square from above.
+    Uncorrected: the photo as the camera takes it. Rotated: turned
+    upright. Straightened (the default): turned upright and its
+    perspective corrected, so a flat surface looks straight and square
+    from above.
     Kept by Home Assistant; the laser is not involved.
     """
 
@@ -1655,7 +1656,7 @@ class _WSV2CameraPerspectiveSelect(_CameraDeviceEntity, SelectEntity, RestoreEnt
         self._set_unique_id(f"{camera_key}_perspective")
         self._use_camera_device(camera_name)
         self._camera_name = camera_name
-        self._attr_current_option = PERSPECTIVE_ROTATED
+        self._attr_current_option = PERSPECTIVE_STRAIGHTENED
 
     @property
     def available(self) -> bool:
@@ -1943,7 +1944,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             if self._perspective is None or self.hass is None:
                 return image
             option = _perspective_settings(self.coordinator).get(
-                self._camera_name, PERSPECTIVE_ROTATED,
+                self._camera_name, PERSPECTIVE_STRAIGHTENED,
             )
             if option == PERSPECTIVE_UNCORRECTED:
                 return image
