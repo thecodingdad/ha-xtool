@@ -556,6 +556,18 @@
       }
     },
     "number": {
+      "camera_main_view_width": {
+        "name": "Hauptkamera Bildausschnitt Breite"
+      },
+      "camera_main_view_height": {
+        "name": "Hauptkamera Bildausschnitt Höhe"
+      },
+      "camera_main_view_center_x": {
+        "name": "Hauptkamera Bildausschnitt Mitte X"
+      },
+      "camera_main_view_center_y": {
+        "name": "Hauptkamera Bildausschnitt Mitte Y"
+      },
       "accessory_ductfan_manual_gear": {
         "name": "Manuelle Stufe"
       },

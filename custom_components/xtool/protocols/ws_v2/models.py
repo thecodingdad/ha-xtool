@@ -224,6 +224,9 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     has_camera=True,
     camera_names=("main", "deep"),  # GS006 cameraMediaManager exposes main + deep
     has_camera_calibration=True,  # global_calib.json, as Studio
+    # The deep camera sits upside down and about 28.5 degrees off the
+    # work-surface axes (measured on a cutting mat).
+    camera_rotations=(("deep", 151.5),),
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,  # GS009-CLASS-4 ships front + back channels
@@ -265,6 +268,9 @@ XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     has_camera=True,
     camera_names=("main", "deep"),
     has_camera_calibration=True,  # global_calib.json, as Studio
+    # The deep camera sits upside down and about 28.5 degrees off the
+    # work-surface axes (measured on a cutting mat).
+    camera_rotations=(("deep", 151.5),),
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,
