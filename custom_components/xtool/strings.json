@@ -265,6 +265,7 @@
       "home_z": { "name": "Home Z" },
       "home_laser_head": { "name": "Home laser head" },
       "measure_distance": { "name": "Measure distance" },
+      "autofocus": { "name": "Autofocus" },
       "quit_lightburn": { "name": "Quit LightBurn mode" }
     },
     "event": {

@@ -841,6 +841,9 @@
       },
       "time_sync": {
         "name": "Sync time"
+      },
+      "autofocus": {
+        "name": "Autofocus"
       }
     },
     "event": {

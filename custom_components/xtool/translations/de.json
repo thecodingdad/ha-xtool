@@ -799,6 +799,9 @@
       },
       "time_sync": {
         "name": "Zeit synchronisieren"
+      },
+      "autofocus": {
+        "name": "Autofokus"
       }
     },
     "event": {
