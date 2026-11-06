@@ -229,7 +229,7 @@ data:
 
 #### Action `xtool.focus`
 
-Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to, and `message` says when it stopped at a limit (the same message is logged as a warning).
+Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to. When a step move stops at a limit, the head moves there and the action then reports an error that says so (for example "Focus moved to 0.0 mm, the lower limit. 35 steps of -1.0 mm from 34.0 mm would have gone to -1.0 mm."), so Home Assistant shows it; an automation stops at that action unless it continues on error.
 
 ```yaml
 action: xtool.focus
@@ -282,6 +282,7 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Home laser head | Move laser head back to (0, 0) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
+| Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |
 | Reboot | Soft reboot |
 | Sync time | Push HA local time to device |
 | Quit LightBurn | Leave LightBurn standby mode |
