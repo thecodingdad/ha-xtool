@@ -69,6 +69,7 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .camera_correction import CameraCalibration, correct_image, parse_calibration
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +88,8 @@ MAX_SNAPSHOT_AGE = timedelta(seconds=60)
 LIVE_FRAME_INTERVAL = 0.4
 # A live view whose viewer has not read a frame for this long is ended.
 LIVE_WRITE_TIMEOUT = 10.0
+# Seconds before reading the camera calibration again after it failed.
+CALIBRATION_RETRY = 300.0
 
 
 # --- Sensors -----------------------------------------------------------
@@ -1454,10 +1457,42 @@ class _WSV2Camera(XtoolEntity, Camera):
         self._last_snapshot: bytes | None = None
         self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
         self._live_viewers = 0
+        # Straighten photos with the laser's calibration grid (main
+        # camera of models that store one).
+        self._uses_calibration = camera_name == "main" and bool(
+            getattr(coordinator.model, "has_camera_calibration", False)
+        )
+        self._calibration: CameraCalibration | None = None
+        self._calibration_next_try = 0.0
 
     @property
     def is_streaming(self) -> bool:
         return self._live_viewers > 0
+
+    async def _corrected(self, image: bytes) -> bytes:
+        """Return the photo straightened, or unchanged without a calibration."""
+        if not self._uses_calibration:
+            return image
+        if self._calibration is None and time.monotonic() >= self._calibration_next_try:
+            raw = await self.coordinator.protocol.camera_calibration_file()
+            self._calibration = parse_calibration(raw) if raw else None
+            if self._calibration is None:
+                _LOGGER.debug(
+                    "V2 camera %s: no usable calibration; showing raw photos",
+                    self._camera_name,
+                )
+                self._calibration_next_try = time.monotonic() + CALIBRATION_RETRY
+        if self._calibration is None or self.hass is None:
+            return image
+        try:
+            return await self.hass.async_add_executor_job(
+                correct_image, image, self._calibration,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "V2 camera %s: correction failed: %s", self._camera_name, err,
+            )
+            return image
 
     async def _image(self, max_age: timedelta) -> bytes | None:
         """Return a photo no older than ``max_age``, taking one if needed.
@@ -1475,6 +1510,7 @@ class _WSV2Camera(XtoolEntity, Camera):
             _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
             image = None
         if image:
+            image = await self._corrected(image)
             # Age counts from when the photo was asked for, so a live
             # view's next frame (one interval later) takes a new photo
             # instead of reusing this one.

@@ -152,6 +152,10 @@ class XtoolDeviceModel:
     # - P2 / P2S / P3                → ``("overview", "closeup")``
     #   (V1 legacy naming carried through to their V2 variant).
     camera_names: tuple[str, ...] = ()
+    # The laser stores a calibration grid for its ``main`` camera
+    # (``global_calib.json``); photos are straightened with it, as
+    # Studio does (F2 Ultra UV).
+    has_camera_calibration: bool = False
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False

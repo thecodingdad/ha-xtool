@@ -1049,6 +1049,29 @@ class WSV2Protocol(XtoolProtocol):
         )
         return image
 
+    async def camera_calibration_file(self) -> bytes | None:
+        """Download the laser's camera calibration (``global_calib.json``).
+
+        Studio's ``downLoadConfig`` reads it with a file transfer of
+        type 3 and the bare file name. The camera lock keeps it from
+        overlapping a photo's transfer.
+        """
+        lock = getattr(self, "_camera_lock", None)
+        if lock is None:
+            lock = self._camera_lock = asyncio.Lock()
+        async with lock:
+            try:
+                blob = await self._download_file_stream(
+                    "global_calib.json", file_type=3,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("V2 camera calibration download failed: %s", err)
+                return None
+        _LOGGER.debug(
+            "V2 camera calibration: %s bytes", len(blob) if blob else 0,
+        )
+        return blob or None
+
     async def _camera_snap(self, camera_name: str) -> bytes | None:
         try:
             snap = await self.request(
