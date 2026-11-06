@@ -63,6 +63,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
@@ -1548,6 +1549,17 @@ def _camera_has_own_device(coordinator: XtoolCoordinator, camera_name: str) -> b
     return len(names) > 1 and camera_name in names
 
 
+def _laser_name(coordinator: XtoolCoordinator) -> str:
+    """The laser's name as the device page shows it (the user's, if renamed)."""
+    device_id = getattr(coordinator, "laser_device_id", None)
+    hass = getattr(coordinator, "hass", None)
+    if device_id and hass is not None:
+        device = dr.async_get(hass).async_get(device_id)
+        if device is not None and (device.name_by_user or device.name):
+            return device.name_by_user or device.name
+    return coordinator.device_name
+
+
 def _camera_device_info(coordinator: XtoolCoordinator, camera_name: str) -> DeviceInfo:
     """Device of one camera, connected to the laser.
 
@@ -1557,12 +1569,13 @@ def _camera_device_info(coordinator: XtoolCoordinator, camera_name: str) -> Devi
     from ..accessories.entities import _via_device_info
 
     label = CAMERA_LABELS.get(camera_name, f"{camera_name.capitalize()} camera")
+    laser = _laser_name(coordinator)
     return DeviceInfo(
         identifiers={(DOMAIN, f"{coordinator.serial_number}:camera_{camera_name}")},
         **_via_device_info(coordinator),
-        name=f"{coordinator.device_name} {label}",
+        name=f"{laser} {label}",
         translation_key=f"camera_{camera_name}",
-        translation_placeholders={"laser": coordinator.device_name},
+        translation_placeholders={"laser": laser},
         manufacturer="xTool",
         model=f"{coordinator.model.name} {label}",
     )
