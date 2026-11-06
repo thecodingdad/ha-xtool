@@ -50,6 +50,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.const import (
     EntityCategory,
     PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfLength,
     UnitOfTemperature,
     UnitOfTime,
@@ -191,6 +192,31 @@ _AMBIENT_HUMIDITY_DESCRIPTION = XtoolSensorEntityDescription(
 _GATED_SENSOR_DESCRIPTIONS: tuple[
     tuple[XtoolSensorEntityDescription, str], ...
 ] = (
+    (
+        # Studio's names: Surface engraving lens (big field lens),
+        # Inner engraving lens (small), or none detected.
+        XtoolSensorEntityDescription(
+            key="engraving_lens",
+            translation_key="engraving_lens",
+            icon="mdi:camera-iris",
+            device_class=SensorDeviceClass.ENUM,
+            options=["big", "small", "none"],
+            value_fn=lambda state, _: state.engraving_lens,
+        ),
+        "has_laser_info",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="wifi_signal",
+            translation_key="wifi_signal",
+            device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+            native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.wifi_signal,
+        ),
+        "has_laser_info",
+    ),
     (
         XtoolSensorEntityDescription(
             key="position_x",
@@ -1671,6 +1697,47 @@ class WSV2ErrorEvent(XtoolEvent):
 # --- Builders ------------------------------------------------------------
 
 
+class WSV2CalibrationSensor(XtoolEntity, SensorEntity):
+    """When Studio last calibrated the camera, with the stored offsets.
+
+    State: the camera calibration time. Attributes: the Z, focus and
+    laser offsets, as the laser stores them (mm; angles in degrees).
+    Read only; the integration never changes them.
+    """
+
+    _attr_translation_key = "calibration"
+    _attr_icon = "mdi:tune-variant"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("calibration")
+
+    @property
+    def native_value(self) -> Any:
+        return getattr(self.coordinator.protocol, "calibration_time", None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        info = getattr(self.coordinator.protocol, "calibration_info", None)
+        return dict(info) if info else None
+
+
+class _WSV2FlameAlarmSwitch(_WSV2ConfigSwitch):
+    """Flame alarm, with whether a fire alarm photo is stored.
+
+    ``flame_record`` is Studio's ``flameAlarmRecord``: when it is true,
+    Studio offers the photo the laser took at a fire alarm.
+    """
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        d = self.coordinator.data
+        record = getattr(d, "flame_alarm_record", None) if d is not None else None
+        return None if record is None else {"flame_record": record}
+
+
 def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     entities: list[SensorEntity] = [
         XtoolSensor(coordinator, description)
@@ -1681,6 +1748,8 @@ def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
             entities.append(XtoolSensor(coordinator, description))
     if coordinator.model.has_ink_cartridges:
         entities.extend(_build_dt002_slot_sensors(coordinator))
+    if getattr(coordinator.model, "has_laser_info", False):
+        entities.append(WSV2CalibrationSensor(coordinator))
     return entities
 
 
@@ -1881,7 +1950,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # injuries and property damage"). Users who need
         # programmatic control can enable it explicitly.
         entities.append(
-            _WSV2ConfigSwitch(
+            _WSV2FlameAlarmSwitch(
                 coordinator, "flame_alarm_v2", "flameAlarm",
                 "flame_alarm_v2_enabled",
                 enabled_default=False,

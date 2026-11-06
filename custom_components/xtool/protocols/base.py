@@ -181,6 +181,10 @@ class XtoolDeviceModel:
     # WS-V2 F2 Ultra UV: Status shows Focusing, Warming up (UV laser not
     # ready) and Laser overheat, read and pushed as Studio does.
     has_uv_laser_status: bool = False
+    # WS-V2 F2 Ultra UV: Engraving lens and Wi-Fi signal sensors, the
+    # Calibration sensor (read only) and the flame record, read as
+    # Studio reads them.
+    has_laser_info: bool = False
     has_gyro: bool = False  # REST: P2 / P2S / F1U / M1U accelerometer
     has_display_screen: bool = False  # REST: F1 Ultra touchscreen brightness
     has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral
@@ -299,6 +303,9 @@ class XtoolDeviceState:
     hardware_type: str = ""  # /gethardwaretype
     # DT001 inkjet-specific
     cpu_temp: int | None = None
+    engraving_lens: str | None = None  # WS-V2: none / small / big
+    wifi_signal: int | None = None  # WS-V2: dBm
+    flame_alarm_record: bool | None = None  # WS-V2: a fire photo is stored
     ambient_temp: float | None = None
     ambient_humidity: float | None = None
     heating_status: int | None = None

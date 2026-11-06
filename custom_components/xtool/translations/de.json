@@ -75,6 +75,20 @@
   },
   "entity": {
     "sensor": {
+      "engraving_lens": {
+        "name": "Gravurlinse",
+        "state": {
+          "big": "Oberflächengravur-Linse",
+          "small": "Innengravur-Linse",
+          "none": "Keine Gravurlinse erkannt"
+        }
+      },
+      "wifi_signal": {
+        "name": "WLAN-Signal"
+      },
+      "calibration": {
+        "name": "Kalibrierung"
+      },
       "status": {
         "name": "Status",
         "state": {

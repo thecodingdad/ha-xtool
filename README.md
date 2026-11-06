@@ -132,11 +132,14 @@ The available options are gated by the device's protocol family — only relevan
 | Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni only.** Active print job and queue length |
 | Active alarms | **O1 Omni only.** Number of active alarms; the `alarms` attribute lists code / level / message (codes match xTool Studio) |
 | UV lamp runtime / Air purifier runtime | **O1 Omni only.** Lifetime counters (diagnostic) |
+| Engraving lens | **F2 Ultra UV**: the fitted lens, with Studio's names: Surface engraving lens, Inner engraving lens, or No engraving lens detected |
 
 #### Diagnostic Sensors
 
 | Entity | Description |
 |---|---|
+| Wi-Fi signal | **F2 Ultra UV**: Wi-Fi signal strength in dBm |
+| Calibration | **F2 Ultra UV**: when Studio last calibrated the camera. Attributes: the stored Z, focus and laser offsets (read only; the integration never changes them) |
 | IP address | Device IP address |
 | Laser power | Laser-module power in watts |
 | Laser module | Laser-module type (e.g. "Diode", "IR") |
@@ -191,7 +194,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
-| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control |
+| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control. Attribute `flame_record` (**F2 Ultra UV**): true while the laser stores a photo from a fire alarm (Studio offers it) |
 | Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
 | Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
 | Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |

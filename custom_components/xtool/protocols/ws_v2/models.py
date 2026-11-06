@@ -241,6 +241,7 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     firmware_content_id="xTool-f2-ultra-uv-firmware",
     firmware_machine_type="MXF",
     has_uv_laser_status=True,
+    has_laser_info=True,
     protocol_version="V2",
     discovery_match=("F2UltraUV",),
 )
@@ -281,6 +282,7 @@ XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     firmware_content_id="xTool-f2-ultra-uv-class1-firmware",
     firmware_machine_type="MXF",
     has_uv_laser_status=True,
+    has_laser_info=True,
     protocol_version="V2",
     discovery_match=("F2UltraUVClass1",),
 )
