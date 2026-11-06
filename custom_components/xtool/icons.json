@@ -72,11 +72,17 @@
         "state": { "off": "mdi:laptop-off" }
       }
     },
-    "switch": {
-      "perspective_correction": {
+    "select": {
+      "perspective": {
         "default": "mdi:perspective-less",
-        "state": { "off": "mdi:perspective-more" }
-      },
+        "state": {
+          "uncorrected": "mdi:camera-outline",
+          "rotated": "mdi:rotate-right",
+          "straightened": "mdi:perspective-less"
+        }
+      }
+    },
+    "switch": {
       "accessory_ductfan_buzzer": {
         "default": "mdi:bell-ring",
         "state": { "off": "mdi:bell-off" }

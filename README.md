@@ -183,7 +183,6 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Power | Linked smart plug (only when configured in integration options) |
 | Buzzer reminders / Beep | Audio feedback enable |
 | Move stop | Emergency-movement-stop toggle |
-| Perspective correction | **F2 Ultra UV**, on the Deep camera device. On (default): the deep camera picture is corrected so a flat surface looks straight and square from above. Off: the picture is only turned upright. Kept by Home Assistant; the laser is not involved |
 | Exhaust fan | Manual smoke-extraction fan toggle |
 | Cooling fan | Manual cooling-fan toggle |
 | Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
@@ -246,6 +245,7 @@ data:
 | Entity | Description |
 |---|---|
 | Purifier speed | Off / Low / Medium / High — AP2 / external purifier speed |
+| Perspective | **F2 Ultra UV**, on the Deep camera device. Uncorrected: the photo as the camera takes it (upside down and at an angle). Rotated (default): turned upright. Straightened: turned upright and its perspective corrected, so a flat surface looks straight and square from above. Kept by Home Assistant; the laser is not involved |
 | Flame alarm mode | Mode 1-4 — flame-detection mode preset |
 | Red-cross mode | Cross-laser pointer / Low-light mode |
 
@@ -264,7 +264,7 @@ On a laser with several cameras, each camera and its settings are on their own d
 |---|---|
 | Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are turned upright and their perspective is corrected (the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle), so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle; its Perspective select turns the photos upright (the default) and can also straighten them, so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
