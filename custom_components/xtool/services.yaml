@@ -3,6 +3,7 @@ focus:
     entity:
       integration: xtool
       domain: number
+      device_class: distance
   fields:
     step:
       example: 1.0

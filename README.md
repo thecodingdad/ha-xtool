@@ -218,7 +218,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 #### Action `xtool.focus`
 
-Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit.
+Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to, and `message` says when it stopped at a limit (the same message is logged as a warning).
 
 ```yaml
 action: xtool.focus

@@ -1165,12 +1165,18 @@ class WSV2FocusHeight(XtoolEntity, NumberEntity):
         step: float | None = None,
         steps: int = 1,
         thickness: float | None = None,
-    ) -> None:
-        """Move to a thickness, or by ``step`` mm ``steps`` times."""
+    ) -> dict[str, Any]:
+        """Move to a thickness, or by ``step`` mm ``steps`` times.
+
+        A move past 0 or 150 mm stops at that limit. Returns the height
+        it moved to and, when it stopped at a limit, a message that says
+        so.
+        """
         protocol = self.coordinator.protocol
         reason = protocol.focus_refusal()
         if reason is not None:
             raise HomeAssistantError(f"Focus not moved: {reason}")
+        current: float | None = None
         if thickness is None:
             current = self.native_value
             if current is None:
@@ -1178,15 +1184,30 @@ class WSV2FocusHeight(XtoolEntity, NumberEntity):
                     "Focus not moved: the current focus height is not known yet"
                 )
             thickness = current + (step or 0.0) * steps
-        target = round_focus(
-            min(max(thickness, self._attr_native_min_value), self._attr_native_max_value),
-        )
+        lowest = self._attr_native_min_value
+        highest = self._attr_native_max_value
+        target = round_focus(min(max(thickness, lowest), highest))
+        message: str | None = None
         if target != round_focus(thickness):
-            _LOGGER.info(
-                "Focus height %.1f mm is outside 0-150 mm; stopping at %.1f mm",
-                thickness, target,
-            )
+            limit = "lower" if target == lowest else "upper"
+            if current is not None:
+                count = "1 step" if steps == 1 else f"{steps} steps"
+                message = (
+                    f"Stopped at {target:.1f} mm, the {limit} limit. "
+                    f"{count} of {step:+.1f} mm from {current:.1f} mm "
+                    f"would have gone to {round_focus(thickness):.1f} mm."
+                )
+            else:
+                message = (
+                    f"Stopped at {target:.1f} mm, the {limit} limit. "
+                    f"{round_focus(thickness):.1f} mm is outside 0-150 mm."
+                )
+            _LOGGER.warning("%s: %s", self.entity_id, message)
         await protocol.focus_to(target)
+        result: dict[str, Any] = {"focus_height": target}
+        if message is not None:
+            result["message"] = message
+        return result
 
 
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
