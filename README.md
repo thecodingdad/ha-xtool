@@ -48,6 +48,11 @@ V1/V2 selection is automatic. UDP discovery tags each device as V1 or V2 (legacy
 
 O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check. Job control, settings and the Pixel-Scan image are not exposed yet.
 
+Apparel Printer (DT001) supports ink and moisturizer status, waste-tank
+full/removed states, maintenance counters/reminders, individual covers,
+OS1 oven temperature/activity and AP2 filter/mode readings. AP2 support on
+DT001 is status-only. Film buffer/position signals are diagnostic readings.
+
 ## Installation
 
 ### HACS (Recommended)
@@ -104,7 +109,7 @@ The available options are gated by the device's protocol family — only relevan
 |---|---|
 | Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
-| Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
+| Task time | Job elapsed time (seconds). DT001 supplies live print-time reports; other V2 models generally supply the final duration via `/work/result WORK_FINISHED`. Print time excludes subsequent DT001 oven work. |
 | Last job time | Last completed job duration |
 | Working mode | Current working mode (cut / engrave / knife / inkjet / …). REST V1 + D-series only — V2 firmware uses this field as a `HANDLE`/`NORMAL` enum surfaced through the *Stops when moved* switch instead |
 | Working time | Lifetime working hours |
@@ -154,7 +159,7 @@ The available options are gated by the device's protocol family — only relevan
 |---|---|
 | Cover | Cover / lid open detection |
 | Front door / Rear door | **O1 Omni only.** Door open detection |
-| Waste ink tank full / Waste ink tank installed | **O1 Omni only.** Waste-ink tank state |
+| Waste ink tank full / Waste ink tank installed | Waste-full state on **O1 Omni and Apparel Printer**. The separate installed sensor is O1 Omni only; DT001 exposes Removed through its Waste fluid sensor. |
 | Air filter installed | **O1 Omni only.** Air-filter presence (diagnostic) |
 | Drawer | Front-drawer position |
 | Safety key | USB safety-key presence (PLUG device class — `on` = plugged in / armed, `off` = unplugged / lockout). Sourced from `/peripheral/machine_lock` and the `/machine_lock/status` push |

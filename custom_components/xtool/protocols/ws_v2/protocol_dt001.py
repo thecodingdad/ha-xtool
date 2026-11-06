@@ -321,7 +321,7 @@ class DT001WSV2Protocol(WSV2Protocol):
         self._apply_panel_states(state, rt)
         self._apply_busy_state(rt)
 
-        # DT001 40.100.028 reports degrees C (live value: 38).
+        # DT001 firmware reports degrees C.
         # Other V2 models use milli-degrees; keep this model-specific.
         cpu_temp = rt.get("cpuTemp")
         if isinstance(cpu_temp, (int, float)):

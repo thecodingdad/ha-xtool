@@ -1,0 +1,1389 @@
+{
+  "/v1/device/runtime-infos": {
+    "cpuTemp": 38,
+    "curMode": {
+      "desc": "",
+      "mode": "P_IDLE",
+      "subMode": ""
+    },
+    "deviceBusyState": {
+      "busyDescription": "",
+      "busyFlag": 0
+    },
+    "filmBufferSta": false,
+    "filmPosStatus": false,
+    "gapOpen": false,
+    "gapState": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "heatingStatus": 1,
+    "humity": 46,
+    "powderLoopRun": false,
+    "temperature": 21
+  },
+  "/v1/peripheral/ink_bottle": {
+    "ink_c": "normal",
+    "ink_k": "normal",
+    "ink_m": "normal",
+    "ink_w": "normal",
+    "ink_y": "normal"
+  },
+  "/v1/peripheral/water_bottle": {
+    "clean_water_bottle": "normal",
+    "waste_water_bottle": "normal"
+  },
+  "/v1/device/roaster": {
+    "autoPreheatEnable": true,
+    "connectState": "Connected",
+    "firmware": "40.100.001.2223.01.B36",
+    "heaterSn": "[redacted]",
+    "heaterTemp": 84,
+    "heatingStatus": 1,
+    "powderShakeSpeed": 270,
+    "powderStatus": "normal"
+  },
+  "/v1/device/workingInfo": {
+    "WORKING_FRAME_NUM": 67,
+    "alignmentCalibration": 1,
+    "boardCommunicationFailure": 6,
+    "bumpExceptions": 33,
+    "cameraExceptions": 1,
+    "cdValue": 81,
+    "cleanNozzleDeep": 10,
+    "cleanNozzleStandard": 2,
+    "csValue": 135,
+    "cuttingFilms": 10,
+    "cyclePumpRunTime": 18735,
+    "devicePowerOn": 46,
+    "deviceSelfCheck": 5,
+    "deviceSelfCheckSuccess": 5,
+    "inkInsufficient": 17,
+    "inkStackCalibration": 2,
+    "lidNotClosed": 209,
+    "lowAmbientHumidity": 38,
+    "lowAmbientTemperature": 5,
+    "moisturizingLiquidInsufficient": 12,
+    "noPrintHeadDetected": 35,
+    "noWasteInkTankDetected": 14,
+    "numKnifeCut": 97,
+    "numWorking": 61,
+    "preheatApparelPrinter": 36,
+    "printHeadCarriageBoardPowerExceptions": 2,
+    "printTestImage": 22,
+    "printerFilmInsufficient": 30,
+    "refillPowder": 3,
+    "timeModeWorking": 2280855,
+    "timeSystemWork": 20927100,
+    "wasteInkTankTooFull": 12,
+    "wdValue": 145,
+    "worktimeFromLastCleanMatain": 558000,
+    "worktimeFromLastFittingChange": 10016700,
+    "wsValue": 850
+  },
+  "/v1/device/configs": {
+    "cleanRemindDay": 3,
+    "fittingRemindDay": 120,
+    "numKnifeCut": 97,
+    "worktimeFromLastCleanMatain": 558000,
+    "worktimeFromLastFittingChange": 10016700
+  },
+  "events": [
+    {
+      "data": {
+        "info": {
+          "curMode": {
+            "desc": "",
+            "mode": "P_IDLE",
+            "subMode": ""
+          },
+          "deviceBusyState": {
+            "busyDescription": "",
+            "busyFlag": 0
+          },
+          "heater": {
+            "connectState": "Connected",
+            "heaterTemp": 85,
+            "heatingStatus": 1
+          },
+          "inkBottle": {
+            "ink_c": "normal",
+            "ink_k": "normal",
+            "ink_m": "normal",
+            "ink_w": "normal",
+            "ink_y": "normal"
+          },
+          "tempHumidty": {
+            "humity": 46,
+            "temp": 21
+          },
+          "waterBottle": {
+            "clean_water_bottle": "normal",
+            "waste_water_bottle": "normal"
+          }
+        },
+        "level": "notice",
+        "module": "DEVICE_STATUS",
+        "type": "INFO"
+      },
+      "method": "REPORT",
+      "params": {},
+      "timestamp": 1793994005626,
+      "transactionId": 1870154155,
+      "type": "request",
+      "url": "/device/status"
+    },
+    {
+      "data": {
+        "info": {
+          "curMode": {
+            "desc": "",
+            "mode": "P_IDLE",
+            "subMode": ""
+          },
+          "deviceBusyState": {
+            "busyDescription": "",
+            "busyFlag": 0
+          },
+          "heater": {
+            "connectState": "Connected",
+            "heaterTemp": 86,
+            "heatingStatus": 1
+          },
+          "inkBottle": {
+            "ink_c": "normal",
+            "ink_k": "normal",
+            "ink_m": "normal",
+            "ink_w": "normal",
+            "ink_y": "normal"
+          },
+          "tempHumidty": {
+            "humity": 46,
+            "temp": 21
+          },
+          "waterBottle": {
+            "clean_water_bottle": "normal",
+            "waste_water_bottle": "normal"
+          }
+        },
+        "level": "notice",
+        "module": "DEVICE_STATUS",
+        "type": "INFO"
+      },
+      "method": "REPORT",
+      "params": {},
+      "timestamp": 1793994009662,
+      "transactionId": 1870154156,
+      "type": "request",
+      "url": "/device/status"
+    }
+  ],
+  "ap2": {
+    "connected_list": "M9098 0,[redacted],45736000,1;",
+    "status": "M9033 V40.212.007.4528.01 B03 C2 D1 H77 I89 J97 K93 L93 S0 E:\"[redacted]\"",
+    "disconnected_list": "M9098 0,[redacted],45736000,0;"
+  },
+  "waste_tank_physical_transitions": [
+    {
+      "observed_utc": "2026-11-06T20:31:33.438025+00:00",
+      "waste_water": "detach",
+      "clean_water": "normal"
+    },
+    {
+      "observed_utc": "2026-11-06T20:33:01.110647+00:00",
+      "waste_water": "normal",
+      "clean_water": "normal"
+    },
+    {
+      "observed_utc": "2026-11-06T20:33:56.117842+00:00",
+      "waste_water": "detach",
+      "clean_water": "normal"
+    },
+    {
+      "observed_utc": "2026-11-06T20:34:54.735420+00:00",
+      "waste_water": "full",
+      "clean_water": "normal"
+    },
+    {
+      "observed_utc": "2026-11-06T20:36:22.188841+00:00",
+      "waste_water": "detach",
+      "clean_water": "normal"
+    },
+    {
+      "observed_utc": "2026-11-06T20:36:54.907242+00:00",
+      "waste_water": "normal",
+      "clean_water": "normal"
+    }
+  ],
+  "panel_physical_transitions": [
+    {
+      "observed_utc": "2026-11-06T20:39:30.440120+00:00",
+      "data": {
+        "gapState": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "gapOpen": false,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        }
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:38.740084+00:00",
+      "data": {
+        "gapState": [
+          0,
+          0,
+          1,
+          0
+        ],
+        "gapOpen": true,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_GAP_OPEN,",
+          "busyFlag": 131072
+        }
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:44.964098+00:00",
+      "data": {
+        "gapState": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "gapOpen": false,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        }
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:48.073450+00:00",
+      "data": {
+        "gapState": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "gapOpen": true,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_GAP_OPEN,",
+          "busyFlag": 131072
+        }
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:55.395263+00:00",
+      "data": {
+        "gapState": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "gapOpen": false,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        }
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:42:31.415754+00:00",
+      "data": {
+        "gapState": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "gapOpen": true,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_GAP_OPEN,",
+          "busyFlag": 131072
+        }
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:42:38.725572+00:00",
+      "data": {
+        "gapState": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "gapOpen": false,
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "curAlarmInfo": {
+          "10": {
+            "info": "gap_top:gap_right:gap_left",
+            "level": "error",
+            "module": "GAP",
+            "type": "OPEN"
+          },
+          "24": {
+            "info": "",
+            "level": "warnning",
+            "module": "SEWAGE_TANK",
+            "type": "VALUE_HIGH"
+          },
+          "27": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_TEMP",
+            "type": "VALUE_LOW"
+          },
+          "29": {
+            "info": "",
+            "level": "warnning",
+            "module": "MASTER_HUMITY",
+            "type": "VALUE_LOW"
+          },
+          "7": {
+            "info": "2",
+            "level": "error",
+            "module": "HEAD_COLLISION",
+            "type": "CLOSE"
+          },
+          "desc": "Warnings that exist while the system is running"
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        }
+      }
+    }
+  ],
+  "panel_push_events": [
+    {
+      "observed_utc": "2026-11-06T20:40:37.898647+00:00",
+      "event": {
+        "data": {
+          "info": "gap_right",
+          "level": "error",
+          "module": "GAP",
+          "type": "OPEN"
+        },
+        "method": "REPORT",
+        "params": {},
+        "timestamp": 1793997637893,
+        "transactionId": 1870154489,
+        "type": "request",
+        "url": ""
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:44.224362+00:00",
+      "event": {
+        "data": {
+          "info": "gap_right",
+          "level": "notice",
+          "module": "GAP",
+          "type": "CLOSE"
+        },
+        "method": "REPORT",
+        "params": {},
+        "timestamp": 1793997644216,
+        "transactionId": 1870154491,
+        "type": "request",
+        "url": ""
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:47.697550+00:00",
+      "event": {
+        "data": {
+          "info": "gap_left",
+          "level": "error",
+          "module": "GAP",
+          "type": "OPEN"
+        },
+        "method": "REPORT",
+        "params": {},
+        "timestamp": 1793997647681,
+        "transactionId": 1870154493,
+        "type": "request",
+        "url": ""
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:40:54.853350+00:00",
+      "event": {
+        "data": {
+          "info": "gap_left",
+          "level": "notice",
+          "module": "GAP",
+          "type": "CLOSE"
+        },
+        "method": "REPORT",
+        "params": {},
+        "timestamp": 1793997654842,
+        "transactionId": 1870154495,
+        "type": "request",
+        "url": ""
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:42:30.926173+00:00",
+      "event": {
+        "data": {
+          "info": "gap_top",
+          "level": "error",
+          "module": "GAP",
+          "type": "OPEN"
+        },
+        "method": "REPORT",
+        "params": {},
+        "timestamp": 1793997750674,
+        "transactionId": 1870154497,
+        "type": "request",
+        "url": ""
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:42:38.444293+00:00",
+      "event": {
+        "data": {
+          "info": "gap_top",
+          "level": "notice",
+          "module": "GAP",
+          "type": "CLOSE"
+        },
+        "method": "REPORT",
+        "params": {},
+        "timestamp": 1793997758419,
+        "transactionId": 1870154499,
+        "type": "request",
+        "url": ""
+      }
+    }
+  ],
+  "oven_and_cleaning_physical_transitions": [
+    {
+      "observed_utc": "2026-11-06T20:49:54.129795+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:51:00.418644+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": true,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:51:14.419342+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:52:29.739014+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_ROASTER_FEED_EJECT,",
+          "busyFlag": 32768
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": true
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:52:32.914077+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:52:33.986161+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_ROASTER_FEED_EJECT,",
+          "busyFlag": 32768
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": true
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:52:35.066642+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:52:49.039707+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_ROASTER_FEED_EJECT,",
+          "busyFlag": 32768
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": true
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:52:50.099448+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:58:14.760603+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_CLEAN",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_CLEAN,",
+          "busyFlag": 4
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "cleaning",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:59:37.012306+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_CLEAN",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_CALIBRATE,",
+          "busyFlag": 2
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "cleaning",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:59:38.150643+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_CALIBRATIPON",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_CALIBRATE,",
+          "busyFlag": 2
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "calibrating",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T20:59:49.660019+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_CALIBRATIPON",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_CALIBRATE,BUSY_KNIFE_RESET,",
+          "busyFlag": 34
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "calibrating",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:00:03.841696+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_CALIBRATIPON",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_CALIBRATE,",
+          "busyFlag": 2
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "calibrating",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:00:05.016206+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:00:11.984635+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_GAP_OPEN,",
+          "busyFlag": 131072
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:00:26.981399+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:02:56.029043+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_PRINT,",
+          "busyFlag": 1
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:02:57.256578+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "Work",
+          "subMode": "workReady"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_PRINT,",
+          "busyFlag": 1
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "processing_ready",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:03:04.097705+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "Work",
+          "subMode": "working"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_PRINT,BUSY_BAKING_FILM,",
+          "busyFlag": 262145
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": true,
+        "heatingStatus": 1
+      },
+      "expected": {
+        "status": "processing",
+        "oven_processing": true,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:05:05.647638+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "Work",
+          "subMode": "working"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_PRINT,BUSY_BAKING_FILM,",
+          "busyFlag": 262145
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": true,
+        "powderLoopRun": true,
+        "heatingStatus": 1
+      },
+      "expected": {
+        "status": "processing",
+        "oven_processing": true,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:05:42.106786+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "Work",
+          "subMode": "working"
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_PRINT,BUSY_BAKING_FILM,",
+          "busyFlag": 262145
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": true,
+        "heatingStatus": 1
+      },
+      "expected": {
+        "status": "processing",
+        "oven_processing": true,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:05:47.806966+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_BAKING_FILM,",
+          "busyFlag": 262144
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": true,
+        "heatingStatus": 1
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": true,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:07:44.952244+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_BAKING_FILM,",
+          "busyFlag": 262144
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 1
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": true,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:08:57.251147+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "BUSY_BAKING_FILM,",
+          "busyFlag": 262144
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 2
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": true,
+        "oven_feed_active": false
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:13:48.723320+00:00",
+      "runtime": {
+        "curMode": {
+          "desc": "",
+          "mode": "P_IDLE",
+          "subMode": ""
+        },
+        "deviceBusyState": {
+          "busyDescription": "",
+          "busyFlag": 0
+        },
+        "filmBufferSta": false,
+        "filmPosStatus": false,
+        "powderLoopRun": false,
+        "heatingStatus": 0
+      },
+      "expected": {
+        "status": "idle",
+        "oven_processing": false,
+        "oven_feed_active": false
+      }
+    }
+  ],
+  "cleaning_and_print_statistics_after": {
+    "numWorking": 62,
+    "numKnifeCut": 99,
+    "cleanNozzleDeep": 11,
+    "cleanNozzleStandard": 2,
+    "worktimeFromLastCleanMatain": 6000,
+    "cyclePumpRunTime": 18736
+  },
+  "print_elapsed_pushes": [
+    {
+      "url": "/print_task/status",
+      "data": {
+        "module": "PRINT_TASK",
+        "type": "TASK_INFO_REPORT",
+        "info": {
+          "processingTime": 57,
+          "currentPrintPass": 54,
+          "totalPrintPass": 106
+        }
+      }
+    },
+    {
+      "url": "/print_task/status",
+      "data": {
+        "module": "PRINT_TASK",
+        "type": "TASK_INFO_REPORT",
+        "info": {
+          "processingTime": 105,
+          "currentPrintPass": 106,
+          "totalPrintPass": 106
+        }
+      }
+    }
+  ],
+  "oven_power_transitions": [
+    {
+      "observed_utc": "2026-11-06T20:49:54.129795+00:00",
+      "roaster": {
+        "connectState": "Connected",
+        "heaterTemp": 110,
+        "heatingStatus": 2
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:14:39.801031+00:00",
+      "roaster": {
+        "connectState": "Disconnected",
+        "heaterTemp": 100,
+        "heatingStatus": 0
+      }
+    },
+    {
+      "observed_utc": "2026-11-06T21:18:37.214786+00:00",
+      "roaster": {
+        "connectState": "Connected",
+        "heaterTemp": 0,
+        "heatingStatus": 0
+      }
+    }
+  ],
+  "collision_simulation_recovery": {
+    "observed_utc": "2026-11-06T21:56:08.064224+00:00",
+    "capture_start_count": 34,
+    "after_clear_count": 34,
+    "runtime": {
+      "curMode": {
+        "desc": "",
+        "mode": "P_IDLE",
+        "subMode": ""
+      },
+      "deviceBusyState": {
+        "busyDescription": "",
+        "busyFlag": 0
+      },
+      "curAlarmInfo": {
+        "7": {
+          "info": "2:1",
+          "level": "error",
+          "module": "HEAD_COLLISION",
+          "type": "CLOSE"
+        }
+      }
+    },
+    "live_collision_push_captured": false
+  }
+}

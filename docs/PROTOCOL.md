@@ -1489,7 +1489,53 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 job type the WS-V2 family (F1, F1 Ultra, F2 family, M1 Ultra, P2S,
 P3, MetalFab, Apparel Printer, …) can run.
 
+### DT001 cover status (hardware-confirmed)
+
+Apparel Printer firmware `40.100.028.00.ht6` reports `gapState` in
+`GET /v1/device/runtime-infos`: indexes 0/1/2 are top/left/right covers,
+with 1 open and 0 closed. Independent physical open/close tests confirmed
+all three. Index 3 is named oven cover in Studio; that cover is not yet
+hardware-verified here. `gapOpen` is the aggregate flag.
+
+Immediate GAP events use an empty URL: `data:{module:"GAP", type:"OPEN"|"CLOSE",
+info:"gap_top"|"gap_left"|"gap_right"}`. They must be dispatched by module
+rather than requiring a non-empty URL. The polling `curAlarmInfo` remains
+sticky after covers close and is not a reliable current cover snapshot.
+
+### DT001 cleaning, printing and oven activity (hardware-confirmed)
+
+Firmware `40.100.028.00.ht6` emits `P_CLEAN` for nozzle cleaning and the
+misspelled `P_CALIBRATIPON` for calibration / test printing. A Studio print
+uses mode `Work`, with `workReady` then `working` submodes; Studio also
+defines `workPause`. These differ from the shared laser mode strings.
+`/print_task/status` pushes `PRINT_TASK / TASK_INFO_REPORT` with
+`processingTime` in seconds. `/work/result.timeUse` is the print duration,
+excluding subsequent baking.
+
+Runtime and `/device/status` snapshots carry `deviceBusyState.busyFlag`.
+Bit 262144 marks oven processing and remains active when the printer has
+returned to `P_IDLE`; bit 32768 marks the oven feed/eject command. The
+latter indicates controller activity, not proven belt movement. Runtime
+`powderLoopRun` is independent and can stop before baking is finished.
+Do not use printer Idle, print Job finished, heater status or powder-loop
+off as oven completion. Oven processing does not indicate cooldown.
+
+Oven reads use `GET /v1/device/roaster`, not the absent `heater_temp`
+peripheral on this firmware. Abrupt accessory power loss reports oven
+`connectState:"Disconnected"` and retains the AP2's `M9098` pairing row
+with status 0. Skip disconnected DT001 rows rather than creating an empty
+MAC-keyed accessory when its product serial cannot be read.
+
+Studio's DT001 collision warning is `module:"HEAD_COLLISION", type:"CLOSE"`.
+`CLOSE` is the fault/contact event for this module. The integration forwards
+it as Error event type `print_head_collision`, independent of the push URL.
+`workingInfo.bumpExceptions` is a historical detection count. Existing sticky
+alarm-list entries are not replayed as live collision events. Physical
+collision-event and recovery semantics remain unverified; no active/cleared
+collision binary sensor is provided.
+
 ### Behaviour matrix (per-firmware overrides)
+
 
 Some V2 device behaviour is gated by a per-model + per-firmware map
 (`base + per-model overrides`). Observed flags:
@@ -1734,6 +1780,14 @@ Body shape for the three families that do have an F0F7 tunnel:
 
 Response carries the F0F7-framed reply under the same
 ``data_b64`` field.
+
+**DT001 routing override:** the Apparel Printer uses `link:"linkMotion"`
+instead of `link:"uart485"`. Studio's DT001 accessory adapter rewrites this
+field for both discovery and per-accessory commands. Verified on firmware
+`40.100.028.00.ht6`: `M9098` returns the connected AP2 and `M9033` returns
+its firmware, mode token (`C2` in Auto mode), and five filter percentages.
+The AP2 identifies as `0x45` (`LargePurifier` in Studio) and uses prefix
+`[69,115,96,1,0]`; AP2 Max uses `[76,115,107,1,0]`.
 
 **S1 is the exception.** It has no `/passthrough` and no
 `parts_control` channel — the BT-accessory surface reachable on
