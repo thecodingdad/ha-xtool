@@ -63,7 +63,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 def _last_firmware_version(
-    hass: HomeAssistant, serial_number: str, stored: str,
+    hass: HomeAssistant, entry_id: str, serial_number: str, stored: str,
 ) -> str:
     """Return the firmware version last read from the laser.
 
@@ -72,11 +72,12 @@ def _last_firmware_version(
     laser is off showed the setup version again.
     """
     if serial_number:
-        device = dr.async_get(hass).async_get_device(
-            identifiers={(DOMAIN, serial_number)}
-        )
-        if device is not None and device.sw_version:
-            return device.sw_version
+        # The entry's own devices: ``async_get_device`` is deprecated
+        # (Home Assistant 2026.11), and its replacement is new there.
+        registry = dr.async_get(hass)
+        for device in dr.async_entries_for_config_entry(registry, entry_id):
+            if (DOMAIN, serial_number) in device.identifiers and device.sw_version:
+                return device.sw_version
     return stored
 
 
@@ -86,7 +87,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     device_name = entry.data.get("device_name", DEFAULT_DEVICE_NAME)
     serial_number = entry.data.get("serial_number", "")
     firmware_version = _last_firmware_version(
-        hass, serial_number, entry.data.get("firmware_version", "")
+        hass, entry.entry_id, serial_number, entry.data.get("firmware_version", "")
     )
 
     # ``model_key`` (single composite field, e.g. ``"F2UltraUV_V2"``)
