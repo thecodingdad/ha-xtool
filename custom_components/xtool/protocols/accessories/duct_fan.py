@@ -1,8 +1,9 @@
 """DuctFan / DuctFanV3 — Smoke Purifier IF2 / IF2 2.0.
 
 BT-paired exhaust fan that hangs off the dongle. Studio's bundle
-queries ``M9082`` for state (gear, buzzer, sn, version) and sends
-``M9064 ${ctr}${gear}`` to change speed.
+queries ``M9082`` for state (gear, buzzer, sn, version). The IF2
+sends ``M9064 ${ctr}${gear}`` to change speed; the IF2 2.0 sends
+``M9064 ${ctr}${gear} C<mode>`` (see ``fan_v3_manual_mcode``).
 
 Prefix bytes:
 
@@ -43,75 +44,53 @@ def parse_fan_info(text: str) -> dict[str, object]:
     }
 
 
-# Studio bundle's airflow-adjustment picker collapses three modes
-# and the manual gear ladder into one UI element. Mirror the same
-# flat option list as a single HA Select entity. Wire mapping per
-# Studio's setFanGear({ctr, gear}) → ``M9064 ${ctr}${gear}``:
+# IF2 2.0 fan control, per Studio's ``setFanGearV3``:
+# ``M9064 ${ctr}${gear} ${mode}`` where ``ctr`` is ``A`` (Manual) or
+# ``B`` (Auto) and ``mode`` is ``C3`` (Manual), ``C4`` (Auto) or
+# ``C2`` (Manual gear 0, which is Off). Without the trailing ``C``
+# token the IF2 2.0 stores the gear but does not change its mode, so
+# a speed set from Off leaves the fan off.
 #
-# - Manual: ctr="A", gear 0/1/2/3/4
-# - Auto Regular: ctr="B", gear 3 (Studio's auto-regular preset)
-# - Auto Quiet:   ctr="B", gear 1 (Studio's auto-quiet preset)
-FANV3_MODE_OPTIONS: tuple[str, ...] = (
-    "Auto Regular", "Auto Quiet", "Off", "1", "2", "3", "4",
-)
-
-_FANV3_OPTION_WIRE: dict[str, str] = {
-    "Auto Regular": "B3",
-    "Auto Quiet":   "B1",
-    "Off":          "A0",
-    "1":            "A1",
-    "2":            "A2",
-    "3":            "A3",
-    "4":            "A4",
+# Studio's Auto gear is the gear of the current processing mode
+# (default 3); its quiet work mode uses one gear less
+# (``_getAutoModeFanGear``). The presets below use those defaults.
+FANV3_PRESET_REGULAR = "Auto Regular"
+FANV3_PRESET_QUIET = "Auto Quiet"
+FANV3_PRESETS: tuple[str, ...] = (FANV3_PRESET_REGULAR, FANV3_PRESET_QUIET)
+FANV3_AUTO_GEAR: dict[str, int] = {
+    FANV3_PRESET_REGULAR: 3,
+    FANV3_PRESET_QUIET: 2,
 }
 
-# Reverse: write-mcode tail ↔ Select option, used by the set-handler
-# to update ``auto_submode`` so the Select reflects the new Auto
-# sub-mode immediately (M9082 poll can't distinguish Quiet/Regular).
-_FANV3_WIRE_TO_OPTION: dict[str, str] = {
-    wire: opt for opt, wire in _FANV3_OPTION_WIRE.items()
-}
+# ``mode_class`` values, shared by the M9082 ``D`` token and the
+# M9064 push ``C`` token.
+FANV3_OFF = 2
+FANV3_MANUAL = 3
+FANV3_AUTO = 4
 
 
-def _fanv3_option_from_state(
-    mode_class: int | None,
-    current_gear: int | None,
-    auto_submode: str | None,
-) -> str | None:
-    """Derive the Select option from the M9082 ``D`` + ``B`` tokens.
+def fan_v3_manual_mcode(gear: int) -> str:
+    """Return the M9064 command for Manual gear 1-4, or Off for 0."""
+    gear = max(0, min(4, int(gear)))
+    mode = "C3" if gear else "C2"
+    return f"{MCODE_FAN_SET_GEAR} A{gear} {mode}"
 
-    Live wire mapping (verified against if2_3.log v2.5.8 retest,
-    user-supplied 14-action click trace):
 
-    - ``D=2`` → ``"Off"`` (Manual Off; B carries last motor RPM)
-    - ``D=3`` → ``str(B)`` (Manual running, B = current gear 1-4)
-    - ``D=4`` → Auto running — sub-mode (Quiet vs Regular) is NOT
-      derivable from the M9082 poll alone; both yield the same
-      ``D=4``. Use the cached ``auto_submode`` updated by set-
-      handlers and M9064 push events; fall back to ``"Auto Regular"``.
-    """
-    if mode_class is None:
+def fan_v3_auto_mcode(preset: str) -> str | None:
+    """Return the M9064 command for an Auto preset, or None if unknown."""
+    gear = FANV3_AUTO_GEAR.get(preset)
+    if gear is None:
         return None
-    if mode_class == 2:
-        return "Off"
-    if mode_class == 3:
-        if current_gear is None or not 1 <= current_gear <= 4:
-            return None
-        return str(current_gear)
-    if mode_class == 4:
-        if auto_submode in ("Auto Regular", "Auto Quiet"):
-            return auto_submode
-        return "Auto Regular"
-    return None
+    return f"{MCODE_FAN_SET_GEAR} B{gear} C4"
 
 
 def _v3_tokens(text: str, include_a: bool = False) -> dict[str, int | None]:
     """Split an M9064 / M9082 V3 wire body into letter-keyed ints.
 
-    The version anchor (``A<…dotted…>``) only appears in the M9082
-    reply, never in the M9064 push event. ``include_a=False``
+    The version anchor (``A<dotted version>``) only appears in the
+    M9082 reply, never in the M9064 push. ``include_a=False``
     (default) skips it; pass ``include_a=True`` for the push, where
-    ``A`` is a plain numeric gear echo.
+    ``A`` is a plain numeric gear.
     """
     keys = ("A", "B", "C", "D", "S", "Z") if include_a else (
         "B", "C", "D", "S", "Z"
@@ -128,39 +107,24 @@ def _v3_tokens(text: str, include_a: bool = False) -> dict[str, int | None]:
 
 
 def parse_fan_v3_info(text: str) -> dict[str, object]:
-    """Decode ``DuctFanV3`` (IF2 2.0) ``M9082`` reply.
+    """Decode the ``DuctFanV3`` (IF2 2.0) ``M9082`` reply.
 
-    Wire shape on F2 Ultra UV firmware ``40.130.021.00.ht2``:
+    Wire shape:
+    ``A<version> B<gear> C<c> D<mode_class> E:"<sn>" S<s> Z<buzzer>``
 
-    ``A<version> B<gear> C<c_state> D<mode_class> E:"<sn>" S<s> Z<buzzer>``
+    Field semantics follow Studio's ``getFanInfoV3``:
 
-    Field semantics (Studio bundle ``getFanInfoV3`` for
-    GS009-CLASS-4 is authoritative — verified live via v2.7.1
-    retest, Issue #4):
+    - ``A`` = firmware version (contains dots, so parsed
+      positionally as ``tokens[0]``).
+    - ``D`` = mode: ``2`` = Manual Off, ``3`` = Manual, ``4`` = Auto.
+    - ``B`` = the Manual gear, valid only when ``D=3``. In Manual Off
+      it still holds the previous gear, so it is ignored there.
+    - ``Z`` = buzzer enabled.
 
-    - ``A`` = firmware-version string; contains dots so parsed
-      positionally as ``tokens[0]``.
-    - ``B`` = ``current_gear`` — motor speed indicator (Manual:
-      1-4 = gear; Manual Off: residual RPM of the previous gear;
-      Auto: ramping speed).
-    - ``C`` = ``c_state`` — transient state indicator; alternates
-      2/3 across mode transitions, semantically unclear, kept for
-      debug visibility.
-    - ``D`` = ``mode_class`` — authoritative mode discriminator:
-      ``2`` = Manual Off, ``3`` = Manual running, ``4`` = Auto.
-    - **``Z`` = ``buzzer_enable``** (per Studio bundle
-      ``fanBuzzerEnable: yC(t, 'Z') === 1``). Earlier revs
-      swapped S / Z here; the swap caused the buzzer switch to
-      bounce back to ``off`` after the user toggled it on, and
-      the entity to display stale ``off`` while the physical
-      buzzer was actually enabled.
-    - ``S`` = write-side echo of the last ``M9079 S<x>`` command
-      — Studio ignores it on read; not surfaced.
-
-    ``mode_class=4`` (Auto) does NOT carry the Regular/Quiet
-    sub-mode in the poll reply. The set-handler caches it in
-    ``auto_submode`` on every write, and the M9064 push parser
-    refreshes it on external Studio sets.
+    The poll does not report the Auto gear or whether Auto is the
+    regular or the quiet preset; those come from the M9064 push and
+    from HA's own writes, and the coordinator carries them across
+    polls.
     """
     tokens = text.split()
     version = None
@@ -168,97 +132,68 @@ def parse_fan_v3_info(text: str) -> dict[str, object]:
         version = tokens[0][1:] or None
 
     fields = _v3_tokens(" ".join(tokens[1:]))
-    current_gear = fields["B"]
-    c_state = fields["C"]
     mode_class = fields["D"]
+    gear = fields["B"]
     buzzer = fields["Z"]
-    return {
+    out: dict[str, object] = {
         "version": version,
-        "current_gear": current_gear,
-        "c_state": c_state,
-        "mode_class": mode_class,
+        "mode_class": mode_class if mode_class in (FANV3_OFF, FANV3_MANUAL, FANV3_AUTO) else None,
         "buzzer_enable": bool(buzzer) if buzzer is not None else None,
-        # M9082 reply presence itself proves the accessory is
-        # connected — we wouldn't be parsing this reply otherwise.
+        # The M9082 reply itself proves the accessory is connected.
         "connected": True,
         "sn": quoted(text, "E:"),
-        # mode_speed left ``None`` here — the V2 coordinator's
-        # accessory merge step calls ``derive_fan_v3_mode_speed``
-        # after merging push-cached ``auto_submode``, so the Select
-        # always reflects the latest sub-mode hint.
     }
-
-
-def parse_fan_v3_push(text: str) -> dict[str, object]:
-    """Decode a DuctFanV3 ``M9064`` ``/accessory/status`` push body.
-
-    Push wire shape (verified live, if2_3.log v2.5.8):
-    ``A<a> B<b> C<c> D<d> S<s>`` — same letter-positional convention
-    as the M9082 reply but without the firmware-version anchor.
-
-    Field semantics:
-
-    - ``D`` = ``mode_class`` (2 / 3 / 4) — authoritative; mirrors
-      the M9082 poll's ``D`` token. See ``parse_fan_v3_info``.
-    - ``A`` = target / last-manual gear echo. In Manual mode the
-      user-clicked gear (0 = Off, 1-4 = picked); in Auto mode
-      echoes the prior Manual gear. Used to flip ``current_gear``
-      immediately when ``D=3`` so the entity reacts without
-      waiting for the ~600 ms M9082 poll.
-    - ``B`` / ``C`` = transient state indicators; alternate 2/3
-      across mode transitions, semantically unclear, kept for
-      debug visibility.
-    - ``S`` = write-side echo of the last ``M9079 S<x>`` command;
-      Studio ignores it and so do we. Buzzer state is refreshed
-      from the M9082 poll (see :func:`parse_fan_v3_info`).
-
-    Auto sub-mode (Regular vs Quiet) is NOT recoverable from the
-    push — neither the poll nor the push reliably distinguishes
-    them. The set-handler caches sub-mode on every write_mcode
-    fire (see ``_fanv3_set_handler`` in entities.py); external
-    Studio sets will surface generically as "Auto" until the next
-    HA-side write or a fresh sub-mode hint arrives.
-    """
-    f = _v3_tokens(text, include_a=True)
-    out: dict[str, object] = {"c_state": f["C"]}
-    # Push frames emitted during a Studio-initiated speed change
-    # carry ``D0`` (transitional / not-yet-settled). Merging that
-    # into ``mode_class`` briefly reports the fan as "off" until
-    # the next M9082 poll restores the real value — that's the
-    # bounce reported on the fan entity in Issue #4 v2.7.1 retest.
-    # Only accept the documented mode discriminators
-    # (2 = Manual Off, 3 = Manual running, 4 = Auto running).
-    if f["D"] in (2, 3, 4):
-        out["mode_class"] = f["D"]
-    a_token = f["A"]
-    if f["D"] == 3 and a_token is not None and 0 <= a_token <= 4:
-        out["current_gear"] = a_token
+    if mode_class == FANV3_MANUAL and gear is not None and 1 <= gear <= 4:
+        out["current_gear"] = gear
+    elif mode_class == FANV3_OFF:
+        out["current_gear"] = 0
     return out
 
 
-def derive_fan_v3_mode_speed(
-    fields: dict[str, object],
-) -> str | None:
-    """Compute ``mode_speed`` from current accessory fields.
+def parse_fan_v3_push(text: str) -> dict[str, object]:
+    """Decode a ``DuctFanV3`` ``M9064`` ``/accessory/status`` push body.
 
-    Called from the WS-V2 coordinator's accessory merge step after
-    every poll + push update, so the Select / Fan entity surface
-    the latest combined state. Reads ``mode_class``, ``current_gear``,
-    and the cached ``auto_submode``.
+    Wire shape: ``A<gear> B<auto_gear> C<mode> D<job> S<alert>``, for
+    example ``M9064 A4 B3 C4 D1 S0`` (Auto, a job running at gear 3).
+    Field semantics follow Studio's M9064 report handler and captures
+    from an F2 Ultra UV:
+
+    - ``C`` = mode: ``2`` = Manual Off, ``3`` = Manual, ``4`` = Auto.
+    - ``A`` = the Manual gear (kept while in Auto or Off).
+    - ``B`` = the gear Auto runs at. A job sets it from its G-code
+      (``G198 P78 "M9064 B<n>"``) and it drops to 0 after the job's
+      post-run time; choosing a preset sets it while idle.
+    - ``D`` = ``1`` from job start until the post-run time ends,
+      otherwise ``0``. In Auto the fan spins only then.
+    - ``S`` = alerts: ``1`` fan stall, ``2`` cleaning reminder,
+      ``3`` both. Kept as ``alert`` for the Alert event entity.
     """
-    return _fanv3_option_from_state(
-        fields.get("mode_class"),  # type: ignore[arg-type]
-        fields.get("current_gear"),  # type: ignore[arg-type]
-        fields.get("auto_submode"),  # type: ignore[arg-type]
-    )
-
-
-def _fanv3_mode_speed_mcode(option: str) -> str | None:
-    """Map a Select option to the matching ``M9064 <ctr><gear>``."""
-    wire = _FANV3_OPTION_WIRE.get(option)
-    if wire is None:
-        return None
-    return f"{MCODE_FAN_SET_GEAR} {wire}"
+    f = _v3_tokens(text, include_a=True)
+    out: dict[str, object] = {}
+    mode = f["C"]
+    if mode in (FANV3_OFF, FANV3_MANUAL, FANV3_AUTO):
+        out["mode_class"] = mode
+        gear = f["A"]
+        if mode == FANV3_OFF:
+            out["current_gear"] = 0
+        elif mode == FANV3_MANUAL and gear is not None and 1 <= gear <= 4:
+            out["current_gear"] = gear
+        auto_gear = f["B"]
+        if mode == FANV3_AUTO and auto_gear is not None and 0 <= auto_gear <= 4:
+            out["auto_gear"] = auto_gear
+            # The IF2 does not report the preset itself. Studio runs
+            # Auto at the processing mode's gear (3 by default) and one
+            # gear less when quiet, so gears 1-2 read as quiet and 3-4
+            # as regular. Gear 0 (idle after a job) keeps the last one.
+            if 1 <= auto_gear <= 2:
+                out["auto_submode"] = FANV3_PRESET_QUIET
+            elif auto_gear >= 3:
+                out["auto_submode"] = FANV3_PRESET_REGULAR
+    if f["D"] is not None:
+        out["job_active"] = f["D"] == 1
+    if f["S"] is not None:
+        out["alert"] = f["S"]
+    return out
 
 
 # Legacy IF2 v1 (``DuctFan``) entity spec. Kept narrow — the V1
@@ -278,36 +213,22 @@ _ENTITIES_V1 = (
 )
 
 
-# IF2 2.0 (``DuctFanV3``) entity spec. Studio's UI collapses the
-# Mode + Manual-gear pickers into a single flat option list; mirror
-# that here.
+# IF2 2.0 (``DuctFanV3``) entity spec. One HA fan entity covers the
+# whole fan control: off, Manual gears 1-4 as percentage, and the two
+# Auto presets (class ``_AccessoryFan`` in ``entities.py``).
 _ENTITIES_V3 = (
     AccessoryEntitySpec("sensor", "version", field="version",
                         icon="mdi:numeric", entity_category="diagnostic"),
-    AccessoryEntitySpec("sensor", "current_speed", field="current_gear",
-                        icon="mdi:fan-speed-1"),
     AccessoryEntitySpec(
-        "select", "mode_speed", field="mode_speed",
+        "fan", "fan", field="mode_class",
         icon="mdi:fan",
-        options=FANV3_MODE_OPTIONS,
-        write_mcode=_fanv3_mode_speed_mcode,
-        entity_category="config",
-    ),
-    # HA-native Fan-domain wrapper around the same wire path —
-    # surfaces ``preset_modes`` + ``percentage`` for users who
-    # prefer the Fan card over a flat 7-option dropdown. Both
-    # entities co-exist; either UI drives the device through
-    # ``M9064 <mode><gear>``. Class lives in
-    # ``protocols/accessories/entities.py:_AccessoryFan`` —
-    # ``field="mode_speed"`` is just the skip-if-missing guard.
-    AccessoryEntitySpec(
-        "fan", "fan", field="mode_speed",
-        icon="mdi:fan",
-        entity_category="config",
     ),
     AccessoryEntitySpec("switch", "buzzer", field="buzzer_enable",
                         write_mcode=lambda on: f"{MCODE_FAN_BUZZER} S{1 if on else 0}",
                         entity_category="config"),
+    # Fan stall / cleaning needed, from the M9064 push ``S`` bits
+    # (``field=None``: it builds before the first push carries them).
+    AccessoryEntitySpec("event", "alert", icon="mdi:fan-alert"),
     # Inline-fan post-run timer (read-only). Studio's
     # ``setFanV3RunDuration`` hard-wires ``M9085 T0`` and never
     # exposes a user-facing slider on the IF2 side — the value is
@@ -344,4 +265,6 @@ DUCT_FAN_V3 = AccessoryDefinition(
     info_mcode=MCODE_FAN_INFO,
     parse_info=parse_fan_v3_info,
     entities=_ENTITIES_V3,
+    # Replaced by the single fan entity.
+    retired_entities=(("select", "mode_speed"), ("sensor", "current_speed")),
 )

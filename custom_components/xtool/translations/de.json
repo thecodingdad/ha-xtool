@@ -184,9 +184,6 @@
       "accessory_ductfan_current_speed": {
         "name": "Aktuelle Drehzahl"
       },
-      "accessory_ductfanv3_current_speed": {
-        "name": "Aktuelle Drehzahl"
-      },
       "accessory_purifier_filter_pre": {
         "name": "Vorfilter Restkapazität"
       },
@@ -677,9 +674,6 @@
           "high": "Hoch"
         }
       },
-      "accessory_ductfanv3_mode_speed": {
-        "name": "Lüfter"
-      },
       "accessory_purifier_gear_select": {
         "name": "Reiniger-Stufe einstellen"
       },
@@ -799,6 +793,17 @@
       }
     },
     "event": {
+      "accessory_ductfanv3_alert": {
+        "name": "Warnung",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fan_stall": "Lüfter blockiert",
+              "cleaning_needed": "Reinigung erforderlich"
+            }
+          }
+        }
+      },
       "button": {
         "name": "Taste",
         "state_attributes": {
