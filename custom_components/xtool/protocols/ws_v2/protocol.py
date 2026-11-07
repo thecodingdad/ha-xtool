@@ -1370,7 +1370,12 @@ class WSV2Protocol(XtoolProtocol):
                     )
 
         elif url == "/work/result" and module == "WORK_RESULT" and typ == "WORK_FINISHED":
-            self._latest["status"] = XtoolStatus.FINISHED
+            # ``result`` is ``success`` or ``failed``. A job a power cut
+            # stopped is reported as failed after the laser boots, with
+            # ``timeUse`` 0; the Status then follows the work mode.
+            failed = isinstance(info, dict) and info.get("result") == "failed"
+            if not failed:
+                self._latest["status"] = XtoolStatus.FINISHED
             task_id = str(self._latest.get("task_id") or "")
             duration: int | None = None
             if isinstance(info, dict):
@@ -1382,16 +1387,17 @@ class WSV2Protocol(XtoolProtocol):
                         # and reported ``timeUse: 7028`` ≈ 7063 s
                         # wall-clock.
                         secs = int(info["timeUse"])
-                        self._latest["task_time"] = secs
-                        self._latest["last_job_time_seconds"] = secs
                         duration = secs
+                        if not failed:
+                            self._latest["task_time"] = secs
+                            self._latest["last_job_time_seconds"] = secs
                     except (TypeError, ValueError):
                         pass
                 if info.get("taskId") is not None:
                     self._latest["task_id"] = info["taskId"]
                     task_id = str(info["taskId"])
             self._maybe_emit_job_event(
-                "finished", task_id,
+                "failed" if failed else "finished", task_id,
                 {"task_id": task_id, "duration": duration},
             )
 
