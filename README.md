@@ -210,6 +210,20 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
 | Work area limit (left / right / up / down) | M311 work-area limits (mm) |
+| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Nothing is stored on the laser |
+
+#### Action `xtool.focus`
+
+Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to. When a step move stops at a limit, the head moves there and the action then reports an error that says so (for example "Focus moved to 0.0 mm, the lower limit. 35 steps of -1.0 mm from 34.0 mm would have gone to -1.0 mm."), so Home Assistant shows it; an automation stops at that action unless it continues on error.
+
+```yaml
+action: xtool.focus
+target:
+  entity_id: number.xtool_f2_ultra_uv_focus_height
+data:
+  step: -0.5
+  steps: 2
+```
 
 ### Select
 
@@ -251,6 +265,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Home laser head | Move laser head back to (0, 0) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
+| Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |
 | Reboot | Soft reboot |
 | Sync time | Push HA local time to device |
 | Quit LightBurn | Leave LightBurn standby mode |

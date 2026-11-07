@@ -34,7 +34,7 @@ from homeassistant.components.light import (
     ColorMode,
     LightEntity,
 )
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -55,9 +55,11 @@ from homeassistant.const import (
     UnitOfTime,
     UnitOfVolumeFlowRate,
 )
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_HA_MAX
+from .protocol import round_focus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -1040,6 +1042,86 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         self.async_write_ha_state()
 
 
+class WSV2FocusHeight(XtoolEntity, NumberEntity):
+    """Focus height as Studio's manual focus: the material thickness in mm.
+
+    Shows what Studio shows (laser-head Z minus 6). Setting it moves the
+    head as Studio does; the ``xtool.focus`` action also moves it in
+    steps. Moves are refused whenever Studio would refuse them.
+    """
+
+    _attr_translation_key = "focus_height"
+    _attr_icon = "mdi:arrow-expand-vertical"
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 150.0
+    _attr_native_step = 0.1
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("focus_height")
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        return None if d is None else getattr(d, "focus_thickness", None)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.async_focus(thickness=value)
+
+    async def async_focus(
+        self,
+        step: float | None = None,
+        steps: int = 1,
+        thickness: float | None = None,
+    ) -> dict[str, Any]:
+        """Move to a thickness, or by ``step`` mm ``steps`` times.
+
+        Returns the height it moved to. A move past 0 or 150 mm stops at
+        that limit and then raises an error that says so, so Home
+        Assistant shows the message.
+        """
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Focus not moved: {reason}")
+        current: float | None = None
+        if thickness is None:
+            current = self.native_value
+            if current is None:
+                raise HomeAssistantError(
+                    "Focus not moved: the current focus height is not known yet"
+                )
+            thickness = current + (step or 0.0) * steps
+        lowest = self._attr_native_min_value
+        highest = self._attr_native_max_value
+        target = round_focus(min(max(thickness, lowest), highest))
+        message: str | None = None
+        if target != round_focus(thickness):
+            limit = "lower" if target == lowest else "upper"
+            if current is not None:
+                count = "1 step" if steps == 1 else f"{steps} steps"
+                message = (
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
+                    f"{count} of {step:+.1f} mm from {current:.1f} mm "
+                    f"would have gone to {round_focus(thickness):.1f} mm."
+                )
+            else:
+                message = (
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
+                    f"{round_focus(thickness):.1f} mm is outside 0-150 mm."
+                )
+            _LOGGER.warning("%s: %s", self.entity_id, message)
+        await protocol.focus_to(target)
+        if message is not None:
+            # Reported as an error so Home Assistant shows it; the move
+            # itself was made.
+            raise HomeAssistantError(message)
+        return {"focus_height": target}
+
+
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
     """Display-screen brightness via ``/v1/peripheral/control``."""
 
@@ -1309,6 +1391,23 @@ class _WSV2Button(XtoolEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self._action()
+
+
+class WSV2Autofocus(_WSV2Button):
+    """Autofocus, as Studio's button and the laser's own button.
+
+    Refused whenever Studio would refuse it (as Focus height moves).
+    """
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "autofocus", "mdi:image-filter-center-focus")
+
+    async def _action(self) -> None:
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Autofocus not started: {reason}")
+        await protocol.autofocus()
 
 
 class WSV2PauseJob(_WSV2Button):
@@ -1938,6 +2037,8 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     model = coordinator.model
     if model.is_read_only:
         entities = []
+    if getattr(model, "has_focus_control", False) and not model.is_read_only:
+        entities.append(WSV2FocusHeight(coordinator))
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
     # to the AirPump accessory child device (the per-job-mode default
     # gear is conceptually an AirPump setting even though the wire
@@ -2026,6 +2127,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
+    if coordinator.model.has_focus_control and not coordinator.model.is_read_only:
+        entities.append(WSV2Autofocus(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the
