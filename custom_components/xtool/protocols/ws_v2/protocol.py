@@ -61,6 +61,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import ssl
 import time
 import uuid
@@ -510,6 +511,42 @@ CONFIG_READ_KEYS: tuple[str, ...] = (
 )
 
 
+def calibration_value(value: Any) -> Any:
+    """Return a stored calibration value in a readable form.
+
+    Offsets are stored as G-code, such as ``M531X-0.26Y0.01P`` (an XY
+    offset in mm) or ``M533S0.0B`` (an angle); others are numbers.
+    """
+    if isinstance(value, str):
+        xy = re.fullmatch(r"M531X(-?[0-9.]+)Y(-?[0-9.]+)[A-Z]?", value.strip())
+        if xy:
+            return {"x": float(xy.group(1)), "y": float(xy.group(2))}
+        angle = re.fullmatch(r"M533S(-?[0-9.]+)[A-Z]?", value.strip())
+        if angle:
+            return float(angle.group(1))
+    return value
+
+
+def calibration_time(blob: str) -> datetime | None:
+    """Return the camera calibration time (``calib_time``) of the grid.
+
+    The laser stores it as local time without a zone; Home Assistant's
+    time zone is assumed.
+    """
+    from homeassistant.util import dt as dt_util
+
+    try:
+        text = json.loads(blob).get("calib_time")
+    except (ValueError, AttributeError):
+        return None
+    parsed = dt_util.parse_datetime(str(text)) if text else None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.get_default_time_zone())
+    return parsed
+
+
 class WSV2Protocol(XtoolProtocol):
     """V2 protocol — TLS WS request/response + push events.
 
@@ -526,7 +563,8 @@ class WSV2Protocol(XtoolProtocol):
     # so entity state surfaces in HA without waiting for next poll).
     _LATEST_STATE_FIELDS: tuple[str, ...] = (
         "status", "task_id", "task_time", "cover_open", "machine_lock",
-        "last_job_time_seconds", "focus_thickness",
+        "last_job_time_seconds", "focus_thickness", "engraving_lens", "wifi_signal",
+        "flame_alarm_record",
         "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
         "water_flow", "cpu_temp", "ambient_temp", "ambient_humidity",
@@ -635,6 +673,11 @@ class WSV2Protocol(XtoolProtocol):
         self._unsupported_endpoints: set[str] = set()
         self._config_read_body: dict[str, Any] | None = None
         self._config_read_known = False
+        # Engraving lens, Wi-Fi signal and what Studio calibrated
+        # (F2 Ultra UV), read again on each connection.
+        self._laser_info_known = False
+        self.calibration_time: datetime | None = None
+        self.calibration_info: dict[str, Any] = {}
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -729,6 +772,7 @@ class WSV2Protocol(XtoolProtocol):
         self._config_read_known = False
         # Read the focus height again on the next poll.
         self._focus_known = False
+        self._laser_info_known = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -2012,6 +2056,85 @@ class WSV2Protocol(XtoolProtocol):
         )
         self._unsupported_endpoints.add(self.PATH_CONFIGS_GET)
 
+    async def _poll_laser_info(self) -> None:
+        """Read the engraving lens, the Wi-Fi signal and the calibration.
+
+        Studio's ``getLensesType`` (``cj_check``: ``fieldLensType`` is
+        ``none``, ``small`` or ``big``) and ``wifi_signal_strength``
+        (a POST that only reads). All of them only read.
+        """
+        try:
+            r = await self.request(
+                "/v1/peripheral/param", "GET",
+                params={"type": "cj_check"}, data={"action": "get"}, timeout=8.0,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 engraving lens read failed: %s", err)
+        else:
+            lens = r.get("fieldLensType") if isinstance(r, dict) else None
+            if lens in ("none", "small", "big"):
+                self._latest["engraving_lens"] = lens
+        try:
+            r = await self.request(
+                "/v1/net/wifi_signal_strength", "POST",
+                data={"name": "wlan0"}, timeout=8.0,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 Wi-Fi signal read failed: %s", err)
+        else:
+            dbm = r.get("wifi_signal_strength") if isinstance(r, dict) else None
+            if isinstance(dbm, (int, float)) and not isinstance(dbm, bool):
+                self._latest["wifi_signal"] = int(dbm)
+        await self._read_calibration_info()
+        self._laser_info_known = True
+
+    async def _read_calibration_info(self) -> None:
+        """Read, never write, what Studio calibrated on the laser.
+
+        For the diagnostic Calibration sensor: its state is the camera
+        calibration time, and its attributes are the offsets below, as
+        the laser stores them. Only GET reads of the config, so nothing
+        on the laser changes. Also reads the flame record flag (a fire
+        alarm photo is stored on the laser).
+        """
+        keys = {
+            "globalOffsetZ": "global_offset_z",
+            "zPositionCompensate": "z_position_compensate",
+            "zPositionCompensateSmall": "z_position_compensate_small",
+            "zPositionSecondCompensate": "z_position_second_compensate",
+            "innerZOffset": "inner_z_offset",
+            "laserOffsetUv": "laser_offset_uv",
+            "laserOffsetBlue": "laser_offset_blue",
+            "laserAngleBlue": "laser_angle_blue",
+            "secondOffsetFlag": "second_offset_flag",
+        }
+        reads = [list(keys) + ["flameAlarmRecord"]]
+        if self.calibration_time is None:
+            reads.append(["imgConfigGlobalCalib"])
+        for kv_keys in reads:
+            try:
+                cfg = await self.request(
+                    self.PATH_CONFIGS_GET, "GET",
+                    data={"alias": "config", "type": "user", "kv": kv_keys},
+                    timeout=15.0,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("V2 calibration read failed: %s", err)
+                continue
+            kv = cfg.get("kv") if isinstance(cfg, dict) and isinstance(cfg.get("kv"), dict) else cfg
+            if not isinstance(kv, dict):
+                continue
+            info = {
+                name: calibration_value(kv[key]) for key, name in keys.items() if key in kv
+            }
+            if info:
+                self.calibration_info = info
+            if isinstance(kv.get("flameAlarmRecord"), bool):
+                self._latest["flame_alarm_record"] = kv["flameAlarmRecord"]
+            blob = kv.get("imgConfigGlobalCalib")
+            if isinstance(blob, str):
+                self.calibration_time = calibration_time(blob)
+
     async def poll_state(self, state: XtoolDeviceState) -> None:
         """Refresh state via V2 request endpoints + push cache."""
         if not self._connected:
@@ -2131,6 +2254,10 @@ class WSV2Protocol(XtoolProtocol):
             self._poll_counter % 6 == 0 or not self._focus_known
         ):
             await self._poll_focus()
+        if getattr(model, "has_laser_info", False) and (
+            self._poll_counter % 6 == 0 or not self._laser_info_known
+        ):
+            await self._poll_laser_info()
 
         # 4. Statistics — lifetime counters, slow cadence. Skip on every
         # poll once cached as unsupported (GS006, P2S, DT001 don't
