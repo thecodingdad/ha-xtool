@@ -105,7 +105,7 @@ The available options are gated by the device's protocol family — only relevan
 | Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
 | Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
-| Last job time | Last completed job duration |
+| Last job time | Last completed job duration. **F2 Ultra UV:** from the laser's job result, after each job; kept across Home Assistant restarts |
 | Working mode | Current working mode (cut / engrave / knife / inkjet / …). REST V1 + D-series only — V2 firmware uses this field as a `HANDLE`/`NORMAL` enum surfaced through the *Stops when moved* switch instead |
 | Working time | Lifetime working hours |
 | Session count | Lifetime job-start count |
