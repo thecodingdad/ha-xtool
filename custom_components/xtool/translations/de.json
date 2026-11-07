@@ -821,6 +821,7 @@
               "resumed": "Fortgesetzt",
               "cancelled": "Abgebrochen",
               "finished": "Beendet",
+              "failed": "Fehlgeschlagen",
               "framing_started": "Rahmen gestartet",
               "framing_finished": "Rahmen beendet"
             }
