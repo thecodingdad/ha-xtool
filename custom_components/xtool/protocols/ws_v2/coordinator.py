@@ -113,6 +113,10 @@ class WSV2Coordinator(XtoolCoordinator):
         try:
             if not self.protocol.connected:
                 await self.protocol.connect()
+                # A new connection may be to a laser that was
+                # power-cycled or updated meanwhile, even when it came
+                # back before any poll failed: read the identity again.
+                self._device_info_fetched = False
 
             # Re-attempt the machineInfo fetch each poll until it
             # actually returns identifying data — MetalFab's GET
@@ -124,8 +128,12 @@ class WSV2Coordinator(XtoolCoordinator):
                 or not self.serial_number
                 or not self.firmware_version
             ):
-                await self._fetch_device_info()
-                if self.serial_number or self.firmware_version:
+                # Count the fetch as done only when the laser answered
+                # with its identity. The serial and firmware are
+                # pre-filled from the config entry, so checking them
+                # here would end the retry even when machineInfo came
+                # back empty.
+                if await self._fetch_device_info():
                     self._device_info_fetched = True
 
             prev_status = self.data.status if self.data else None
@@ -148,6 +156,9 @@ class WSV2Coordinator(XtoolCoordinator):
         except Exception as err:
             _LOGGER.debug("WS-V2 poll failed: %s", err)
             state.available = False
+            # Read the identity again after the next connect: the
+            # laser may have been power-cycled or updated meanwhile.
+            self._device_info_fetched = False
             await self.protocol.disconnect()
 
         # Set state on coordinator before dispatching new-accessory
@@ -324,7 +335,8 @@ class WSV2Coordinator(XtoolCoordinator):
                     head, wanted_types, fields,
                 )
 
-    async def _fetch_device_info(self) -> None:
+    async def _fetch_device_info(self) -> bool:
+        """Read the identity; return True when the laser actually answered with it."""
         try:
             info = await self.protocol.get_device_info()
             if info.serial_number and not self.serial_number:
@@ -339,6 +351,8 @@ class WSV2Coordinator(XtoolCoordinator):
                 self._hardware_version = info.hardware_version
         except Exception as err:
             _LOGGER.debug("WS-V2 device info fetch failed: %s", err)
+            return False
+        return bool(info.main_firmware or info.serial_number)
 
     # --- Entity builders --------------------------------------------------
 

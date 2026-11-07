@@ -97,6 +97,29 @@ def _resolve_type_id(row: dict[str, Any]) -> str | None:
 class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
     """Base coordinator. One subclass per protocol family."""
 
+    @property
+    def firmware_version(self) -> str:
+        """The laser's firmware version, as last read from the device."""
+        return self._firmware_version
+
+    @firmware_version.setter
+    def firmware_version(self, value: str) -> None:
+        """Store a new version and show it on the device page.
+
+        The device registry takes ``sw_version`` from the entities only
+        when the entry loads, so a firmware update made outside Home
+        Assistant (for example in xTool Studio) kept showing the old
+        version until a reload.
+        """
+        changed = value != getattr(self, "_firmware_version", value)
+        self._firmware_version = value
+        device_id = getattr(self, "laser_device_id", None)
+        if not changed or not value or device_id is None:
+            return
+        from homeassistant.helpers import device_registry as dr
+
+        dr.async_get(self.hass).async_update_device(device_id, sw_version=value)
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -125,7 +148,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.device_name = device_name
         self.serial_number = serial_number
         self.laser_device_id: str | None = None
-        self.firmware_version = firmware_version
+        self._firmware_version = firmware_version
         self.model = model
         self.laser = LaserInfo()
         self.power_switch_entity_id = power_switch_entity_id
