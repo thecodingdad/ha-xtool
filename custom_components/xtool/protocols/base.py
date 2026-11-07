@@ -305,7 +305,7 @@ class XtoolDeviceState:
     workhead_id: str = ""  # M1 Ultra mounted tool head
     workhead_z_height: float | None = None  # M1 Ultra
     flame_level_hl: int | None = None  # config kv flameLevelHLSelect (1=high, 2=low)
-    md_mode_enabled: bool | None = None  # config kv mdMode ("Auto mode" access-control)
+    md_mode_enabled: bool | None = None  # config kv mdMode (Studio: "Access control")
     # Push peripheral states
     drawer_open: bool | None = None  # /peripheral/drawer
     cooling_fan_running: bool | None = None  # /peripheral/cooling_fan

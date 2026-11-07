@@ -1825,11 +1825,13 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
             )
         )
     if model.has_md_mode:
-        # xTool "Auto mode" / Material-Detection access control:
-        # once enabled the device requires a physical safety key
-        # to start processing (Studio bundle label
-        # ``enable_access_control``). Wire is the standard
-        # ``/v1/device/configs`` PUT with ``{mdMode: bool}``.
+        # Studio's "Access control" (bundle label
+        # ``enable_access_control``): once enabled, every job needs
+        # the check at the machine before it starts (open and close
+        # the enclosure, press the machine's button, then start), and
+        # Studio turns off autofocus, framing and offline processing.
+        # Wire is the standard ``/v1/device/configs`` PUT with
+        # ``{mdMode: bool}``.
         entities.append(
             _WSV2ConfigSwitch(
                 coordinator, "md_mode", "mdMode",
