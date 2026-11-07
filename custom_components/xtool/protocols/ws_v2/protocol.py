@@ -1065,6 +1065,18 @@ class WSV2Protocol(XtoolProtocol):
     def focus_refusal(self) -> str | None:
         """Why Studio would refuse a focus move now, or None."""
         status = self._latest.get("status")
+        # Studio offers autofocus and manual focus only with the surface
+        # lens: with the inner engraving lens the job sets the height from
+        # the material's size, its refractive index and the inner
+        # engraving calibration.
+        lens = self._latest.get("engraving_lens")
+        if lens == "small":
+            return (
+                "the inner engraving lens is in; with it the job sets the "
+                "height from the material's size"
+            )
+        if lens == "none":
+            return "no engraving lens is in"
         if self._device_mode == "P_AUTOFOCUS":
             return "the laser is focusing"
         if self._device_mode in ("P_MEASURE", "P_WORKING", "P_WORK", "P_PAUSE"):
@@ -1539,6 +1551,12 @@ class WSV2Protocol(XtoolProtocol):
                 self._latest["cover_open"] = True
             elif typ == "CLOSE":
                 self._latest["cover_open"] = False
+
+        elif module == "CJ_CHECK" and typ == "MODE_CHANGE":
+            # The engraving lens changed (Studio's LENS push: the lens
+            # type in info, as its cj_check read gives it)
+            if info in ("none", "small", "big"):
+                self._latest["engraving_lens"] = info
 
         elif url == "/drawer/status" and module == "DRAWER":
             if typ == "OPEN":

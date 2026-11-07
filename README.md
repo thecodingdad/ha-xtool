@@ -213,7 +213,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
 | Work area limit (left / right / up / down) | M311 work-area limits (mm) |
-| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Nothing is stored on the laser |
+| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Only with the surface lens, as in Studio: with the inner engraving lens the job sets the height from the material's size, so Focus height is Unknown and moves and Autofocus are refused. Nothing is stored on the laser |
 
 #### Action `xtool.focus`
 

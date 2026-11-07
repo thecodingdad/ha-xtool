@@ -1072,6 +1072,9 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
 class WSV2FocusHeight(XtoolEntity, NumberEntity):
     """Focus height as Studio's manual focus: the material thickness in mm.
 
+    Only with the surface lens, as in Studio: with the inner engraving lens
+    (or none) it is Unknown and moves are refused.
+
     Shows what Studio shows (laser-head Z minus 6). Setting it moves the
     head as Studio does; the ``xtool.focus`` action also moves it in
     steps. Moves are refused whenever Studio would refuse them.
@@ -1093,7 +1096,12 @@ class WSV2FocusHeight(XtoolEntity, NumberEntity):
     @property
     def native_value(self) -> float | None:
         d = self.coordinator.data
-        return None if d is None else getattr(d, "focus_thickness", None)
+        if d is None:
+            return None
+        # The height is a material thickness only with the surface lens
+        if getattr(d, "engraving_lens", None) in ("small", "none"):
+            return None
+        return getattr(d, "focus_thickness", None)
 
     async def async_set_native_value(self, value: float) -> None:
         await self.async_focus(thickness=value)
