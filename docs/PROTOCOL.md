@@ -1319,10 +1319,33 @@ class).
 
 Studio uses this on demand only — there is no Studio-driven
 camera-refresh interval. Implementations that want a "live preview"
-have to drive their own poll loop. Empirically a 1 Hz cadence is
-the lowest the device firmware tolerates without bunching the JPEG
-encoder; faster than ~2 Hz starts to drop frames or queue snaps
-behind unfinished `file_stream` transfers.
+have to drive their own poll loop. Measured on an F2 Ultra UV
+(firmware 40.130.023.00.ht5): the snap request answers in about
+0.13 s and the ~200 KB download takes about 0.16 s, so one photo
+takes about 0.3 s. The integration takes one photo at a time (the
+transfers of two lenses would otherwise overlap) and starts a
+live-view frame every 0.4 s.
+
+Main-camera calibration (F2 Ultra UV, GS009). Studio straightens
+every main-camera photo before showing it. Its base extension's
+`downLoadConfig()` downloads `global_calib.json` from the laser with
+the file transfer above (`fileType` 3, `filename:"global_calib.json"`),
+and `correctGlobalPhoto` runs the native `GS009_CORRECT_IMAGE_WITH_Z`
+algorithm with it and the material height. The file:
+
+| Key | Example | Meaning |
+|---|---|---|
+| `grid_num_w`, `grid_num_h` | 21, 21 | Grid points across and down |
+| `data0` | `"[1084,644][1170,646]..."` | Grid points in the raw photo, row by row from the top |
+| `image_src_w`, `image_src_h` | 4000, 3000 | Raw photo size |
+| `image_dst_w`, `image_dst_h` | 2000, 2000 | Straightened image size; the grid spreads evenly over it |
+| `thick_num`, `thick0` | 1, 0.0 | Calibrated material heights |
+| `calib_time` | `"2025-11-09 09:41:58"` | When the laser was calibrated |
+
+Mapping each grid cell (a quadrilateral in the photo) onto its
+rectangle in the result corrects the keystone and the lens
+distortion together. The integration does this with Pillow's mesh
+transform for the calibrated plane only (no material height).
 
 Per-model step-1 variants (audited from each Studio bundle):
 
@@ -1342,6 +1365,14 @@ The third WS channel (`function=media_stream`) carries the live
 camera video over **WebRTC**, not a simple WS-MJPEG stream.
 Signaling rides the `/v1/signaling/*` and `/v1/platform/camera/*`
 endpoints (see below).
+
+On the F2 Ultra UV (firmware 40.130.023.00.ht5) the live video is not
+available: `POST /v1/platform/camera/live` with `{name, action:"start"}`
+answers code -1 `camera disabled` for `main`, `deep`, `far`, `upside`
+and `0`, and `GET /v1/platform/camera/list` answers code -1
+`getCameraList failed`. Studio's GS009 bundles never call these; they
+only take photos. Only the P3 bundle calls `/v1/platform/camera/live`
+(see upstream PR #14).
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
