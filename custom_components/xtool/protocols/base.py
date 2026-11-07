@@ -170,6 +170,9 @@ class XtoolDeviceModel:
     has_workhead_id: bool = False  # REST: M1 Ultra detects mounted tool head
     has_cpu_fan: bool = False  # REST: M1 Ultra CPU fan
     has_uv_fire: bool = False  # REST: F1U / M1U / P2S UV-based fire sensor
+    # WS-V2 F2 Ultra UV: Status shows Focusing, Warming up (UV laser not
+    # ready) and Laser overheat, read and pushed as Studio does.
+    has_uv_laser_status: bool = False
     has_gyro: bool = False  # REST: P2 / P2S / F1U / M1U accelerometer
     has_display_screen: bool = False  # REST: F1 Ultra touchscreen brightness
     has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral

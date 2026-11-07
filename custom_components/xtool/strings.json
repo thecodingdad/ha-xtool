@@ -94,6 +94,9 @@
           "working_api": "Running (API)",
           "working_button": "Running (button)",
           "measure_area": "Measuring area",
+          "focusing": "Focusing",
+          "warming_up": "Warming up",
+          "laser_overheat": "Laser overheat",
           "unknown": "Unknown"
         }
       },
