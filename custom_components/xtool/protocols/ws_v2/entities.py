@@ -342,6 +342,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         "has_gyro",
     ),
     (_LAST_JOB_TIME_DESCRIPTION, "has_runtime_stats"),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_job_result_time"),
     (_WORKING_TIME_DESCRIPTION, "has_runtime_stats"),
     (_STANDBY_TIME_DESCRIPTION, "has_runtime_stats"),
     (
