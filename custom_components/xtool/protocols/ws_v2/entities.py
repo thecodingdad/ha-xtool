@@ -855,7 +855,11 @@ class _WSV2AccessControlSwitch(_WSV2ConfigSwitch):
     """Access control (``mdMode``), on the units Studio offers it on."""
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "md_mode", "mdMode", "md_mode_enabled")
+        # Disabled in the entity registry by default: it changes how
+        # every job starts, so it is turned on only on purpose
+        super().__init__(
+            coordinator, "md_mode", "mdMode", "md_mode_enabled", enabled_default=False,
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
