@@ -210,6 +210,13 @@ XTOOL_F2_ULTRA_SINGLE_WSV2 = XtoolDeviceModel(
 )
 
 
+F2_ULTRA_UV_DEEP_PERSPECTIVE = (
+    "deep",
+    (-2.48556, -1.1963, 3669.39, 1.2289, -2.13509, 1629.09, -4.62593e-05, 8.62153e-05),
+    (4000, 3000),
+    (1000, 750),
+)
+
 XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     model_id="F2UltraUV",
     name="xTool F2 Ultra UV",
@@ -223,6 +230,12 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     has_mode_switch=True,
     has_camera=True,
     camera_names=("main", "deep"),  # GS006 cameraMediaManager exposes main + deep
+    has_camera_calibration=True,  # global_calib.json, as Studio
+    # The deep camera sits upside down, about 28.5 degrees off the
+    # work-surface axes, and looks at the bed at an angle. This maps a
+    # 1000 x 750 result onto its 4000 x 3000 photo (measured from the
+    # grid lines of a cutting mat).
+    camera_perspectives=(F2_ULTRA_UV_DEEP_PERSPECTIVE,),
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,  # GS009-CLASS-4 ships front + back channels
@@ -263,6 +276,12 @@ XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     has_mode_switch=True,
     has_camera=True,
     camera_names=("main", "deep"),
+    has_camera_calibration=True,  # global_calib.json, as Studio
+    # The deep camera sits upside down, about 28.5 degrees off the
+    # work-surface axes, and looks at the bed at an angle. This maps a
+    # 1000 x 750 result onto its 4000 x 3000 photo (measured from the
+    # grid lines of a cutting mat).
+    camera_perspectives=(F2_ULTRA_UV_DEEP_PERSPECTIVE,),
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,

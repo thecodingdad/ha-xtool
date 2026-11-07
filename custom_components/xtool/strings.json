@@ -225,6 +225,10 @@
       "md_mode": { "name": "Auto mode (access control)" }
     },
     "number": {
+      "camera_main_view_width": { "name": "Main camera view width" },
+      "camera_main_view_height": { "name": "Main camera view height" },
+      "camera_main_view_center_x": { "name": "Main camera view center X" },
+      "camera_main_view_center_y": { "name": "Main camera view center Y" },
       "air_assist_close_delay": { "name": "Air assist delay" },
       "smoking_fan_duration": { "name": "Exhaust time after processing" },
       "tilt_threshold": { "name": "Tilt threshold" },

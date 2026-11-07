@@ -17,6 +17,7 @@ for the V1 REST equivalents whose patterns we mirror.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import timedelta
 import logging
 from typing import Any
@@ -34,7 +35,7 @@ from homeassistant.components.light import (
     ColorMode,
     LightEntity,
 )
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, RestoreNumber
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -68,15 +69,34 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .camera_correction import (
+    CALIBRATED_AREA_MM,
+    CameraCalibration,
+    CameraView,
+    correct_image,
+    parse_calibration,
+    perspective_image,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-MIN_SNAPSHOT_INTERVAL = timedelta(seconds=30)
-# Per-frame poll cadence for the MJPEG live-view entity. Studio's
-# ``captureGlobalImage`` route is on-demand only — no firmware-mandated
-# rate. Empirically the V2 firmware tolerates ~1 Hz comfortably; faster
-# than ~2 Hz queues snaps behind unfinished file_stream transfers.
-LIVE_FRAME_INTERVAL = 1.0
+# A still image younger than this is served again instead of taking a
+# new one, so several viewers (thumbnails, the live view) share photos.
+MIN_SNAPSHOT_INTERVAL = timedelta(seconds=2)
+# When a new photo fails, the last one is served only while it is
+# younger than this, so a stale picture is not shown as current.
+MAX_SNAPSHOT_AGE = timedelta(seconds=60)
+# Time from the start of one live-view frame to the next. These
+# lasers have no live video: the firmware answers
+# ``/v1/platform/camera/live`` with "camera disabled", and Studio only
+# takes photos. A photo (``/v1/camera/snap`` plus the file download)
+# takes about 0.3 s on the F2 Ultra UV, and the protocol takes one
+# photo at a time, so this gives about 2.5 frames per second.
+LIVE_FRAME_INTERVAL = 0.4
+# A live view whose viewer has not read a frame for this long is ended.
+LIVE_WRITE_TIMEOUT = 10.0
+# Seconds before reading the camera calibration again after it failed.
+CALIBRATION_RETRY = 300.0
 
 
 # --- Sensors -----------------------------------------------------------
@@ -1409,32 +1429,94 @@ class WSV2SyncTime(_WSV2Button):
 # --- Cameras ------------------------------------------------------------
 
 
+# The main camera's view settings (millimetres): key, default, min, max.
+CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float], ...] = (
+    ("width", CALIBRATED_AREA_MM, 20, 460),
+    ("height", CALIBRATED_AREA_MM, 20, 460),
+    ("center_x", 0, -200, 200),
+    ("center_y", 0, -200, 200),
+)
+
+
+def _camera_view_values(coordinator: XtoolCoordinator) -> dict[str, float]:
+    values = getattr(coordinator, "_camera_view", None)
+    if values is None:
+        values = {key: default for key, default, _, _ in CAMERA_VIEW_SETTINGS}
+        coordinator._camera_view = values
+    return values
+
+
+def _camera_view(coordinator: XtoolCoordinator) -> CameraView:
+    v = _camera_view_values(coordinator)
+    return CameraView(v["width"], v["height"], v["center_x"], v["center_y"])
+
+
+class _WSV2CameraViewNumber(XtoolEntity, RestoreNumber):
+    """Part of the work surface the straightened main camera shows (mm).
+
+    Width and height set the area (and so the picture's shape); the
+    centre moves it from the centre of the calibrated area (X right,
+    Y down). Kept by Home Assistant; the laser is not involved.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_step = 1
+    _attr_icon = "mdi:crop"
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, setting: str,
+        default: float, minimum: float, maximum: float,
+    ) -> None:
+        super().__init__(coordinator)
+        key = f"camera_main_view_{setting}"
+        self._set_unique_id(key)
+        self._attr_translation_key = key
+        self._setting = setting
+        self._attr_native_min_value = minimum
+        self._attr_native_max_value = maximum
+        self._attr_native_value = default
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._apply(last.native_value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._apply(value)
+        self.async_write_ha_state()
+
+    def _apply(self, value: float) -> None:
+        value = min(
+            max(float(value), self._attr_native_min_value),
+            self._attr_native_max_value,
+        )
+        self._attr_native_value = value
+        _camera_view_values(self.coordinator)[self._setting] = value
+
+
 class _WSV2Camera(XtoolEntity, Camera):
-    """V2 camera — single entity per physical lens.
+    """V2 camera: one entity per lens, built from still photos.
 
-    Serves both the still-snapshot flow (``async_camera_image``) and
-    the live MJPEG preview (``handle_async_mjpeg_stream``) over the
-    same ``/v1/camera/snap?name=<n>`` wire path. HA's picture-card
-    auto-subscribes to the streaming method when
-    ``_attr_is_streaming`` is ``True``, while the
-    ``camera.snapshot`` service still consumes the
-    snapshot-cached path.
+    These lasers have no live video (the firmware answers
+    ``/v1/platform/camera/live`` with "camera disabled", and Studio
+    only takes photos), so both the still image
+    (``async_camera_image``) and the live view
+    (``handle_async_mjpeg_stream``, a multipart MJPEG stream) come from
+    ``/v1/camera/snap?name=<n>``. Both share one photo cache, so
+    thumbnails and live viewers do not each ask the laser.
 
-    Previously split into separate ``_WSV2Camera`` +
-    ``_WSV2LiveCamera`` entities; dual-camera models then surfaced
-    four entries on the device page. Merged in v2.5.4.
-
-    ``_attr_is_streaming = True`` since v2.7.2 — the
-    ``handle_async_mjpeg_stream`` path was confirmed working on F2
-    Ultra UV (Issue #4 v2.7.1 retest, "both seem to be streaming,
-    nice work"). HA now reports ``streaming`` as the entity state
-    and auto-refreshes Lovelace picture-card thumbnails from the
-    MJPEG feed. ``camera.snapshot`` continues to consume the
-    still-image cache maintained in :meth:`async_camera_image`.
+    The state is Streaming only while a live view is open, and Idle
+    otherwise.
     """
 
     _camera_name: str = ""
-    _attr_is_streaming = True
 
     def __init__(
         self,
@@ -1452,38 +1534,107 @@ class _WSV2Camera(XtoolEntity, Camera):
         if icon is not None:
             self._attr_icon = icon
         self._last_snapshot: bytes | None = None
-        self._last_snapshot_time = dt_util.utcnow() - MIN_SNAPSHOT_INTERVAL
+        self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
+        self._live_viewers = 0
+        # Straighten photos with the laser's calibration grid (main
+        # camera of models that store one).
+        self._uses_calibration = camera_name == "main" and bool(
+            getattr(coordinator.model, "has_camera_calibration", False)
+        )
+        self._calibration: CameraCalibration | None = None
+        self._calibration_next_try = 0.0
+        # Fixed perspective of a camera that looks at the bed at an angle.
+        self._perspective = next(
+            (
+                spec[1:]
+                for spec in getattr(coordinator.model, "camera_perspectives", ()) or ()
+                if spec[0] == camera_name
+            ),
+            None,
+        )
+
+    @property
+    def is_streaming(self) -> bool:
+        return self._live_viewers > 0
+
+    async def _corrected(self, image: bytes) -> bytes:
+        """Return the photo straightened, as the model needs."""
+        if not self._uses_calibration:
+            if self._perspective is None or self.hass is None:
+                return image
+            try:
+                return await self.hass.async_add_executor_job(
+                    perspective_image, image, *self._perspective,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "V2 camera %s: perspective correction failed: %s",
+                    self._camera_name, err,
+                )
+                return image
+        if self._calibration is None and time.monotonic() >= self._calibration_next_try:
+            raw = await self.coordinator.protocol.camera_calibration_file()
+            self._calibration = parse_calibration(raw) if raw else None
+            if self._calibration is None:
+                _LOGGER.debug(
+                    "V2 camera %s: no usable calibration; showing raw photos",
+                    self._camera_name,
+                )
+                self._calibration_next_try = time.monotonic() + CALIBRATION_RETRY
+        if self._calibration is None or self.hass is None:
+            return image
+        try:
+            return await self.hass.async_add_executor_job(
+                correct_image, image, self._calibration,
+                _camera_view(self.coordinator),
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "V2 camera %s: correction failed: %s", self._camera_name, err,
+            )
+            return image
+
+    async def _image(self, max_age: timedelta) -> bytes | None:
+        """Return a photo no older than ``max_age``, taking one if needed.
+
+        When a new photo fails, the last one is returned only while it
+        is younger than ``MAX_SNAPSHOT_AGE``.
+        """
+        now = dt_util.utcnow()
+        age = now - self._last_snapshot_time
+        if self._last_snapshot is not None and age < max_age:
+            return self._last_snapshot
+        try:
+            image = await self.coordinator.protocol.camera_snap(self._camera_name)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
+            image = None
+        if image:
+            image = await self._corrected(image)
+            # Age counts from when the photo was asked for, so a live
+            # view's next frame (one interval later) takes a new photo
+            # instead of reusing this one.
+            self._last_snapshot = image
+            self._last_snapshot_time = now
+            return image
+        if age < MAX_SNAPSHOT_AGE:
+            return self._last_snapshot
+        return None
 
     async def async_camera_image(
         self,
         width: int | None = None,
         height: int | None = None,
     ) -> bytes | None:
-        now = dt_util.utcnow()
-        if (
-            self._last_snapshot is not None
-            and now - self._last_snapshot_time < MIN_SNAPSHOT_INTERVAL
-        ):
-            return self._last_snapshot
-        try:
-            image = await self.coordinator.protocol.camera_snap(self._camera_name)
-        except Exception as err:
-            _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
-            return self._last_snapshot
-        if image:
-            self._last_snapshot = image
-            self._last_snapshot_time = now
-        return self._last_snapshot
+        return await self._image(MIN_SNAPSHOT_INTERVAL)
 
     async def handle_async_mjpeg_stream(
         self, request: web.Request,
     ) -> web.StreamResponse | None:
-        """Multipart-MJPEG live preview at ``LIVE_FRAME_INTERVAL``.
+        """Live view: a multipart MJPEG stream of photos.
 
-        Substitute for the unimplemented WebRTC ``media_stream``
-        path (see PROTOCOL.md). HA's Lovelace picture-card renders
-        the resulting ``multipart/x-mixed-replace`` stream as a
-        continuous video feed.
+        A new frame starts every ``LIVE_FRAME_INTERVAL`` (or as soon as
+        the previous photo arrives, if that took longer).
         """
         boundary = "--xtoolframe"
         response = web.StreamResponse(
@@ -1497,31 +1648,48 @@ class _WSV2Camera(XtoolEntity, Camera):
             },
         )
         await response.prepare(request)
+        # Reuse a photo only when another viewer asked for it during
+        # this frame's interval.
+        interval = timedelta(seconds=LIVE_FRAME_INTERVAL / 2)
+        self._set_live_viewers(1)
         try:
             while True:
-                try:
-                    jpeg = await self.coordinator.protocol.camera_snap(
-                        self._camera_name,
-                    )
-                except Exception as err:
-                    _LOGGER.debug(
-                        "V2 live MJPEG %s: snap failed: %s",
-                        self._camera_name, err,
-                    )
-                    jpeg = None
+                started = time.monotonic()
+                jpeg = await self._image(interval)
                 if jpeg:
-                    await response.write(
-                        boundary.encode()
-                        + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                        + str(len(jpeg)).encode()
-                        + b"\r\n\r\n"
-                        + jpeg
-                        + b"\r\n"
+                    # A viewer that stops reading (for example the iOS
+                    # app after its view closes) leaves the write
+                    # waiting; end the live view instead.
+                    await asyncio.wait_for(
+                        response.write(
+                            boundary.encode()
+                            + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                            + str(len(jpeg)).encode()
+                            + b"\r\n\r\n"
+                            + jpeg
+                            + b"\r\n"
+                        ),
+                        timeout=LIVE_WRITE_TIMEOUT,
                     )
-                await asyncio.sleep(LIVE_FRAME_INTERVAL)
+                await asyncio.sleep(
+                    max(0.0, LIVE_FRAME_INTERVAL - (time.monotonic() - started))
+                )
         except (asyncio.CancelledError, ConnectionResetError):
             pass
+        except TimeoutError:
+            _LOGGER.debug(
+                "V2 camera %s: live viewer stopped reading; ending it",
+                self._camera_name,
+            )
+        finally:
+            self._set_live_viewers(-1)
         return response
+
+    def _set_live_viewers(self, change: int) -> None:
+        was_streaming = self.is_streaming
+        self._live_viewers = max(0, self._live_viewers + change)
+        if self.is_streaming != was_streaming and self.hass is not None:
+            self.async_write_ha_state()
 
 
 # --- Firmware update ----------------------------------------------------
@@ -1976,6 +2144,11 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
             ])
     if model.has_display_screen:
         entities.append(WSV2DisplayBrightness(coordinator))
+    if getattr(model, "has_camera_calibration", False) and "main" in model.camera_names:
+        entities.extend(
+            _WSV2CameraViewNumber(coordinator, *setting)
+            for setting in CAMERA_VIEW_SETTINGS
+        )
     return entities
 
 
