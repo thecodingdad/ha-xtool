@@ -193,8 +193,23 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control |
 | Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
 | Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
-| Access control | F2 Ultra UV and F2 Ultra family. Toggles `mdMode`. **Per xTool Studio:** when on, each job needs the access control check at the machine before it starts (open and close the enclosure, press the button on the machine, then start), and autofocus, framing and offline processing are turned off. Studio offers it only on some hardware revisions (by SKU) |
+| Access control | Toggles `mdMode`. **Per xTool Studio:** when on, each job needs the access control check at the machine before it starts (open the enclosure, press the button on the machine, close the enclosure, then start), and autofocus, framing and offline processing are turned off. Only on the units Studio offers it on; see [Access control](#access-control) |
 | Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |
+
+#### Access control
+
+Access control is the Safety Enhancement Mode of xTool's Access Control Key (the key the Safety key sensor reports), for the EU Machinery Directive 2006/42/EC. xTool offers it only on units sold in the EU ([xTool: Access-Control Key](https://support.xtool.com/article/1367)). Like xTool Studio, the integration tells them apart by the SKU the laser reports, and adds the switch only when the SKU starts with one of these:
+
+| Model | SKUs |
+|---|---|
+| F2 Ultra UV | P0101000396, P0101000397 |
+| F2 Ultra | P0101000661, P0101000659 |
+| F2 Ultra (Single) | P0101000665, P0101000664 |
+| F2 | P0101000600, P0101000601 |
+| F1 Ultra | P0101000604, P0101000599 |
+| P3 | Machine style `lowCost_europe` |
+
+The F2 Ultra UV (Class 1) has the switch on every unit. Until the laser has reported its SKU once, the switch is shown; it is removed when the SKU shows it does not apply.
 
 ### Number
 

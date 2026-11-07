@@ -76,6 +76,9 @@ XTOOL_F1_ULTRA_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MXF",
     protocol_version="V2",
     discovery_match=("F1Ultra",),
+    has_md_mode=True,
+    # Studio ``checkSupportMD``: Access control only on these SKUs (EU units)
+    access_control_skus=("P0101000604", "P0101000599",),
 )
 
 
@@ -153,6 +156,9 @@ XTOOL_F2_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MXF",
     protocol_version="V2",
     discovery_match=("F2",),
+    has_md_mode=True,
+    # Studio ``checkSupportMD``: Access control only on these SKUs (EU units)
+    access_control_skus=("P0101000600", "P0101000601",),
 )
 
 
@@ -180,6 +186,9 @@ XTOOL_F2_ULTRA_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MXF",
     protocol_version="V2",
     discovery_match=("F2Ultra",),
+    has_md_mode=True,
+    # Studio ``checkSupportMD``: Access control only on these SKUs (EU units)
+    access_control_skus=("P0101000661", "P0101000659",),
 )
 
 
@@ -207,6 +216,9 @@ XTOOL_F2_ULTRA_SINGLE_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MXF",
     protocol_version="V2",
     discovery_match=("F2UltraSingle",),
+    has_md_mode=True,
+    # Studio ``checkSupportMD``: Access control only on these SKUs (EU units)
+    access_control_skus=("P0101000665", "P0101000664",),
 )
 
 
@@ -230,7 +242,9 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     has_device_sleep=True,  # autoSleepEnable in DEVICE_CONFIG push (live capture)
     has_ir_led=True,  # F2UV bundle queries `/v1/peripheral/param?type=ir_led`
     has_button_event=True,  # GS009-CLASS-4 bundle defines /button/status push handler
-    has_md_mode=True,  # GS009-CLASS-4 bundle surfaces mdMode access-control switch
+    has_md_mode=True,
+    # Studio ``checkSupportMD``: Access control only on these SKUs (EU units)
+    access_control_skus=("P0101000396", "P0101000397",),
     # Air-pump V2 + UV fire sensor are BT-paired accessories on F2UV
     # (`airassistV2` = AirPumpV2, `uv_sensor_wb031` = UvSensor) routed
     # via `/v1/parts/control` — not built-in peripherals; entities
@@ -417,6 +431,9 @@ XTOOL_P3_WSV2 = XtoolDeviceModel(
     firmware_machine_type="MXP",
     protocol_version="V2",
     discovery_match=("P3",),
+    has_md_mode=True,
+    # Studio ``checkSupportMD``: Access control only on the EU low-cost units
+    access_control_machine_styles=("lowCost_europe",),
 )
 
 

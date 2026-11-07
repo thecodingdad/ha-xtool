@@ -337,6 +337,10 @@ class WSV2Coordinator(XtoolCoordinator):
                 self.mac_address = info.mac_address
             if info.hardware_version:
                 self._hardware_version = info.hardware_version
+            if info.sku:
+                self.sku = info.sku
+            if info.machine_style:
+                self.machine_style = info.machine_style
         except Exception as err:
             _LOGGER.debug("WS-V2 device info fetch failed: %s", err)
 

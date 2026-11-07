@@ -62,6 +62,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+def _store_hardware_ids(
+    hass: HomeAssistant, entry: XtoolConfigEntry, coordinator: XtoolCoordinator
+) -> None:
+    """Keep the SKU and machine style in the entry, for setups while the laser is off."""
+    ids = {"sku": coordinator.sku, "machine_style": coordinator.machine_style}
+    changed = {k: v for k, v in ids.items() if v and entry.data.get(k) != v}
+    if changed:
+        hass.config_entries.async_update_entry(entry, data={**entry.data, **changed})
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> bool:
     """Set up xTool Laser from a config entry."""
     host = entry.data[CONF_HOST]
@@ -174,8 +184,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     laser_power_watts = entry.data.get("laser_power_watts", 0)
     if laser_power_watts:
         coordinator.laser = LaserInfo(power_watts=laser_power_watts)
+    coordinator.sku = entry.data.get("sku", "")
+    coordinator.machine_style = entry.data.get("machine_style", "")
 
     await coordinator.async_config_entry_first_refresh()
+    _store_hardware_ids(hass, entry, coordinator)
 
     # Persist the serial number back to the config entry if discovery
     # filled it in — earlier broken probes / setup runs could have

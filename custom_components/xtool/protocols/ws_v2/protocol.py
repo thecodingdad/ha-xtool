@@ -1773,6 +1773,8 @@ class WSV2Protocol(XtoolProtocol):
             )
             info.serial_number = data.get("sn") or data.get("snCode") or ""
             info.mac_address = data.get("mac", "")
+            info.sku = str(data.get("sku") or "")
+            info.machine_style = str(data.get("machineStyle") or "")
             firmware = data.get("firmware") or {}
             if isinstance(firmware, dict):
                 info.main_firmware = (
