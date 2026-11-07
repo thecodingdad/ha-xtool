@@ -102,6 +102,9 @@
           "working_api": "Auftrag (API)",
           "working_button": "Auftrag (Taste)",
           "measure_area": "Bereich messen",
+          "focusing": "Fokussiert",
+          "warming_up": "Aufwärmen",
+          "laser_overheat": "Laser überhitzt",
           "unknown": "Unbekannt"
         }
       },

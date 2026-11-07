@@ -102,7 +102,7 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable. **F2 Ultra UV** also shows, as Studio does: Focusing (autofocus), Warming up (the UV laser is not ready yet) and Laser overheat |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
 | Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
 | Last job time | Last completed job duration |

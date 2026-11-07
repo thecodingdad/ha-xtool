@@ -481,6 +481,27 @@ CONFIG_READ_KEYS: tuple[str, ...] = (
 )
 
 
+# Studio's ``uvReady``.
+PATH_UV_LASER = "/v1/device/uv-laser"
+# The UV laser ready read is tried this many times after a connect
+# before it waits for the slow cadence (it can time out at boot).
+UV_READY_TRIES = 3
+# Studio waits up to 2 minutes for autofocus; Focusing ends after this
+# even if the finish push was missed.
+FOCUSING_TIMEOUT = 150.0
+# Statuses only the Status details produce.
+_STATUS_OVERLAYS = frozenset({
+    XtoolStatus.FOCUSING, XtoolStatus.WARMING_UP,
+    XtoolStatus.LASER_OVERHEAT,
+})
+# Base statuses the details may replace (no job, no error).
+_STATUS_QUIET = frozenset({
+    XtoolStatus.IDLE, XtoolStatus.SLEEPING, XtoolStatus.FINISHED,
+    XtoolStatus.INITIALIZING, XtoolStatus.PROCESSING_READY,
+    XtoolStatus.UNKNOWN,
+})
+
+
 class WSV2Protocol(XtoolProtocol):
     """V2 protocol — TLS WS request/response + push events.
 
@@ -549,6 +570,67 @@ class WSV2Protocol(XtoolProtocol):
         for k in self._LATEST_STATE_FIELDS:
             if k in self._latest:
                 setattr(state, k, self._latest[k])
+        base = self._latest.get("status", state.status)
+        if base in _STATUS_OVERLAYS:
+            base = XtoolStatus.UNKNOWN
+        state.status = self._effective_status(base)
+
+    def _effective_status(self, base: Any) -> Any:
+        """Return Status with the details Studio shows beside the mode.
+
+        The laser's work mode stays the base. Laser overheat wins over
+        everything; a job or an error wins over the rest. Otherwise
+        autofocus shows as Focusing, and a UV laser that is not ready
+        yet as Warming up.
+        """
+        if self._laser_overheat:
+            return XtoolStatus.LASER_OVERHEAT
+        if base not in _STATUS_QUIET:
+            return base
+        if (
+            self._focusing_since is not None
+            and time.monotonic() - self._focusing_since < FOCUSING_TIMEOUT
+        ):
+            return XtoolStatus.FOCUSING
+        if self._uv_ready is False and base == XtoolStatus.IDLE:
+            return XtoolStatus.WARMING_UP
+        return base
+
+    async def _poll_status_reads(self) -> None:
+        """Read whether the UV laser is ready, as Studio's ``uvReady``.
+
+        Pushes keep it current after that. After a connect it is read on
+        each poll until it answers, up to ``UV_READY_TRIES`` times; the
+        laser can be too busy to answer while it boots.
+        """
+        self._status_read_tries += 1
+        try:
+            r = await self.request(PATH_UV_LASER, "GET", timeout=8.0)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 %s failed: %s", PATH_UV_LASER, err)
+        else:
+            if isinstance(r, dict) and r.get("uv_ready") is not None:
+                self._uv_ready = str(r["uv_ready"]) == "1"
+                self._status_reads_known = True
+        if self._status_read_tries >= UV_READY_TRIES:
+            self._status_reads_known = True
+
+    def _note_status_push(self, module: Any, typ: Any) -> None:
+        """Track the Status details from pushes, as Studio does."""
+        if module == "STATUS_CONTROLLER":
+            if typ == "FOCUS_STARTED":
+                self._focusing_since = time.monotonic()
+            elif typ in ("FOCUS_FINISHED", "FOCUS_STOPED", "FOCUS_STOPPED"):
+                self._focusing_since = None
+        elif module == "LASER_HEAD":
+            if typ == "UV_PREPARE":
+                self._uv_ready = False
+            elif typ == "UV_READY":
+                self._uv_ready = True
+            elif typ == "TMP_HIGH":
+                self._laser_overheat = True
+            elif typ == "TMP_RECOVER":
+                self._laser_overheat = False
 
     def __init__(self, host: str, port: int = WSV2_PORT) -> None:
         super().__init__(host)
@@ -605,6 +687,14 @@ class WSV2Protocol(XtoolProtocol):
         self._unsupported_endpoints: set[str] = set()
         self._config_read_body: dict[str, Any] | None = None
         self._config_read_known = False
+        # Status details Studio tracks beside the work mode (F2 Ultra
+        # UV): the UV laser is ready (None until read), it is too hot,
+        # and autofocus started (monotonic time).
+        self._uv_ready: bool | None = None
+        self._laser_overheat = False
+        self._focusing_since: float | None = None
+        self._status_reads_known = False
+        self._status_read_tries = 0
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -704,6 +794,13 @@ class WSV2Protocol(XtoolProtocol):
         # The config read body that works is found again for each connection
         self._config_read_body = None
         self._config_read_known = False
+        # Read again for each connection: after a power cut the UV
+        # laser is cold, and a value from before the cut is stale.
+        self._uv_ready = None
+        self._laser_overheat = False
+        self._focusing_since = None
+        self._status_reads_known = False
+        self._status_read_tries = 0
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -1277,6 +1374,7 @@ class WSV2Protocol(XtoolProtocol):
             "V2 push url=%s module=%s type=%s info=%r",
             url, module, typ, info,
         )
+        self._note_status_push(module, typ)
 
         # BT-accessory live status — wire shape not yet decoded; logged
         # explicitly so a future debug-log capture can drive the
@@ -1642,6 +1740,11 @@ class WSV2Protocol(XtoolProtocol):
         elif url.startswith("/peripheral/"):
             ptype = url.removeprefix("/peripheral/")
             self._apply_peripheral_push(ptype, data, info, typ)
+
+        elif url == "/laser_head/status" and module == "LASER_HEAD":
+            # UV laser ready and laser temperature, followed by
+            # ``_note_status_push`` for the Status.
+            pass
 
         else:
             _LOGGER.debug("V2 unhandled push event: %s", event)
@@ -2062,6 +2165,10 @@ class WSV2Protocol(XtoolProtocol):
         # firmware uses ``/v1/config/get`` with a kv-list body.
         if self._poll_counter % 6 == 0:
             await self._poll_configs()
+        if getattr(model, "has_uv_laser_status", False) and (
+            self._poll_counter % 6 == 0 or not self._status_reads_known
+        ):
+            await self._poll_status_reads()
 
         # 4. Statistics — lifetime counters, slow cadence. Skip on every
         # poll once cached as unsupported (GS006, P2S, DT001 don't
