@@ -46,7 +46,7 @@ from homeassistant.components.switch import (
     SwitchEntity,
 )
 from homeassistant.components.update import UpdateEntity
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.const import (
     EntityCategory,
     PERCENTAGE,
@@ -55,6 +55,7 @@ from homeassistant.const import (
     UnitOfTime,
     UnitOfVolumeFlowRate,
 )
+from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_HA_MAX
@@ -837,16 +838,21 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
             return None
         return getattr(d, self._state_attr, None)
 
+    # The value shows at once and is held until the ``/device/config``
+    # push reports it (``coordinator.async_write``): a push sent before
+    # the laser took the write still carries the old value, and shown
+    # it bounced the switch ON→OFF→ON (Issue #4 v2.5.8 retest, Beep).
     async def async_turn_on(self, **kwargs: Any) -> None:
-        # No optimistic ``setattr`` — the ``/device/config`` push
-        # lands sub-second with the firmware's authoritative value
-        # and ``_on_protocol_push`` fans it into ``coordinator.data``.
-        # Optimistic writes racing the stale-then-fresh push sequence
-        # caused ON→OFF→ON bounces (Issue #4 v2.5.8 retest, Beep).
-        await self.coordinator.protocol.set_config(self._config_key, True)
+        await self.coordinator.async_write(
+            {self._state_attr: True},
+            self.coordinator.protocol.set_config(self._config_key, True),
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_config(self._config_key, False)
+        await self.coordinator.async_write(
+            {self._state_attr: False},
+            self.coordinator.protocol.set_config(self._config_key, False),
+        )
 
 
 class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
@@ -888,15 +894,16 @@ class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
         return getattr(d, self._state_attr, None)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        # See _WSV2ConfigSwitch — push lands sub-second; optimistic
-        # writes race stale-then-fresh pushes and bounce the UI.
-        await self.coordinator.protocol.set_config(
-            self._config_key, self._on_value,
+        # Held until the laser reports it, as _WSV2ConfigSwitch
+        await self.coordinator.async_write(
+            {self._state_attr: True},
+            self.coordinator.protocol.set_config(self._config_key, self._on_value),
         )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_config(
-            self._config_key, self._off_value,
+        await self.coordinator.async_write(
+            {self._state_attr: False},
+            self.coordinator.protocol.set_config(self._config_key, self._off_value),
         )
 
 
@@ -933,20 +940,20 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
         return getattr(d, self._state_attr, None)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_peripheral(
-            self._peripheral_type, action="on", **self._extra,
+        await self.coordinator.async_write(
+            {self._state_attr: True},
+            self.coordinator.protocol.set_peripheral(
+                self._peripheral_type, action="on", **self._extra,
+            ),
         )
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, True)
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_peripheral(
-            self._peripheral_type, action="off", **self._extra,
+        await self.coordinator.async_write(
+            {self._state_attr: False},
+            self.coordinator.protocol.set_peripheral(
+                self._peripheral_type, action="off", **self._extra,
+            ),
         )
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, False)
-        self.async_write_ha_state()
 
 
 class _WSV2IRLedSwitch(_WSV2PeripheralSwitch, RestoreEntity):
@@ -1034,10 +1041,10 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
             return None
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.protocol.set_config(self._config_key, int(value))
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, int(value))
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {self._state_attr: int(value)},
+            self.coordinator.protocol.set_config(self._config_key, int(value)),
+        )
 
 
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
@@ -1062,12 +1069,12 @@ class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
         return self.coordinator.data.display_brightness
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.coordinator.protocol.set_peripheral(
-            "digital_screen", action="set_brightness", value=int(value),
+        await self.coordinator.async_write(
+            {"display_brightness": int(value)},
+            self.coordinator.protocol.set_peripheral(
+                "digital_screen", action="set_brightness", value=int(value),
+            ),
         )
-        if self.coordinator.data is not None:
-            self.coordinator.data.display_brightness = int(value)
-        self.async_write_ha_state()
 
 
 # --- Selects ------------------------------------------------------------
@@ -1097,7 +1104,7 @@ class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
 # --- Light --------------------------------------------------------------
 
 
-class _WSV2FillLightBase(XtoolEntity, LightEntity):
+class _WSV2FillLightBase(XtoolEntity, LightEntity, RestoreEntity):
     """Base for fill-light entities on V2 firmware.
 
     F-family V2 firmware exposes ``front`` and ``back`` channels
@@ -1156,26 +1163,62 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
     _config_key: str = ""           # e.g. "fillLightBrightFront"
     _other_config_key: str = ""     # e.g. "fillLightBrightBack"
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        ha_brightness = int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX))
-        device_value = _fill_light_ha_to_device(
-            ha_brightness,
+    # The device value the light last had while on: turning it on
+    # without a brightness goes back to it, as a light does. The
+    # laser keeps none (off is brightness 0), so it is kept here, and
+    # across restarts. Full brightness until one is seen.
+    _last_on: int | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        extra = await self.async_get_last_extra_data()
+        value = extra.as_dict().get("last_on") if extra is not None else None
+        if isinstance(value, int) and value > 0:
+            self._last_on = value
+
+    @property
+    def extra_restore_state_data(self) -> _LastBrightness:
+        return _LastBrightness(self._last_on)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        d = self.coordinator.data
+        value = getattr(d, self._state_attr, None) if d is not None else None
+        if isinstance(value, int) and value > 0:
+            self._last_on = value
+        super()._handle_coordinator_update()
+
+    def _turn_on_value(self, kwargs: dict[str, Any]) -> int:
+        """The device value to turn on at: the brightness asked, or the last one."""
+        if ATTR_BRIGHTNESS not in kwargs and self._last_on:
+            return self._last_on
+        return _fill_light_ha_to_device(
+            int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX)),
             self.coordinator.model.fill_light_device_min,
         )
-        await self.coordinator.protocol.set_config(
-            self._config_key, device_value,
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        device_value = self._turn_on_value(kwargs)
+        await self.coordinator.async_write(
+            {self._state_attr: device_value},
+            self.coordinator.protocol.set_config(self._config_key, device_value),
         )
-        if self.coordinator.data is not None:
-            setattr(
-                self.coordinator.data, self._state_attr, device_value,
-            )
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_config(self._config_key, 0)
-        if self.coordinator.data is not None:
-            setattr(self.coordinator.data, self._state_attr, 0)
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {self._state_attr: 0},
+            self.coordinator.protocol.set_config(self._config_key, 0),
+        )
+
+
+class _LastBrightness(ExtraStoredData):
+    """A fill light's last brightness, kept across restarts."""
+
+    def __init__(self, value: int | None) -> None:
+        self.value = value
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"last_on": self.value}
 
 
 def _fill_light_ha_to_device(ha_brightness: int, device_min: int) -> int:
@@ -1226,30 +1269,21 @@ class WSV2FillLight(_WSV2FillLightBase):
         super().__init__(coordinator)
         self._set_unique_id("fill_light")
 
+    async def _write_both(self, device_value: int) -> None:
+        await self.coordinator.protocol.set_config("fillLightBrightFront", device_value)
+        await self.coordinator.protocol.set_config("fillLightBrightBack", device_value)
+
     async def async_turn_on(self, **kwargs: Any) -> None:
-        ha_brightness = int(kwargs.get(ATTR_BRIGHTNESS, BRIGHTNESS_HA_MAX))
-        device_value = _fill_light_ha_to_device(
-            ha_brightness,
-            self.coordinator.model.fill_light_device_min,
+        device_value = self._turn_on_value(kwargs)
+        await self.coordinator.async_write(
+            {"fill_light_a": device_value, "fill_light_b": device_value},
+            self._write_both(device_value),
         )
-        await self.coordinator.protocol.set_config(
-            "fillLightBrightFront", device_value,
-        )
-        await self.coordinator.protocol.set_config(
-            "fillLightBrightBack", device_value,
-        )
-        if self.coordinator.data is not None:
-            self.coordinator.data.fill_light_a = device_value
-            self.coordinator.data.fill_light_b = device_value
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_config("fillLightBrightFront", 0)
-        await self.coordinator.protocol.set_config("fillLightBrightBack", 0)
-        if self.coordinator.data is not None:
-            self.coordinator.data.fill_light_a = 0
-            self.coordinator.data.fill_light_b = 0
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {"fill_light_a": 0, "fill_light_b": 0}, self._write_both(0),
+        )
 
 
 class WSV2FillLightFront(_WSV2FillLightBase):

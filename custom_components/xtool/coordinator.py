@@ -13,9 +13,12 @@ small set of generic helpers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable
+from dataclasses import replace as dataclass_replace
 from datetime import timedelta
 import asyncio
-from typing import TYPE_CHECKING, Any
+import time
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -56,6 +59,13 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 _LOGGER = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+# How long a value written from Home Assistant is shown before the device
+# reports it. After that the device's own value shows again: it did not
+# take the write.
+HOLD_SECONDS = 10.0
 
 
 # M9098 → accessory type-id resolver. The numeric token in
@@ -153,6 +163,122 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         # entities for in this session.
         self._platform_callbacks: dict[str, "AddEntitiesCallback"] = {}
         self._known_accessory_keys: set[str] = set()
+
+        # Values written from Home Assistant that the device has not
+        # reported yet: (accessory key or None, field) -> [value,
+        # deadline, the value before]. See :meth:`async_write`.
+        self._holds: dict[tuple[str | None, str], list[Any]] = {}
+
+    # --- Written values -----------------------------------------------------
+
+    @property
+    def data(self) -> XtoolDeviceState:
+        """The device state, with the values written but not yet reported."""
+        return getattr(self, "_data", None)
+
+    @data.setter
+    def data(self, state: XtoolDeviceState) -> None:
+        # Every new state passes here: each poll's, each push's
+        if state is not None and getattr(self, "_holds", None):
+            self._apply_holds(state)
+        self._data = state
+
+    @staticmethod
+    def _target(state: XtoolDeviceState, accessory: str | None) -> Any:
+        """The object a held field lives on: the state, or an accessory's fields."""
+        if accessory is None:
+            return state
+        acc = (state.connected_accessories or {}).get(accessory)
+        return None if acc is None else acc.fields
+
+    @staticmethod
+    def _get(target: Any, field: str) -> Any:
+        return target.get(field) if isinstance(target, dict) else getattr(target, field, None)
+
+    @staticmethod
+    def _set(target: Any, field: str, value: Any) -> None:
+        if isinstance(target, dict):
+            target[field] = value
+        else:
+            setattr(target, field, value)
+
+    def _apply_holds(self, state: XtoolDeviceState) -> None:
+        """Keep the old value of each held field from showing again.
+
+        A poll that began before a write, or a push sent before the
+        device took it, still carries the old value. Shown, it flipped
+        the control back for a moment (an F2 Ultra UV red dot went off,
+        then on 24 ms later, then off at the next poll). Only the old
+        value is held back: a hold ends when the device reports the
+        value written, or another new value (a change made elsewhere),
+        or when its time runs out (the device did not take the write).
+        """
+        now = time.monotonic()
+        for key, (value, deadline, old) in list(self._holds.items()):
+            accessory, field = key
+            target = self._target(state, accessory)
+            if target is None:
+                del self._holds[key]
+                continue
+            current = self._get(target, field)
+            if current == value or current != old or (deadline is not None and now >= deadline):
+                del self._holds[key]
+            else:
+                self._set(target, field, value)
+
+    def _show(self, values: dict[str, Any], accessory: str | None) -> None:
+        """Show the values at once (not a report from the device)."""
+        if self.data is None:
+            return
+        state = dataclass_replace(self.data)
+        target = self._target(state, accessory)
+        if target is not None:
+            for field, value in values.items():
+                self._set(target, field, value)
+        self._data = state
+        self.async_update_listeners()
+
+    async def async_write(
+        self,
+        values: dict[str, Any],
+        send: Awaitable[_T],
+        accessory: str | None = None,
+    ) -> _T:
+        """Send a write, showing its values at once.
+
+        ``values`` are the state fields the write changes (of the
+        accessory ``accessory``, or of the laser), as the device will
+        report them. They show while the write is sent, which can take
+        seconds over Bluetooth, and then until the device reports them,
+        for ``HOLD_SECONDS`` at most. When the write fails, the values
+        from before show again.
+        """
+        target = self._target(self.data, accessory) if self.data is not None else None
+        before = {field: self._get(target, field) for field in values} if target is not None else {}
+        for field, value in values.items():
+            # A second write before the device reported the first: the
+            # old value is still the one the device had
+            held = self._holds.get((accessory, field))
+            old = held[2] if held is not None else before.get(field)
+            if old == value:
+                self._holds.pop((accessory, field), None)
+            else:
+                self._holds[(accessory, field)] = [value, None, old]
+        self._show(values, accessory)
+        try:
+            result = await send
+        except Exception:
+            for field in values:
+                self._holds.pop((accessory, field), None)
+            self._show(before, accessory)
+            raise
+        # The time starts once the device has the write
+        deadline = time.monotonic() + HOLD_SECONDS
+        for field, value in values.items():
+            hold = self._holds.get((accessory, field))
+            if hold is not None and hold[0] == value:
+                hold[1] = deadline
+        return result
 
     # --- Generic helpers ----------------------------------------------------
 

@@ -237,19 +237,21 @@ async def _dispatch_write(entity: _AccessoryEntity, value: Any) -> None:
     """
     spec = entity._spec
     if spec.write_action is not None:
-        try:
-            await spec.write_action(entity.coordinator, value)
-        except Exception as err:
-            _LOGGER.debug(
-                "Accessory %s write_action failed: %s",
-                entity._accessory_key, err,
-            )
+        send = spec.write_action(entity.coordinator, value)
+    elif spec.write_mcode is not None:
+        write = spec.write_mcode
+        send = _passthrough_write(entity, write(value) if callable(write) else write)
+    else:
         return
-    write = spec.write_mcode
-    if write is None:
-        return
-    mcode = write(value) if callable(write) else write
-    await _passthrough_write(entity, mcode)
+    # The value shows at once: a write over Bluetooth can take seconds,
+    # and the accessory reports it only at the next poll
+    values = {spec.field: value} if spec.field is not None and value is not None else {}
+    try:
+        await entity.coordinator.async_write(values, send, accessory=entity._accessory_key)
+    except Exception as err:
+        _LOGGER.debug(
+            "Accessory %s write failed: %s", entity._accessory_key, err,
+        )
 
 
 class _AccessorySwitch(_AccessoryEntity, SwitchEntity):
@@ -380,22 +382,21 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
             self._last_gear = gear
         super()._handle_coordinator_update()
 
-    def _remember(self, **values: Any) -> None:
-        f = self._fields()
-        if f is not None:
-            f.update(values)
-        self.async_write_ha_state()
+    async def _write(self, mcode: str, **values: Any) -> None:
+        """Send the command, showing the values it sets at once."""
+        await self.coordinator.async_write(
+            values, _passthrough_write(self, mcode), accessory=self._accessory_key,
+        )
 
     async def _set_gear(self, gear: int) -> None:
         from .duct_fan import FANV3_MANUAL, FANV3_OFF, fan_v3_manual_mcode
 
         gear = max(0, min(4, gear))
-        await _passthrough_write(self, fan_v3_manual_mcode(gear))
         if gear:
             self._last_gear = gear
-            self._remember(mode_class=FANV3_MANUAL, current_gear=gear)
+            await self._write(fan_v3_manual_mcode(gear), mode_class=FANV3_MANUAL, current_gear=gear)
         else:
-            self._remember(mode_class=FANV3_OFF, current_gear=0)
+            await self._write(fan_v3_manual_mcode(gear), mode_class=FANV3_OFF, current_gear=0)
 
     async def async_set_percentage(self, percentage: int) -> None:
         await self._set_gear(int(round(percentage / 25)))
@@ -406,8 +407,8 @@ class _AccessoryFan(_AccessoryEntity, FanEntity):
         mcode = fan_v3_auto_mcode(preset_mode)
         if mcode is None:
             raise HomeAssistantError(f"Unknown preset mode {preset_mode}")
-        await _passthrough_write(self, mcode)
-        self._remember(
+        await self._write(
+            mcode,
             mode_class=FANV3_AUTO,
             auto_gear=FANV3_AUTO_GEAR[preset_mode],
             auto_submode=preset_mode,
