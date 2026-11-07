@@ -70,6 +70,27 @@ class XtoolStatus(StrEnum):
     MEASURE_AREA = "measure_area"
     UNKNOWN = "unknown"
 
+# Statuses in which the laser has no job, so the Task ID sensor shows
+# "None" instead of Unknown. FINISHED still shows the ID of the job
+# that just ended when the laser reports it.
+_NO_JOB_STATUSES = frozenset({XtoolStatus.IDLE, XtoolStatus.SLEEPING})
+
+
+def task_id_value(status: XtoolStatus | None, task_id: str | None) -> str | None:
+    """Return the Task ID sensor's state.
+
+    The task ID while one is known, "None" when the laser is known to
+    have no job, and None (Unknown) when that is not known, for
+    example while processing without an ID or with an unknown status.
+    """
+    if status in _NO_JOB_STATUSES:
+        return "None"
+    if task_id:
+        return str(task_id)
+    if status == XtoolStatus.FINISHED:
+        return "None"
+    return None
+
 
 class FlameAlarmSensitivity(IntEnum):
     """Flame alarm sensitivity levels (S1 native scale).
