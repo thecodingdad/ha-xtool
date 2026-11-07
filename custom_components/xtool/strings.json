@@ -225,6 +225,7 @@
       "md_mode": { "name": "Auto mode (access control)" }
     },
     "number": {
+      "auto_power_off": { "name": "Auto power-off" },
       "air_assist_close_delay": { "name": "Air assist delay" },
       "smoking_fan_duration": { "name": "Exhaust time after processing" },
       "tilt_threshold": { "name": "Tilt threshold" },

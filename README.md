@@ -199,6 +199,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 | Entity | Description |
 |---|---|
+| Auto power-off | Only with a Power switch linked in the options. Turns the Power switch off after the laser has been Idle or Sleeping for this many minutes (0 = never, up to 1440). Going between Idle and Sleeping does not restart the count; anything else does (a job, framing, the laser going offline) |
 | Air-assist post-run | Time air-assist stays on after a job ends (0-600 s) |
 | Exhaust post-run | Time exhaust fan stays on after a job ends (1-600 s) |
 | Sleep timeout | Idle sleep timeout (0-3600 s) |

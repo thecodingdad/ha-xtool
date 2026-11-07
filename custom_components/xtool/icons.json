@@ -72,6 +72,11 @@
         "state": { "off": "mdi:laptop-off" }
       }
     },
+    "number": {
+      "auto_power_off": {
+        "default": "mdi:timer-off-outline"
+      }
+    },
     "switch": {
       "accessory_ductfan_buzzer": {
         "default": "mdi:bell-ring",

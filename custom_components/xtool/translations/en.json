@@ -598,6 +598,9 @@
       }
     },
     "number": {
+      "auto_power_off": {
+        "name": "Auto power-off"
+      },
       "air_assist_close_delay": {
         "name": "Air-assist post-run"
       },

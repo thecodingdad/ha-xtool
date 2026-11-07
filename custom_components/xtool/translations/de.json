@@ -556,6 +556,9 @@
       }
     },
     "number": {
+      "auto_power_off": {
+        "name": "Automatisch ausschalten"
+      },
       "accessory_ductfan_manual_gear": {
         "name": "Manuelle Stufe"
       },
