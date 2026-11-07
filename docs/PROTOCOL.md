@@ -1319,10 +1319,12 @@ class).
 
 Studio uses this on demand only — there is no Studio-driven
 camera-refresh interval. Implementations that want a "live preview"
-have to drive their own poll loop. Empirically a 1 Hz cadence is
-the lowest the device firmware tolerates without bunching the JPEG
-encoder; faster than ~2 Hz starts to drop frames or queue snaps
-behind unfinished `file_stream` transfers.
+have to drive their own poll loop. Measured on an F2 Ultra UV
+(firmware 40.130.023.00.ht5): the snap request answers in about
+0.13 s and the ~200 KB download takes about 0.16 s, so one photo
+takes about 0.3 s. The integration takes one photo at a time (the
+transfers of two lenses would otherwise overlap) and starts a
+live-view frame every 0.4 s.
 
 Per-model step-1 variants (audited from each Studio bundle):
 
@@ -1342,6 +1344,14 @@ The third WS channel (`function=media_stream`) carries the live
 camera video over **WebRTC**, not a simple WS-MJPEG stream.
 Signaling rides the `/v1/signaling/*` and `/v1/platform/camera/*`
 endpoints (see below).
+
+On the F2 Ultra UV (firmware 40.130.023.00.ht5) the live video is not
+available: `POST /v1/platform/camera/live` with `{name, action:"start"}`
+answers code -1 `camera disabled` for `main`, `deep`, `far`, `upside`
+and `0`, and `GET /v1/platform/camera/list` answers code -1
+`getCameraList failed`. Studio's GS009 bundles never call these; they
+only take photos. Only the P3 bundle calls `/v1/platform/camera/live`
+(see upstream PR #14).
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
