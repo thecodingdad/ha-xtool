@@ -185,8 +185,14 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
             return True
         if not self.sku and not self.machine_style:
             return None
-        return any(self.sku.startswith(p) for p in model.access_control_skus) or (
-            self.machine_style in model.access_control_machine_styles
+        return self.eu_unit
+
+    @property
+    def eu_unit(self) -> bool:
+        """Whether the SKU (or machine style) is one Studio treats as an EU unit."""
+        model = self.model
+        return bool(self.sku) and any(self.sku.startswith(p) for p in model.access_control_skus) or (
+            bool(self.machine_style) and self.machine_style in model.access_control_machine_styles
         )
 
     def get_status(self) -> XtoolStatus:

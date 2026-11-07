@@ -294,7 +294,7 @@ The device page in Home Assistant shows:
 
 - **Manufacturer:** xTool
 - **Model:** e.g. xTool S1
-- **Model ID:** the product part of the SKU, when the laser reports one (WS-V2 lasers), e.g. P0101000393
+- **Model ID:** the product part of the SKU, when the laser reports one (WS-V2 lasers), e.g. P0101000393. EU units (the SKUs in [Access control](#access-control)) show (EU) after it, e.g. P0101000396 (EU)
 - **Serial Number:** Device serial number
 - **Firmware:** firmware version
 
