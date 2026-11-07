@@ -175,6 +175,9 @@ class XtoolDeviceModel:
     has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral
     has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
     # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
+    # WS-V2: Last job time only, from the job result push's ``timeUse``
+    # (F2 Ultra UV; its statistics carry no time)
+    has_job_result_time: bool = False
     # WS-V2: xTool "Auto mode" / Material-Detection access control
     # (config key ``mdMode``). Studio bundle labels the toggle
     # ``enable_access_control`` and gates it per-model via an
