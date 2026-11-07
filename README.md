@@ -198,7 +198,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 #### Access control
 
-Access control is the Safety Enhancement Mode of xTool's Access Control Key (the key the Safety key sensor reports), for the EU Machinery Directive 2006/42/EC. xTool offers it only on units sold in the EU ([xTool: Access-Control Key](https://support.xtool.com/article/1367)). Like xTool Studio, the integration tells them apart by the SKU the laser reports, and adds the switch only when the SKU starts with one of these:
+Access control is the Safety Enhancement Mode of xTool's Access Control Key (the key the Safety key sensor reports), for the EU Machinery Directive 2006/42/EC. xTool offers it only on units sold in the EU ([xTool: Access-Control Key](https://support.xtool.com/article/1367)). Like xTool Studio, the integration tells them apart by the SKU the laser reports (shown as the Model ID on the device page), and adds the switch only when the SKU starts with one of these:
 
 | Model | SKUs |
 |---|---|
@@ -294,6 +294,7 @@ The device page in Home Assistant shows:
 
 - **Manufacturer:** xTool
 - **Model:** e.g. xTool S1
+- **Model ID:** the product part of the SKU, when the laser reports one (WS-V2 lasers), e.g. P0101000393
 - **Serial Number:** Device serial number
 - **Firmware:** firmware version
 
