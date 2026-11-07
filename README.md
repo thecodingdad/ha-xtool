@@ -230,9 +230,9 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 | Entity | Description |
 |---|---|
-| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Streams live MJPEG with snapshot fallback |
-| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
+| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
