@@ -519,8 +519,13 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         mac_tail = re.compile(
             r":[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}$"
         )
-        # Snapshot — async_remove_device mutates the registry's dict.
-        for device in list(dev_reg.devices.values()):
+        entry = getattr(self, "config_entry", None)
+        if entry is None:
+            return
+        # Only this laser's devices. ``dev_reg.devices`` as a mapping is
+        # deprecated (Home Assistant 2026.11). A copy, because
+        # async_remove_device changes the registry.
+        for device in list(dr.async_entries_for_config_entry(dev_reg, entry.entry_id)):
             for ident in device.identifiers:
                 # Defensive: third-party integrations occasionally
                 # register 3-tuple identifiers; unpack-by-index keeps
