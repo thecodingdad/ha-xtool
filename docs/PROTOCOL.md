@@ -2341,6 +2341,18 @@ the fill lights off. A camera photo (`:8329/camera/snap`) wakes it at once
 (`P_IDLE`); the status and settings reads above and a push connection do
 not. The integration takes no photo while the P2 sleeps.
 
+**Cameras.** `GET :8329/camera/snap?stream=0` is the overview camera and
+`stream=1` the close camera; both give 4656 x 3496 JPEGs. Exposure is
+`POST :8329/camera/exposure?stream=<n>` `{value}` (Studio sets 80 and
+100 before its photos); `GET` reads `{mode: "auto", value}`. Each camera
+has a calibration grid, downloaded as Studio does with
+`GET :8080/file?action=download&filename=<name>`:
+`global_calib.json` (overview, 62 x 32 points, straightened to
+2440 x 1220 at Studio's `globalScale` 4 pixels per mm, so 610 x 305 mm)
+and `local_calib.json` (close camera, 15 x 11 points, 2800 x 2000 at
+`localScale` 20, so 140 x 100 mm). `global_ir.txt` holds the Quick
+measure light's curve; `local_ir.txt` reads `{"result":"failed"}`.
+
 **Replies that do not work on the P2** (the integration creates no entity
 for them):
 
