@@ -94,23 +94,18 @@ class XtoolIRLED(XtoolEntity, SwitchEntity):
             return None
         return d.ir_led_close if self._kind == "close" else d.ir_led_global
 
+    def _field(self) -> str:
+        return "ir_led_close" if self._kind == "close" else "ir_led_global"
+
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_ir_led(self._index, True)
-        if self.coordinator.data:
-            if self._kind == "close":
-                self.coordinator.data.ir_led_close = True
-            else:
-                self.coordinator.data.ir_led_global = True
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {self._field(): True}, self.coordinator.protocol.set_ir_led(self._index, True),
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_ir_led(self._index, False)
-        if self.coordinator.data:
-            if self._kind == "close":
-                self.coordinator.data.ir_led_close = False
-            else:
-                self.coordinator.data.ir_led_global = False
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {self._field(): False}, self.coordinator.protocol.set_ir_led(self._index, False),
+        )
 
 
 class XtoolDigitalLock(XtoolEntity, SwitchEntity):
@@ -127,16 +122,14 @@ class XtoolDigitalLock(XtoolEntity, SwitchEntity):
         return d.cover_locked if d else None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_digital_lock(True)
-        if self.coordinator.data:
-            self.coordinator.data.cover_locked = True
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {"cover_locked": True}, self.coordinator.protocol.set_digital_lock(True),
+        )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.coordinator.protocol.set_digital_lock(False)
-        if self.coordinator.data:
-            self.coordinator.data.cover_locked = False
-        self.async_write_ha_state()
+        await self.coordinator.async_write(
+            {"cover_locked": False}, self.coordinator.protocol.set_digital_lock(False),
+        )
 
 
 # --- Numbers: camera exposure ----------------------------------------------

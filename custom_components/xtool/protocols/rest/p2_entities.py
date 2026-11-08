@@ -17,6 +17,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
+from homeassistant.exceptions import HomeAssistantError
 
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity
@@ -77,11 +78,13 @@ class P2FillLight(XtoolEntity, LightEntity):
         return self._level()
 
     async def _write(self, level: int) -> None:
-        await self.coordinator.protocol.set_fill_light_level(self._index, level)
         data = self.coordinator.data
-        if data is not None:
-            data.fill_light_levels = {**data.fill_light_levels, self._index: level}
-        self.async_write_ha_state()
+        if data is None:
+            return
+        await self.coordinator.async_write(
+            {"fill_light_levels": {**data.fill_light_levels, self._index: level}},
+            self.coordinator.protocol.set_fill_light_level(self._index, level),
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._write(int(kwargs.get(ATTR_BRIGHTNESS, REST_BRIGHTNESS_MAX)))
@@ -113,12 +116,16 @@ class _P2Setting(XtoolEntity):
         return super().available and self._value() is not None
 
     async def _write(self, **kv: Any) -> None:
-        if not await self.coordinator.protocol.set_config(**kv):
-            return
         data = self.coordinator.data
-        if data is not None:
-            data.device_config = {**data.device_config, **kv}
-        self.async_write_ha_state()
+        if data is None:
+            return
+
+        async def send() -> None:
+            if not await self.coordinator.protocol.set_config(**kv):
+                raise HomeAssistantError(f"The P2 did not accept {', '.join(kv)}")
+
+        # Shown at once; the settings are read back only every 60 s
+        await self.coordinator.async_write({"device_config": {**data.device_config, **kv}}, send())
 
 
 class P2Buzzer(_P2Setting, SwitchEntity):
@@ -155,8 +162,7 @@ class P2ExhaustFan(_P2Setting, SwitchEntity):
         return None if value is None else bool(value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._write(purifierEnable=True)
-        await self._write(purifierTimeout=5)
+        await self._write(purifierEnable=True, purifierTimeout=5)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._write(purifierEnable=False)

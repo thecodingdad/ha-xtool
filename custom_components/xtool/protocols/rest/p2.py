@@ -608,10 +608,14 @@ class P2Protocol(RestProtocol):
 
     async def set_fill_light_level(self, index: int, value: int) -> None:
         """One fill light's brightness, 0-255 (index 0 = all of them, as Studio uses)."""
-        await self._post(
+        reply = await self._post_json(
             REST_PATH_FILL_LIGHT,
             data={"action": "set_bri", "idx": int(index), "value": max(0, min(REST_BRIGHTNESS_MAX, int(value)))},
         )
+        # Success is {"code": 0, "data": <value>} (read here as the value);
+        # a refusal keeps its code
+        if reply is None or (isinstance(reply, dict) and reply.get("code") not in (None, 0)):
+            raise ConnectionError(f"P2 fill light {index} not set: {reply!r}")
 
     async def set_beep_enabled(self, on: bool) -> None:
         """Buzzer (Studio writes ``beepEnable``; ``/setBeepEnable`` is refused)."""
