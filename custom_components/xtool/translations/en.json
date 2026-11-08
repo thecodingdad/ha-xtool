@@ -971,7 +971,7 @@
       "name": "{laser} Overview camera"
     },
     "camera_closeup": {
-      "name": "{laser} Close-up camera"
+      "name": "{laser} Close camera"
     },
     "camera_far": {
       "name": "{laser} Global camera"

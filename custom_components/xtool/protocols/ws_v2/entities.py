@@ -1554,7 +1554,7 @@ CAMERA_LABELS: dict[str, str] = {
     "main": "Main camera",
     "deep": "Deep camera",
     "overview": "Overview camera",
-    "closeup": "Close-up camera",
+    "closeup": "Close camera",
     "far": "Global camera",
     "near": "Local camera",
     "side": "Side camera",
@@ -2058,6 +2058,10 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         self._cancel_thumbnail_timer = async_track_time_interval(
             self.hass, self._refresh_thumbnail, timedelta(seconds=seconds),
             name=f"xTool {self._camera_name} thumbnail refresh",
+            # Stop when Home Assistant stops: a photo every few seconds
+            # keeps adding tasks, and Home Assistant waits for them all
+            # before it saves its state and closes
+            cancel_on_shutdown=True,
         )
 
     async def async_added_to_hass(self) -> None:
