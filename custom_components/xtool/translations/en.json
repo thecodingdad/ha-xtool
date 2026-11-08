@@ -113,6 +113,275 @@
           "working_button": "Running (button)",
           "measure_area": "Measuring area",
           "unknown": "Unknown"
+        },
+        "state_attributes": {
+          "laser_position_x": {
+            "name": "Laser position X"
+          },
+          "laser_position_y": {
+            "name": "Laser position Y"
+          },
+          "laser_position_z": {
+            "name": "Laser position Z"
+          },
+          "fire_level": {
+            "name": "Fire level"
+          },
+          "air_assist_level": {
+            "name": "Air assist level"
+          },
+          "task_id": {
+            "name": "Task ID"
+          },
+          "task_time": {
+            "name": "Task time"
+          },
+          "task_progress": {
+            "name": "Task progress"
+          },
+          "working_time": {
+            "name": "Working time"
+          },
+          "session_count": {
+            "name": "Session count"
+          },
+          "standby_time": {
+            "name": "Standby time"
+          },
+          "tool_runtime": {
+            "name": "Laser module runtime"
+          },
+          "ip_address": {
+            "name": "IP address"
+          },
+          "laser_power": {
+            "name": "Laser power"
+          },
+          "laser_module": {
+            "name": "Laser module"
+          },
+          "sd_card": {
+            "name": "SD card"
+          },
+          "workspace_size": {
+            "name": "Workspace size"
+          },
+          "connection_count": {
+            "name": "Active connections"
+          },
+          "origin_offset_x": {
+            "name": "Origin offset X"
+          },
+          "origin_offset_y": {
+            "name": "Origin offset Y"
+          },
+          "last_job_time": {
+            "name": "Last job time"
+          },
+          "working_mode": {
+            "name": "Working mode"
+          },
+          "measured_thickness": {
+            "name": "Measured thickness"
+          },
+          "last_distance": {
+            "name": "Last distance"
+          },
+          "riser_base": {
+            "name": "Riser base"
+          },
+          "water_temperature": {
+            "name": "Water temperature"
+          },
+          "water_flow": {
+            "name": "Water flow rate"
+          },
+          "z_temperature": {
+            "name": "Z-axis temperature"
+          },
+          "workhead_id": {
+            "name": "Workhead"
+          },
+          "workhead_z_height": {
+            "name": "Workhead Z height"
+          },
+          "print_tool_type": {
+            "name": "Print tool type"
+          },
+          "hardware_type": {
+            "name": "Hardware type"
+          },
+          "cpu_temp": {
+            "name": "CPU temperature"
+          },
+          "ambient_temp": {
+            "name": "Ambient temperature"
+          },
+          "ambient_humidity": {
+            "name": "Ambient humidity"
+          },
+          "heating_status": {
+            "name": "Heating status"
+          },
+          "ink_cyan": {
+            "name": "Ink cyan"
+          },
+          "ink_black": {
+            "name": "Ink black"
+          },
+          "ink_magenta": {
+            "name": "Ink magenta"
+          },
+          "ink_white": {
+            "name": "Ink white"
+          },
+          "ink_yellow": {
+            "name": "Ink yellow"
+          },
+          "clean_water": {
+            "name": "Cleaning fluid"
+          },
+          "waste_water": {
+            "name": "Waste fluid"
+          },
+          "gyro_x": {
+            "name": "Gyro X"
+          },
+          "gyro_y": {
+            "name": "Gyro Y"
+          },
+          "gyro_z": {
+            "name": "Gyro Z"
+          },
+          "inkjet_ink_c": {
+            "name": "Ink level cyan"
+          },
+          "inkjet_ink_m": {
+            "name": "Ink level magenta"
+          },
+          "inkjet_ink_y": {
+            "name": "Ink level yellow"
+          },
+          "inkjet_ink_k": {
+            "name": "Ink level black"
+          },
+          "inkjet_sn": {
+            "name": "Inkjet head serial"
+          },
+          "inkjet_version": {
+            "name": "Inkjet head firmware"
+          },
+          "inkjet_toner_sn": {
+            "name": "Toner serial"
+          },
+          "active_alarms": {
+            "name": "Active alarms"
+          },
+          "job_name": {
+            "name": "Job name"
+          },
+          "job_progress": {
+            "name": "Job progress"
+          },
+          "job_time_remaining": {
+            "name": "Job time remaining"
+          },
+          "queued_jobs": {
+            "name": "Queued jobs"
+          },
+          "air_purifier_runtime": {
+            "name": "Air purifier runtime"
+          },
+          "uv_lamp_runtime": {
+            "name": "UV lamp runtime"
+          },
+          "cover_open": {
+            "name": "Cover"
+          },
+          "machine_lock": {
+            "name": "Safety key"
+          },
+          "alarm": {
+            "name": "Alarm"
+          },
+          "xcs_compatibility_mode": {
+            "name": "XCS compatibility mode"
+          },
+          "air_assist_connected": {
+            "name": "Air-Assist connected"
+          },
+          "drawer_open": {
+            "name": "Drawer"
+          },
+          "cooling_fan_running": {
+            "name": "Cooling fan"
+          },
+          "smoking_fan_running": {
+            "name": "Exhaust fan"
+          },
+          "cpu_fan_running": {
+            "name": "CPU fan"
+          },
+          "uv_fire_alarm": {
+            "name": "UV fire sensor"
+          },
+          "water_pump_running": {
+            "name": "Water pump"
+          },
+          "water_line_ok": {
+            "name": "Water line"
+          },
+          "film_buffer_ready": {
+            "name": "Film buffer ready"
+          },
+          "film_position_ready": {
+            "name": "Film position ready"
+          },
+          "powder_loop_running": {
+            "name": "Powder loop running"
+          },
+          "heater_connected": {
+            "name": "Heater connected"
+          },
+          "flame_alarm_enabled": {
+            "name": "Flame alarm enabled"
+          },
+          "beep_enabled": {
+            "name": "Beep enabled"
+          },
+          "gap_check_enabled": {
+            "name": "Cover check enabled"
+          },
+          "machine_lock_check_enabled": {
+            "name": "Lock check enabled"
+          },
+          "inkjet_head_capped": {
+            "name": "Inkjet head capped"
+          },
+          "inkjet_toner_installed": {
+            "name": "Toner installed"
+          },
+          "inkjet_calibrated": {
+            "name": "Inkjet head calibrated"
+          },
+          "front_door": {
+            "name": "Front door"
+          },
+          "rear_door": {
+            "name": "Rear door"
+          },
+          "waste_tank_full": {
+            "name": "Waste ink tank full"
+          },
+          "waste_tank_present": {
+            "name": "Waste ink tank installed"
+          },
+          "filter_installed": {
+            "name": "Air filter installed"
+          },
+          "firmware": {
+            "name": "Firmware"
+          }
         }
       },
       "laser_position_x": {
@@ -764,6 +1033,12 @@
       },
       "lowest_output_power": {
         "name": "Lowest output power"
+      },
+      "laser_position_x": {
+        "name": "Laser position X"
+      },
+      "laser_position_y": {
+        "name": "Laser position Y"
       }
     },
     "select": {
@@ -1080,6 +1355,32 @@
           "description": "Center of the area in mm from the center of the calibrated area; positive moves down."
         }
       }
+    },
+    "move_laser_head": {
+      "name": "Move laser head",
+      "description": "Moves the P2's laser head as xTool Studio's move controls do: to an X and Y position, or by signed steps (repeated a number of times). An axis given neither stays where it is. Stops at 0-620 by 0-308 mm. Refused unless the laser is idle.",
+      "fields": {
+        "x": {
+          "name": "X",
+          "description": "Position to move to, in mm from home (0-620); X grows to the right."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Position to move to, in mm from home (0-308); Y grows toward the front."
+        },
+        "step_x": {
+          "name": "Step X",
+          "description": "Signed step in mm: positive moves right, negative moves left."
+        },
+        "step_y": {
+          "name": "Step Y",
+          "description": "Signed step in mm: positive moves toward the front, negative toward the back."
+        },
+        "steps": {
+          "name": "Steps",
+          "description": "How many times to apply the steps."
+        }
+      }
     }
   },
   "exceptions": {
@@ -1094,6 +1395,12 @@
     },
     "camera_needs_a_value": {
       "message": "Give at least one crop value."
+    },
+    "move_wrong_entity": {
+      "message": "This entity is not an xTool laser position."
+    },
+    "move_needs_a_value": {
+      "message": "Give an X or Y position, or a step."
     }
   }
 }

@@ -1281,6 +1281,8 @@ _P2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
 _P2_LEFT_OUT = {
     "hardware_type", "print_tool_type", "working_mode",
     "gyro_x", "gyro_y", "gyro_z", "laser_power", "laser_module",
+    # Numbers that also move the head
+    "laser_position_x", "laser_position_y",
 }
 # Kept, but off until turned on
 _P2_OFF_BY_DEFAULT = {"task_id", "cpu_temp"}

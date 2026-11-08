@@ -19,11 +19,24 @@ ATTR_CROP_WIDTH = "crop_width"
 ATTR_CROP_HEIGHT = "crop_height"
 ATTR_CROP_CENTER_X = "crop_center_x"
 ATTR_CROP_CENTER_Y = "crop_center_y"
+ATTR_X = "x"
+ATTR_Y = "y"
+ATTR_STEP_X = "step_x"
+ATTR_STEP_Y = "step_y"
 
 FOCUS_SCHEMA = {
     vol.Exclusive(ATTR_STEP, "move"): vol.Coerce(float),
     vol.Optional(ATTR_STEPS, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=1500)),
     vol.Exclusive(ATTR_THICKNESS, "move"): vol.All(vol.Coerce(float), vol.Range(min=0, max=150)),
+}
+
+_MM = vol.Coerce(float)
+MOVE_LASER_HEAD_SCHEMA = {
+    vol.Exclusive(ATTR_X, "x"): _MM,
+    vol.Exclusive(ATTR_STEP_X, "x"): _MM,
+    vol.Exclusive(ATTR_Y, "y"): _MM,
+    vol.Exclusive(ATTR_STEP_Y, "y"): _MM,
+    vol.Optional(ATTR_STEPS, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
 }
 
 _CROP_SIDE = vol.All(vol.Coerce(float), vol.Range(min=0, max=460))
@@ -59,6 +72,33 @@ async def _async_focus(entity, call: ServiceCall) -> ServiceResponse:
     )
 
 
+
+async def _async_move_laser_head(entity, call: ServiceCall) -> ServiceResponse:
+    """Move the laser head to X and Y, or by signed steps (times ``steps``).
+
+    The response gives the position moved to. A move that stopped at a
+    limit is reported as an error that says so (the move was made).
+    """
+    move = getattr(entity, "async_move_laser_head", None)
+    if move is None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="move_wrong_entity",
+        )
+    data = call.data
+    keys = (ATTR_X, ATTR_Y, ATTR_STEP_X, ATTR_STEP_Y)
+    if not any(key in data for key in keys):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="move_needs_a_value",
+        )
+    return await move(
+        x=data.get(ATTR_X),
+        y=data.get(ATTR_Y),
+        step_x=data.get(ATTR_STEP_X),
+        step_y=data.get(ATTR_STEP_Y),
+        steps=data[ATTR_STEPS],
+    )
+
+
 async def _async_camera(entity, call: ServiceCall) -> None:
     """Set the main camera's crop (any of the four values) and refresh it."""
     if not getattr(entity, "supports_crop", False):
@@ -88,6 +128,15 @@ def async_setup_services(hass: HomeAssistant) -> None:
         entity_domain=NUMBER_DOMAIN,
         schema=FOCUS_SCHEMA,
         func=_async_focus,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    async_register_platform_entity_service(
+        hass,
+        DOMAIN,
+        "move_laser_head",
+        entity_domain=NUMBER_DOMAIN,
+        schema=MOVE_LASER_HEAD_SCHEMA,
+        func=_async_move_laser_head,
         supports_response=SupportsResponse.OPTIONAL,
     )
     async_register_platform_entity_service(

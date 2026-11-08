@@ -15,16 +15,16 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.components.camera import Camera
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.components.lock import LockEntity
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfLength, UnitOfTime
 from homeassistant.exceptions import HomeAssistantError
 
 from ...const import XtoolStatus
 from ...coordinator import XtoolCoordinator
-from ...entity import XtoolEntity, XtoolReadOnlyEntity
+from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringSensor
 from ..ws_v2.entities import (
     _CameraDeviceEntity,
     _crop_settings,
@@ -437,6 +437,154 @@ class P2Alarm(XtoolReadOnlyEntity, BinarySensorEntity):
         return {"alarms": alarms, "codes": [a["code"] for a in alarms]}
 
 
+# --- Laser head ------------------------------------------------------------
+
+# The head moves only while the P2 waits for work, as in Studio
+P2_HEAD_MOVE_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED)
+
+
+async def async_move_laser_head(
+    coordinator: XtoolCoordinator,
+    x: float | None = None,
+    y: float | None = None,
+    step_x: float | None = None,
+    step_y: float | None = None,
+    steps: int = 1,
+) -> dict[str, float]:
+    """Move the head to x and y, or by signed steps, in mm from home.
+
+    An axis with neither stays where it is. The position is read from the
+    laser first, so a step starts where the head really is. A move past
+    Studio's limits stops at the limit and then raises an error that says
+    so, so Home Assistant shows the message.
+    """
+    from .p2 import P2_HEAD_MAX_X, P2_HEAD_MAX_Y
+
+    protocol = coordinator.protocol
+    data = coordinator.data
+    status = getattr(data, "status", None)
+    if status not in P2_HEAD_MOVE_STATUSES:
+        raise HomeAssistantError(
+            f"Laser head not moved: the laser is {status or 'not connected'}, not idle"
+        )
+    if x is None or y is None:
+        current = await protocol.read_head_position()
+        if current is None:
+            raise HomeAssistantError(
+                "Laser head not moved: the laser did not say where the head is"
+            )
+        x = current[0] + (step_x or 0.0) * steps if x is None else x
+        y = current[1] + (step_y or 0.0) * steps if y is None else y
+    wanted = (round(x, 2), round(y, 2))
+    target = (
+        round(min(max(x, 0.0), P2_HEAD_MAX_X), 2),
+        round(min(max(y, 0.0), P2_HEAD_MAX_Y), 2),
+    )
+    await protocol.move_laser_head(*target)
+    if data is not None:
+        data.position_x, data.position_y = target
+        coordinator.async_set_updated_data(data)
+    if target != wanted:
+        # Reported as an error so Home Assistant shows it; the move was made
+        raise HomeAssistantError(
+            f"Laser head moved to X {target[0]:.2f}, Y {target[1]:.2f} mm, at the limit. "
+            f"X {wanted[0]:.2f}, Y {wanted[1]:.2f} mm is outside "
+            f"0-{P2_HEAD_MAX_X:.0f} by 0-{P2_HEAD_MAX_Y:.0f} mm."
+        )
+    return {"x": target[0], "y": target[1]}
+
+
+class P2LaserPosition(XtoolEntity, NumberEntity):
+    """Where the laser head is, in mm from home; setting it moves the head.
+
+    X grows to the right and Y toward the front. The ``xtool.move_laser_head``
+    action also moves the head in steps.
+    """
+
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_min_value = 0.0
+    _attr_native_step = 0.01
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: XtoolCoordinator, axis: str) -> None:
+        from .p2 import P2_HEAD_MAX_X, P2_HEAD_MAX_Y
+
+        super().__init__(coordinator)
+        self._axis = axis
+        self._attr_translation_key = f"laser_position_{axis}"
+        self._set_unique_id(f"laser_position_{axis}")
+        self._attr_native_max_value = P2_HEAD_MAX_X if axis == "x" else P2_HEAD_MAX_Y
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        return getattr(d, f"position_{self._axis}", None) if d else None
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.async_move_laser_head(**{self._axis: value})
+
+    async def async_move_laser_head(self, **move: Any) -> dict[str, float]:
+        return await async_move_laser_head(self.coordinator, **move)
+
+
+class P2MeasureDistance(XtoolMeasureDistance):
+    """Reads the material under the IR sensor, beside the laser.
+
+    The thickness is the P2's own reading at thickness 0 (its
+    ``laserMeasureOffset`` setting) minus the distance read.
+    """
+
+    async def async_press(self) -> None:
+        protocol = self.coordinator.protocol
+        reading = await protocol.measure_material()
+        data = self.coordinator.data
+        if reading is None or data is None:
+            raise HomeAssistantError("The laser did not report a distance")
+        data.last_distance_mm = reading["distance"]
+        offset = protocol.measure_offset(data)
+        if offset:
+            data.measured_thickness_mm = round(offset["z"] - reading["distance"], 2)
+            if "coord_x" in reading and "coord_y" in reading:
+                data.measured_at = (
+                    round(reading["coord_x"] + offset["x"], 2),
+                    round(reading["coord_y"] + offset["y"], 2),
+                )
+        self.coordinator.async_set_updated_data(data)
+
+
+class P2MeasuredThickness(XtoolRestoringSensor, SensorEntity):
+    """The material thickness from the last Measure distance.
+
+    Attributes: where on the bed it was measured (the IR sensor's position,
+    mm from home) and the distance read.
+    """
+
+    _attr_translation_key = "measured_thickness"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("measured_thickness")
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        return self._value_or_restored(d.measured_thickness_mm if d else None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        d = self.coordinator.data
+        if d is None or d.measured_thickness_mm is None:
+            return None
+        attributes: dict[str, Any] = {"distance": d.last_distance_mm}
+        if d.measured_at is not None:
+            attributes["x"], attributes["y"] = d.measured_at
+        return attributes
+
+
 # --- Builders ----------------------------------------------------------------
 
 
@@ -465,6 +613,8 @@ def build_p2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         ),
         P2ExhaustTime(coordinator),
         P2LowestOutputPower(coordinator),
+        P2LaserPosition(coordinator, "x"),
+        P2LaserPosition(coordinator, "y"),
     ]
 
 
@@ -494,5 +644,5 @@ def build_p2_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorE
 def build_p2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     return [
         XtoolHomeLaserHead(coordinator),
-        XtoolMeasureDistance(coordinator),
+        P2MeasureDistance(coordinator),
     ]

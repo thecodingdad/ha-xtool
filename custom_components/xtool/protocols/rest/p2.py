@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -35,6 +36,7 @@ from ...const import XtoolStatus
 from ..base import DeviceInfo, XtoolDeviceState
 from .protocol import (
     PERIPHERAL_ACTION_GET_COORD,
+    PERIPHERAL_ACTION_GET_DISTANCE,
     PERIPHERAL_ACTION_GO_TO,
     REST_BRIGHTNESS_MAX,
     REST_CAMERA_PORT,
@@ -42,6 +44,7 @@ from .protocol import (
     REST_PATH_DIGITAL_LOCK,
     REST_PATH_FILL_LIGHT,
     REST_PATH_GAP,
+    REST_PATH_IR_DISTANCE,
     REST_PATH_IR_LED,
     REST_PATH_LASER_HEAD,
     RestProtocol,
@@ -62,6 +65,9 @@ SLOW_READ_SECONDS = 60.0
 # Studio's laser head moves: speed (mm/min) and how long the P2 may take
 P2_HEAD_SPEED = 9600
 P2_HEAD_WAIT_MS = 30000
+# Studio's limits for laser head moves, mm from home
+P2_HEAD_MAX_X = 620.0
+P2_HEAD_MAX_Y = 308.0
 
 # Studio's config keys for the P2 (its deviceInfo read), plus Baseplate detection
 P2_CONFIG_KEYS: tuple[str, ...] = (
@@ -511,15 +517,50 @@ class P2Protocol(RestProtocol):
             await self._follow_studio_brightness(state, config.get("fillLightBrightness"))
 
     async def _read_head_position(self, state: XtoolDeviceState) -> None:
+        position = await self.read_head_position()
+        if position is not None:
+            state.position_x, state.position_y = position
+
+    async def read_head_position(self) -> tuple[float, float] | None:
+        """The laser head's position now, in mm from home."""
         coord = await self._post_json(
             REST_PATH_LASER_HEAD, data={"action": PERIPHERAL_ACTION_GET_COORD, "waitTime": 0},
         )
-        if isinstance(coord, dict):
-            self._read_position = False
-            if isinstance(coord.get("x"), (int, float)):
-                state.position_x = float(coord["x"])
-            if isinstance(coord.get("y"), (int, float)):
-                state.position_y = float(coord["y"])
+        if not isinstance(coord, dict):
+            return None
+        x, y = coord.get("x"), coord.get("y")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (x, y)):
+            return None
+        self._read_position = False
+        return float(x), float(y)
+
+    def measure_offset(self, state: XtoolDeviceState) -> dict[str, float]:
+        """The IR sensor's offset from the laser and its reading at thickness 0.
+
+        From the P2's own ``laserMeasureOffset`` setting, such as
+        "X64.3Y0.9Z136.7": x and y in mm, z the distance read on the slats.
+        """
+        text = str(state.device_config.get("laserMeasureOffset") or "")
+        found = {
+            axis.lower(): float(value)
+            for axis, value in re.findall(r"([XYZ])(-?\d+(?:\.\d+)?)", text.upper())
+        }
+        return found if {"x", "y", "z"} <= found.keys() else {}
+
+    async def measure_material(self) -> dict[str, float] | None:
+        """One IR reading: the distance and the head position it was taken at."""
+        result = await self._post_json(
+            REST_PATH_IR_DISTANCE,
+            data={"action": PERIPHERAL_ACTION_GET_DISTANCE, "type": "single"},
+        )
+        if not isinstance(result, dict):
+            return None
+        values: dict[str, float] = {}
+        for key in ("distance", "coord_x", "coord_y"):
+            value = result.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values[key] = float(value)
+        return values if "distance" in values else None
 
     async def move_laser_head(self, x: float, y: float, wait: int = 0) -> None:
         """Move the head to (x, y) mm from home; Studio's speed and wait."""

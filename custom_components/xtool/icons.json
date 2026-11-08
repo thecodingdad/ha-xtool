@@ -80,6 +80,17 @@
         "state": { "off": "mdi:laptop-off" }
       }
     },
+    "number": {
+      "auto_power_off": {
+        "default": "mdi:timer-off-outline"
+      },
+      "laser_position_x": {
+        "default": "mdi:arrow-left-right"
+      },
+      "laser_position_y": {
+        "default": "mdi:arrow-up-down"
+      }
+    },
     "select": {
       "perspective": {
         "default": "mdi:perspective-less",
@@ -91,6 +102,9 @@
       }
     },
     "sensor": {
+      "measured_thickness": {
+        "default": "mdi:tape-measure"
+      },
       "connection": {
         "default": "mdi:ethernet",
         "state": { "wifi": "mdi:wifi" }

@@ -453,6 +453,9 @@ class XtoolDeviceState:
 
     # REST distance measurement
     last_distance_mm: float | None = None
+    # P2: the material thickness from the last IR reading, and where it was read
+    measured_thickness_mm: float | None = None
+    measured_at: tuple[float, float] | None = None
 
     # AP2 air cleaner
     purifier_speed: int = 0
