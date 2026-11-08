@@ -27,7 +27,6 @@ from .entities import (
     XtoolHomeLaserHead,
     XtoolIRLED,
     XtoolMeasureDistance,
-    XtoolReboot,
     _RestCoverSensor,
     _RestPushBinary,
 )
@@ -361,5 +360,4 @@ def build_p2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     return [
         XtoolHomeLaserHead(coordinator),
         XtoolMeasureDistance(coordinator),
-        XtoolReboot(coordinator),
     ]

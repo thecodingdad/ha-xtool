@@ -2354,6 +2354,7 @@ for them):
 | `/config/get {"keys": [...]}` | refused: `key 'kv' not found` |
 | `/system` | `{"result": "failed"}` (Studio reads `/system?action=version_v2`) |
 | `/setsleeptimeout`, `/setsleeptimeoutopengap`, `/setFilllightAutoClosetimout`, `/setIrlightAutoClosetimout` | `invalid request` as JSON, form or query (the `/get…` forms read 600, 180, 180, 120 s); Studio does not set them |
+| `/reboot` (GET or POST) | `invalid request`; Studio has no reboot for the P2 |
 
 Not offered on the P2 because Studio does not offer them: Filter check,
 Purifier check, Purifier continue (Studio uses `purifierEnable` and
