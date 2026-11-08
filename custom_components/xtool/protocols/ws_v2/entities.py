@@ -46,6 +46,8 @@ from homeassistant.components.switch import (
     SwitchEntity,
 )
 from homeassistant.components.update import UpdateEntity
+from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.const import (
     EntityCategory,
@@ -847,6 +849,32 @@ class _WSV2ConfigSwitch(XtoolEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.coordinator.protocol.set_config(self._config_key, False)
+
+
+class _WSV2AccessControlSwitch(_WSV2ConfigSwitch):
+    """Access control (``mdMode``), on the units Studio offers it on."""
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        # Disabled in the entity registry by default: it changes how
+        # every job starts, so it is turned on only on purpose
+        super().__init__(
+            coordinator, "md_mode", "mdMode", "md_mode_enabled", enabled_default=False,
+        )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self.coordinator.access_control_supported is False:
+            # Studio does not offer it on this unit: take the switch
+            # away, and keep the SKU so the next setup does not make it
+            entry = self.platform.config_entry if self.platform else None
+            if entry is not None:
+                ids = {"sku": self.coordinator.sku, "machine_style": self.coordinator.machine_style}
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, **{k: v for k, v in ids.items() if v}},
+                )
+            er.async_get(self.hass).async_remove(self.entity_id)
+            return
+        super()._handle_coordinator_update()
 
 
 class _WSV2EnumConfigSwitch(XtoolEntity, SwitchEntity):
@@ -1824,18 +1852,17 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
                 enabled_default=False,
             )
         )
-    if model.has_md_mode:
-        # xTool "Auto mode" / Material-Detection access control:
-        # once enabled the device requires a physical safety key
-        # to start processing (Studio bundle label
-        # ``enable_access_control``). Wire is the standard
-        # ``/v1/device/configs`` PUT with ``{mdMode: bool}``.
-        entities.append(
-            _WSV2ConfigSwitch(
-                coordinator, "md_mode", "mdMode",
-                "md_mode_enabled",
-            )
-        )
+    if coordinator.access_control_supported is not False:
+        # Studio's "Access control" (bundle label
+        # ``enable_access_control``): once enabled, every job needs
+        # the check at the machine before it starts (open the
+        # enclosure, press the machine's button, close it, then
+        # start), and Studio turns off autofocus, framing and offline
+        # processing. Wire is the standard ``/v1/device/configs`` PUT
+        # with ``{mdMode: bool}``. Only on the units Studio offers it
+        # on; while that is not known yet, the switch is made and
+        # removes itself once the SKU shows it does not apply.
+        entities.append(_WSV2AccessControlSwitch(coordinator))
     if model.has_machine_lock:
         # F2 Ultra UV (and the rest of the F-series V2 firmware) types
         # the Stops-when-moved enforcement field as the ``workingMode``

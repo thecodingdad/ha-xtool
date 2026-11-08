@@ -65,6 +65,8 @@ class DeviceInfo:
     wifi_firmware: str = ""
     mac_address: str = ""
     hardware_version: str = ""
+    sku: str = ""  # WS-V2 machineInfo ``sku``, e.g. "P0101000393..."
+    machine_style: str = ""  # WS-V2 machineInfo ``machineStyle``
     workspace_x: float = 0.0
     workspace_y: float = 0.0
     workspace_z: float = 0.0
@@ -175,13 +177,16 @@ class XtoolDeviceModel:
     has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral
     has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
     # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
-    # WS-V2: xTool "Auto mode" / Material-Detection access control
-    # (config key ``mdMode``). Studio bundle labels the toggle
-    # ``enable_access_control`` and gates it per-model via an
-    # ``isSupport`` predicate — leave defaulted False; only enable
-    # on models where the safety-key access-control workflow
-    # actually applies.
+    # WS-V2: Studio's "Access control" (config key ``mdMode``; MD is
+    # the EU Machinery Directive 2006/42/EC). Studio offers it only
+    # on the hardware sold for the EU, which it tells apart by the
+    # SKU in ``/v1/device/machineInfo`` (``checkSupportMD``): the
+    # SKU must start with one of ``access_control_skus``, or the
+    # ``machineStyle`` must be one of ``access_control_machine_styles``.
+    # With both empty, every unit of the model has it.
     has_md_mode: bool = False
+    access_control_skus: tuple[str, ...] = ()
+    access_control_machine_styles: tuple[str, ...] = ()
     has_button_event: bool = False  # WS-V2: /button/status push fires
     has_inkjet: bool = False  # M2: inkjet head + /v1/project/inkjet/*
     has_inkjet_sensors: bool = False  # DT001: ink/water bottles, heater, film sensors
@@ -305,7 +310,7 @@ class XtoolDeviceState:
     workhead_id: str = ""  # M1 Ultra mounted tool head
     workhead_z_height: float | None = None  # M1 Ultra
     flame_level_hl: int | None = None  # config kv flameLevelHLSelect (1=high, 2=low)
-    md_mode_enabled: bool | None = None  # config kv mdMode ("Auto mode" access-control)
+    md_mode_enabled: bool | None = None  # config kv mdMode (Studio: "Access control")
     # Push peripheral states
     drawer_open: bool | None = None  # /peripheral/drawer
     cooling_fan_running: bool | None = None  # /peripheral/cooling_fan

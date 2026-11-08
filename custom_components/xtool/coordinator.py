@@ -145,6 +145,11 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
 
         # Hardware board revision (e.g. "V1", "V8") from machineInfo.
         self._hardware_version: str = ""
+        # WS-V2 machineInfo ``sku`` / ``machineStyle``: which hardware
+        # this is, e.g. for Access control. Kept in the config entry so
+        # it is known at setup while the laser is off.
+        self.sku: str = ""
+        self.machine_style: str = ""
 
         # BT-accessory dynamic-add: each per-platform setup_entry stashes its
         # ``async_add_entities`` callback here so :meth:`_dispatch_new_accessories`
@@ -166,6 +171,29 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
     async def async_shutdown(self) -> None:
         await self.protocol.disconnect()
         await super().async_shutdown()
+
+    @property
+    def access_control_supported(self) -> bool | None:
+        """Whether Studio offers Access control on this unit.
+
+        None while the SKU (or machine style) is not known yet.
+        """
+        model = self.model
+        if not model.has_md_mode:
+            return False
+        if not model.access_control_skus and not model.access_control_machine_styles:
+            return True
+        if not self.sku and not self.machine_style:
+            return None
+        return self.eu_unit
+
+    @property
+    def eu_unit(self) -> bool:
+        """Whether the SKU (or machine style) is one Studio treats as an EU unit."""
+        model = self.model
+        return bool(self.sku) and any(self.sku.startswith(p) for p in model.access_control_skus) or (
+            bool(self.machine_style) and self.machine_style in model.access_control_machine_styles
+        )
 
     def get_status(self) -> XtoolStatus:
         if self.data is None or self.data.status is None:
