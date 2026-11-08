@@ -176,6 +176,26 @@ The available options are gated by the device's protocol family — only relevan
 
 Connected BT accessories surface as their own **child devices** hanging off the laser (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) and carry their own sensor / binary-sensor / switch / number / select set — gear, running flag, filter wear, connection status, post-run timeout, buzzer toggle, and so on. See the laser device page under **Devices** to navigate into the linked accessories.
 
+#### SafetyPro IF2 2.0 fan
+
+The IF2 2.0 has one fan entity: Off and Manual speeds 1-4, plus the presets **Auto Regular** and **Auto Quiet**.
+
+In Auto, the IF2 spins only from the start of a job until the post-run time ("Exhaust time after processing") ends. The fan entity shows On at the reported speed during that time, and Off while Auto is idle, with the preset still shown.
+
+The Auto speed comes from the job itself. When xTool Studio processes a job and sends it to the laser, it writes the speed into the job: 3 for Auto Regular and 2 for Auto Quiet by default. Some processing modes may use a different speed. The IF2 reports only the speed, not the Auto preset. The fan entity therefore shows speeds 1-2 as Auto Quiet and 3-4 as Auto Regular.
+
+| IF2 setting when the job starts | Job sent with Auto Regular | Job sent with Auto Quiet |
+|---|---|---|
+| Auto Regular or Auto Quiet | Runs at speed 3, shown as Auto Regular | Runs at speed 2, shown as Auto Quiet |
+| Manual 1-4 | Keeps its Manual speed | Keeps its Manual speed |
+
+During a job you can:
+
+- choose Auto Regular (speed 3) or Auto Quiet (speed 2) to change the running speed;
+- turn the fan off or on, or set a speed, which switches the IF2 to Manual.
+
+Choosing a preset while no job is running only stores its speed; the next job replaces it with its own.
+
 ### Switch
 
 | Entity | Description |
