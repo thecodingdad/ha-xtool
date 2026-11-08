@@ -163,6 +163,8 @@ class RestProtocol(XtoolProtocol):
     PATH_JOB_PAUSE: str = "/processing/pause"
     PATH_JOB_RESUME: str = "/processing/resume"
     PATH_JOB_STOP: str = "/processing/stop"
+    # /peripheral/gap "off" read as the lid open (the P2 reports "off" while closed)
+    GAP_OFF_MEANS_OPEN: bool = True
 
     def __init__(self, host: str, port: int = REST_HTTP_PORT) -> None:
         """Initialize the protocol."""
@@ -288,7 +290,7 @@ class RestProtocol(XtoolProtocol):
                 cur_mode = running.get("curMode", {})
                 if isinstance(cur_mode, dict):
                     raw_mode = cur_mode.get("mode", "")
-                    mapped = _map_rest_mode(raw_mode)
+                    mapped = self._map_running_mode(cur_mode)
                     if mapped is None and raw_mode:
                         _LOGGER.debug(
                             "REST /device/runningStatus mode unmapped "
@@ -331,7 +333,7 @@ class RestProtocol(XtoolProtocol):
             if isinstance(inner, dict):
                 gs = str(inner.get("state", "")).lower()
                 if gs in ("on", "off"):
-                    state.cover_open = gs == "off"
+                    state.cover_open = (gs == "off") == self.GAP_OFF_MEANS_OPEN
 
         # Air-Assist V2 connect state (M1 Ultra) — returns {state:"on"|"off"};
         # other REST models 404 silently (kept as None).
@@ -512,6 +514,10 @@ class RestProtocol(XtoolProtocol):
             state.status, state.task_id, state.task_time,
             state.working_mode, state.cover_open, state.air_assist_connected,
         )
+
+    def _map_running_mode(self, cur_mode: dict) -> XtoolStatus | None:
+        """The status for ``/device/runningStatus`` ``curMode``."""
+        return _map_rest_mode(str(cur_mode.get("mode", "")))
 
     async def _poll_simple_get(self, state: XtoolDeviceState, path: str, attr: str, conv) -> None:
         """Poll a ``/get*`` endpoint with a tolerant JSON-shape extractor."""

@@ -255,3 +255,49 @@ class RestCoordinator(XtoolCoordinator):
             "triggered" if new_fire else "cleared",
             None,
         )
+
+
+class P2Coordinator(RestCoordinator):
+    """The P2: polls like the REST family and follows Studio's push channel.
+
+    A push updates the entities at once; the poll every few seconds still
+    reads everything. When the push channel closes or goes quiet, the laser
+    shows unavailable at once instead of keeping its last values.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.protocol._push_notify = self._on_push
+
+    def _on_push(self) -> None:
+        if self.data is None:
+            return
+        state = dataclass_replace(self.data)
+        if not self.protocol.connected:
+            if not state.available:
+                return
+            state.available = False
+            self.data = state
+            self.async_update_listeners()
+            return
+        if not state.available:
+            # Back after an outage: the next poll reads everything again
+            self.hass.async_create_task(self.async_request_refresh())
+            return
+        prev_status = state.status
+        self.protocol.apply_latest(state)
+        self.data = state
+        self._emit_status_transition_events(prev_status, state)
+        self._emit_fire_warning_if_status_changed(prev_status, state.status)
+        self._emit_push_events()
+        # Not async_set_updated_data: that would move the next poll
+        self.async_update_listeners()
+
+    def _emit_push_events(self) -> None:
+        for kind, event_type, attributes in self.protocol.take_push_events():
+            self._emit_event(kind, event_type, attributes)
+
+    async def _async_update_data(self) -> XtoolDeviceState:
+        state = await super()._async_update_data()
+        self._emit_push_events()
+        return state
