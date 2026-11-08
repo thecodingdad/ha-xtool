@@ -162,7 +162,8 @@ class P2ExhaustFan(_P2Setting, SwitchEntity):
         return None if value is None else bool(value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._write(purifierEnable=True, purifierTimeout=5)
+        await self._write(purifierEnable=True)
+        await self._write(purifierTimeout=5)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._write(purifierEnable=False)
