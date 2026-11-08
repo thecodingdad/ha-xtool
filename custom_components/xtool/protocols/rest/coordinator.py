@@ -6,6 +6,13 @@ import logging
 from dataclasses import replace as dataclass_replace
 from typing import TYPE_CHECKING, Any
 
+import time
+
+import aiohttp
+from homeassistant.const import CONF_HOST
+from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.storage import Store
+
 from ...coordinator import XtoolCoordinator
 from ..base import XtoolDeviceState
 
@@ -270,6 +277,62 @@ class P2Coordinator(RestCoordinator):
         self.protocol._push_notify = self._on_push
         # Error codes already sent as events from a push
         self._announced: set[str] = set()
+        # The laser's addresses seen so far (Wi-Fi and Ethernet), kept
+        # across restarts; when the configured one stops answering, the
+        # others are tried
+        self._hosts_store: Store | None = None
+        self._known_hosts: list[str] = []
+        self._next_host_search = 0.0
+
+    # --- Identity and addresses ------------------------------------------
+
+    async def _fetch_device_info(self) -> None:
+        await super()._fetch_device_info()
+        protocol = self.protocol
+        self.model_variant = protocol.model_variant() or self.model_variant
+        mac = await self.hass.async_add_executor_job(_arp_mac, protocol.host)
+        if mac and format_mac(mac) != format_mac(self.mac_address or ""):
+            self.other_mac_addresses.add(format_mac(mac))
+        await self._remember_hosts([protocol.host, *protocol.addresses()])
+
+    def _store(self) -> Store:
+        if self._hosts_store is None:
+            entry_id = self.config_entry.entry_id if self.config_entry else self.serial_number
+            self._hosts_store = Store(self.hass, 1, f"xtool.{entry_id}.hosts")
+        return self._hosts_store
+
+    async def _load_hosts(self) -> list[str]:
+        if not self._known_hosts:
+            stored = await self._store().async_load()
+            if isinstance(stored, dict) and isinstance(stored.get("hosts"), list):
+                self._known_hosts = [str(h) for h in stored["hosts"]]
+        return self._known_hosts
+
+    async def _remember_hosts(self, hosts: list[str]) -> None:
+        known = await self._load_hosts()
+        new = [h for h in dict.fromkeys(hosts) if h and h not in known]
+        if new:
+            self._known_hosts = [*known, *new]
+            await self._store().async_save({"hosts": self._known_hosts})
+
+    async def _find_on_other_address(self) -> None:
+        """When the laser stops answering, look for it at its other address."""
+        now = time.monotonic()
+        if now < self._next_host_search or self.power_switch_is_off or not self.config_entry:
+            return
+        self._next_host_search = now + HOST_SEARCH_SECONDS
+        current = self.protocol.host
+        for host in await self._load_hosts():
+            if host == current:
+                continue
+            serial = await _serial_at(host)
+            if serial and serial == self.serial_number:
+                _LOGGER.info("%s answers at %s instead of %s; switching", self.device_name, host, current)
+                # Updating the entry reloads it with the new address
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data={**self.config_entry.data, CONF_HOST: host},
+                )
+                return
 
     def _on_push(self) -> None:
         if self.data is None:
@@ -307,6 +370,8 @@ class P2Coordinator(RestCoordinator):
         self._emit_push_events()
         if state.available:
             self._emit_alarm_changes(prev_alarms, state.active_alarms)
+        else:
+            await self._find_on_other_address()
         return state
 
     def _emit_alarm_changes(
@@ -367,3 +432,34 @@ class P2Coordinator(RestCoordinator):
     def build_events(self) -> list["EventEntity"]:
         from .entities import build_p2_events
         return build_p2_events(self)
+
+
+# How often a P2 that stopped answering is looked for at its other address
+HOST_SEARCH_SECONDS = 30.0
+
+
+def _arp_mac(host: str) -> str:
+    """The MAC behind ``host`` in the system's ARP table (Linux), or ""."""
+    try:
+        with open("/proc/net/arp", encoding="ascii") as arp:
+            for line in arp.read().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == host and parts[3] != "00:00:00:00:00:00":
+                    return parts[3]
+    except OSError:
+        pass
+    return ""
+
+
+async def _serial_at(host: str) -> str:
+    """The serial number of the laser answering at ``host``, or ""."""
+    try:
+        async with aiohttp.ClientSession() as session, session.get(
+            f"http://{host}:8080/device/machineInfo", timeout=aiohttp.ClientTimeout(total=3),
+        ) as resp:
+            data = await resp.json(content_type=None)
+    except Exception:  # noqa: BLE001
+        return ""
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        return str(data["data"].get("sn") or "")
+    return ""

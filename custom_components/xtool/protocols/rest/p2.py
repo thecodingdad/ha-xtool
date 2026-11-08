@@ -32,7 +32,7 @@ from typing import Any
 import aiohttp
 
 from ...const import XtoolStatus
-from ..base import XtoolDeviceState
+from ..base import DeviceInfo, XtoolDeviceState
 from .protocol import (
     PERIPHERAL_ACTION_GET_COORD,
     REST_BRIGHTNESS_MAX,
@@ -65,6 +65,9 @@ P2_CONFIG_KEYS: tuple[str, ...] = (
     "motionPowerCut", "laserMeasureOffset", "flameLevelHLSelect", "purifierEnable",
     "beepEnable", "taskId", "flameAlarmLevel1", "drawerCheck",
 )
+
+# machineInfo machineSubType -> Studio's Laser safety classification
+P2_SAFETY_CLASSES: dict[str, str] = {"001": "Class 1", "004": "Class 4"}
 
 # Studio's P2 error table (P2/index.js): code, "<module>.<type>.<info>",
 # Studio's English title, and the Error event type it is reported as.
@@ -219,6 +222,7 @@ class P2Protocol(RestProtocol):
         self._push_notify: Callable[[], None] | None = None
         self._http: aiohttp.ClientSession | None = None
         self._next_slow_read = 0.0
+        self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
 
@@ -525,6 +529,15 @@ class P2Protocol(RestProtocol):
             for axis in ("x", "y", "z"):
                 if isinstance(gyro.get(f"gyro_{axis}"), (int, float)):
                     setattr(state, f"gyro_{axis}", float(gyro[f"gyro_{axis}"]))
+        work = await self._get_json("/device/workingInfo")
+        if isinstance(work, dict):
+            # Studio's Work info: Working time, Operating times, Standby time
+            try:
+                state.working_seconds = int(work["timeModeWorking"])
+                state.session_count = int(work["numOfflineWorking"]) + int(work["numOnlineWorking"])
+                state.standby_seconds = int(work["timeSystemWork"])
+            except (KeyError, TypeError, ValueError):
+                pass
         coord = await self._post_json(
             REST_PATH_LASER_HEAD, data={"action": PERIPHERAL_ACTION_GET_COORD, "waitTime": 0},
         )
@@ -549,6 +562,35 @@ class P2Protocol(RestProtocol):
                 state.flame_alarm = 2
             else:
                 state.flame_alarm = 0 if config.get("flameAlarmLevel1") else 1
+
+    # --- Identity ---------------------------------------------------------
+
+    async def get_device_info(self) -> DeviceInfo:
+        """``/device/machineInfo``, keeping the whole reply for the device page."""
+        data = await self._get_json(self.PATH_DEVICE_INFO)
+        if not isinstance(data, dict):
+            return DeviceInfo()
+        self.machine_info = data
+        return self._parse_machine_info_payload(data)
+
+    def addresses(self) -> list[str]:
+        """The laser's own addresses on the network (Wi-Fi and Ethernet)."""
+        ips = self.machine_info.get("ip") if isinstance(self.machine_info, dict) else None
+        if not isinstance(ips, dict):
+            return []
+        found = []
+        for key, ip in ips.items():
+            ip = str(ip or "")
+            # usb0 is the USB link to a computer; 169.254 is an unplugged cable
+            if not ip or key.startswith("usb") or ip.startswith(("169.254.", "127.")):
+                continue
+            found.append(ip)
+        return found
+
+    def model_variant(self) -> str:
+        """Studio's Laser safety classification (the P2 reports no SKU)."""
+        sub_type = str(self.machine_info.get("machineSubType") or "")
+        return P2_SAFETY_CLASSES.get(sub_type, "")
 
     # --- Writes, as Studio sends them ------------------------------------
 

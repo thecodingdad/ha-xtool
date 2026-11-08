@@ -75,6 +75,9 @@
   },
   "entity": {
     "sensor": {
+      "operating_times": {
+        "name": "Betriebsvorgänge"
+      },
       "status": {
         "name": "Status",
         "state": {

@@ -1245,6 +1245,37 @@ _P2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda state, _: state.cpu_temp,
     ),
+    # Studio's Work info
+    XtoolSensorEntityDescription(
+        key="working_seconds",
+        translation_key="working_time",
+        icon="mdi:timer-cog",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_unit_of_measurement=UnitOfTime.HOURS,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda state, _: state.working_seconds,
+    ),
+    XtoolSensorEntityDescription(
+        key="session_count",
+        translation_key="operating_times",
+        icon="mdi:counter",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda state, _: state.session_count,
+    ),
+    XtoolSensorEntityDescription(
+        key="standby_seconds",
+        translation_key="standby_time",
+        icon="mdi:timer-sand",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        suggested_unit_of_measurement=UnitOfTime.HOURS,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda state, _: state.standby_seconds,
+    ),
 )
 
 

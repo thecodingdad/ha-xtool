@@ -154,6 +154,13 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         # mac_address is populated by S1/D-series/REST. F1 V2 leaves it empty.
         # entity.py reads it to add CONNECTION_NETWORK_MAC.
         self.mac_address: str = ""
+        # Further MACs of the same laser (a P2 has one for Ethernet and one
+        # for Wi-Fi); each is a device connection, so DHCP finds the laser
+        # again at whichever address it shows up on.
+        self.other_mac_addresses: set[str] = set()
+        # Shown as the Model ID on the device page when the model has no SKU
+        # (the P2: Studio's Laser safety classification)
+        self.model_variant: str = ""
 
         # Hardware board revision (e.g. "V1", "V8") from machineInfo.
         self._hardware_version: str = ""

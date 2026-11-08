@@ -67,6 +67,7 @@
   },
   "entity": {
     "sensor": {
+      "operating_times": { "name": "Operating times" },
       "status": {
         "name": "Status",
         "state": {
