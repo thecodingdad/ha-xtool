@@ -419,6 +419,12 @@
       },
       "filter_installed": {
         "name": "Luftfilter eingesetzt"
+      },
+      "lid": {
+        "name": "Deckel"
+      },
+      "baseplate": {
+        "name": "Bodenplatte"
       }
     },
     "camera": {
@@ -456,6 +462,15 @@
       },
       "fill_light_back": {
         "name": "Arbeitslicht hinten"
+      },
+      "fill_light_1": {
+        "name": "Arbeitslicht 1"
+      },
+      "fill_light_2": {
+        "name": "Arbeitslicht 2"
+      },
+      "fill_light_3": {
+        "name": "Arbeitslicht 3"
       }
     },
     "fan": {
@@ -550,6 +565,15 @@
       },
       "accessory_largepurifierv3_auto_continue": {
         "name": "Auto-Weiterlauf"
+      },
+      "safety_lock": {
+        "name": "Sicherheitsschloss"
+      },
+      "aimed_measure_light": {
+        "name": "Licht für gezielte Messung"
+      },
+      "quick_measure_light": {
+        "name": "Licht für Schnellmessung"
       }
     },
     "number": {
@@ -678,6 +702,12 @@
       },
       "focus_height": {
         "name": "Fokushöhe"
+      },
+      "fill_light_brightness": {
+        "name": "Helligkeit Arbeitslicht"
+      },
+      "lowest_output_power": {
+        "name": "Niedrigste Ausgangsleistung"
       }
     },
     "select": {
@@ -746,6 +776,13 @@
       },
       "accessory_largepurifierv3_speed_select": {
         "name": "Geschwindigkeit"
+      },
+      "flame_alarm_level": {
+        "name": "Feueralarm",
+        "state": {
+          "low": "Niedrig",
+          "high": "Hoch"
+        }
       }
     },
     "update": {

@@ -434,6 +434,11 @@ class XtoolDeviceState:
     ir_led_close: bool = False
     ir_led_global: bool = False
 
+    # P2: each fill light's brightness by index (0-255), and the
+    # /config/get settings by Studio's key
+    fill_light_levels: dict[int, int] = field(default_factory=dict)
+    device_config: dict[str, Any] = field(default_factory=dict)
+
     # REST camera exposure
     camera_exposure_overview: int = 0
     camera_exposure_closeup: int = 0

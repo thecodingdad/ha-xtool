@@ -340,6 +340,30 @@ class P2Coordinator(RestCoordinator):
         from .entities import build_p2_sensors
         return build_p2_sensors(self)
 
+    def build_switches(self) -> list["SwitchEntity"]:
+        from .p2_entities import build_p2_switches
+        return build_p2_switches(self)
+
+    def build_numbers(self) -> list["NumberEntity"]:
+        from .p2_entities import build_p2_numbers
+        return build_p2_numbers(self)
+
+    def build_selects(self) -> list["SelectEntity"]:
+        from .p2_entities import build_p2_selects
+        return build_p2_selects(self)
+
+    def build_lights(self) -> list["LightEntity"]:
+        from .p2_entities import build_p2_lights
+        return build_p2_lights(self)
+
+    def build_binary_sensors(self) -> list["BinarySensorEntity"]:
+        from .p2_entities import build_p2_binary_sensors
+        return build_p2_binary_sensors(self)
+
+    def build_buttons(self) -> list["ButtonEntity"]:
+        from .p2_entities import build_p2_buttons
+        return build_p2_buttons(self)
+
     def build_events(self) -> list["EventEntity"]:
         from .entities import build_p2_events
         return build_p2_events(self)

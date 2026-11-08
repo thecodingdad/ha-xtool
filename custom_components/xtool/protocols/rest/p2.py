@@ -473,12 +473,13 @@ class P2Protocol(RestProtocol):
         lights = replies.get(REST_PATH_FILL_LIGHT)
         if isinstance(lights, list):
             # [{"idx": 1, "value": 0-255}, ...]
-            values = [
-                int(light.get("value") or 0)
+            levels = {
+                int(light["idx"]): int(light.get("value") or 0)
                 for light in lights
-                if isinstance(light, dict) and isinstance(light.get("value"), (int, float))
-            ]
-            level = round(max(values, default=0) * 100 / REST_BRIGHTNESS_MAX)
+                if isinstance(light, dict) and isinstance(light.get("idx"), int)
+            }
+            state.fill_light_levels = levels
+            level = round(max(levels.values(), default=0) * 100 / REST_BRIGHTNESS_MAX)
             state.fill_light_a = level
             state.fill_light_b = level
         ir = replies.get(REST_PATH_IR_LED)
@@ -535,6 +536,7 @@ class P2Protocol(RestProtocol):
 
     @staticmethod
     def _apply_config(state: XtoolDeviceState, config: dict[str, Any]) -> None:
+        state.device_config = {**state.device_config, **config}
         if isinstance(config.get("beepEnable"), bool):
             state.beep_enabled = config["beepEnable"]
         if isinstance(config.get("drawerCheck"), bool):
@@ -547,6 +549,29 @@ class P2Protocol(RestProtocol):
                 state.flame_alarm = 2
             else:
                 state.flame_alarm = 0 if config.get("flameAlarmLevel1") else 1
+
+    # --- Writes, as Studio sends them ------------------------------------
+
+    async def set_config(self, **kv: Any) -> bool:
+        """Write settings by Studio's keys (``/config/set``)."""
+        reply = await self._post_json(
+            "/config/set", data={"alias": "config", "type": "user", "kv": kv},
+        )
+        ok = reply is not None and not (isinstance(reply, dict) and reply.get("code") not in (None, 0))
+        if not ok:
+            _LOGGER.debug("P2 /config/set %s refused: %r", kv, reply)
+        return ok
+
+    async def set_fill_light_level(self, index: int, value: int) -> None:
+        """One fill light's brightness, 0-255 (index 0 = all of them, as Studio uses)."""
+        await self._post(
+            REST_PATH_FILL_LIGHT,
+            data={"action": "set_bri", "idx": int(index), "value": max(0, min(REST_BRIGHTNESS_MAX, int(value)))},
+        )
+
+    async def set_beep_enabled(self, on: bool) -> None:
+        """Buzzer (Studio writes ``beepEnable``; ``/setBeepEnable`` is refused)."""
+        await self.set_config(beepEnable=bool(on))
 
     # --- HTTP: one session for every request ---------------------------
 

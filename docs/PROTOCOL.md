@@ -2272,6 +2272,78 @@ table (see `_REST_STATUS_MAP` in the bundles).
 
 ---
 
+### P2 (as xTool Studio's P2 extension talks to it)
+
+Measured on a P2 with firmware 40.21.025 (2026-11-07) and read from Studio's
+`P2/index.js`.
+
+**Push channel.** Studio keeps `ws://<laser>:8081/` open and sends the text
+`ping` every 3 s; it treats 11 s without a frame as a lost laser. The laser
+sends a 10-byte binary keepalive (`00 00 00 00 00 00 0a 00 14 00`) every 2 s.
+Every push is a binary frame: a 10-byte header (bytes 2-5 = JSON length,
+little-endian; bytes 6-9 = `01 00 02 00`) followed by
+`{"module", "type", "info", "level"}`. On connect the laser pushes its
+current `MODE_CHANGE` at once.
+
+| module | types | meaning |
+|---|---|---|
+| `STATUS_CONTROLLER` | `MODE_CHANGE` (`info.mode`, `info.subMode`, `info.taskId`) | status change |
+| `STATUS_CONTROLLER` | `WORK_PREPARED`, `WORK_STARTED`, `WORK_PAUSED`, `WORK_STOPED`, `WORK_FINISHED`, `CLEAN_START`, `IDLE` | job steps; Studio reads `WORK_STOPED` and then `WORK_FINISHED` as a cancelled job |
+| `GAP` | `OPEN`, `CLOSE` | lid |
+| `DRAWER` | `OPEN`, `CLOSE` | baseplate |
+| `BUTTON` | `SHOERT_PRESS` (sic) | button |
+| `FIRE_RECOGNITION` | `FIND_EXCEPTION` (`level`: `fatal` = large flame) | flame alarm |
+| `BOARDS` | `CONNNECT` (sic), `DISCONNECT` (`info`: `ext_firebox_esp32`) | seen about every 8 minutes |
+| any | `<module>.<type>.<info>` in Studio's error table | an error (Studio codes `Qx..`) |
+
+**Status.** `/device/runningStatus` `curMode` as Studio maps it:
+`P_SLEEP` Sleeping, `P_IDLE` Idle, `Work.workReady` Ready,
+`Work.working` Processing, `Work.workPause` Paused, `P_WORK_DONE` Finished,
+`P_MEASURE` Measuring (`P_UPGRADE` also seen). `curAlarmInfo.alarm` lists the
+active alarms (`{module, type, info, level}`); `cpuTemp` is the CPU
+temperature. `/processing/progress` is `{time, total, value}`.
+
+**Settings** are `POST /config/get` and `/config/set` with
+`{"alias": "config", "type": "user", "kv": ...}` (a list of keys to read, an
+object to write). Studio's Device settings for firmware 25 and later:
+
+| Studio label | key | values |
+|---|---|---|
+| Buzzer | `beepEnable` | bool |
+| Flame alarm (Low / High) | `flameAlarmLevel1` (written with `flameLevelHLSelect: 1`) | bool, true = High |
+| Fill light brightness | `fillLightBrightness` | 0-255, shown as % |
+| Exhaust fan | `purifierEnable` | bool; Studio also writes `purifierTimeout: 5` when turned on |
+| Exhaust time after processing | `purifierTimeout` | 1-60 s |
+| Lowest output power | `motionPowerCut` | `M37S<1-10>` |
+| Baseplate detection, Background brightness increase | none | stored in Studio only |
+
+**Peripherals.** `/peripheral/gap` `state` `off` = lid closed (Studio's
+`isCover`). `/peripheral/fill_light` reads `[{idx, value}]` for indexes 1-3
+(0-255); Studio writes `{action: set_bri, idx: 0, value}` (0 = all).
+`/peripheral/ir_led` reads `{ir1, ir2}`; Studio writes `{action: on|off,
+index: 1|2}` (1 = laser head, used for aimed-measure; 2 = lid, used for
+quick-measure). Pause is `GET /processing/pause` and cancel
+`GET /processing/stop`; Studio has no resume request.
+
+**Replies that do not work on the P2** (the integration creates no entity
+for them):
+
+| request | reply |
+|---|---|
+| `/getBeepEnable`, `/setBeepEnable` | `invalid request` (the Buzzer is `beepEnable`) |
+| `/getfiltercheck` | `{"result": "not support"}` |
+| `/gethardwaretype` | `Not Implement` |
+| `/peripheral/button?action=get` | `{"code": 1, "msg": "action failed, not short\|long"}` (buttons are pushed) |
+| `/peripheral/airassist`, `/peripheral/uv_fire_sensor`, `/peripheral/cpu_fan` | `invalid request` |
+| `/config/get {"keys": [...]}` | refused: `key 'kv' not found` |
+| `/system` | `{"result": "failed"}` (Studio reads `/system?action=version_v2`) |
+
+Not offered on the P2 because Studio does not offer them: Filter check,
+Purifier check, Purifier continue (Studio uses `purifierEnable` and
+`purifierTimeout`), Baseplate detection (Studio only), Purifier speed,
+the cooling fan switch (the water cooling's fans), Time sync, the
+`/peripheral/water_line` reading (its meaning is not known).
+
 ## M2 protocol
 
 xTool M2 (model_id `JS002`, added in Studio v1.7.23) is a

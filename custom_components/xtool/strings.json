@@ -163,6 +163,8 @@
       "waste_water": { "name": "Waste fluid" }
     },
     "binary_sensor": {
+      "lid": { "name": "Lid" },
+      "baseplate": { "name": "Baseplate" },
       "accessories": { "name": "Accessories" },
       "cover_open": { "name": "Cover" },
       "front_door": { "name": "Front door" },
@@ -197,6 +199,9 @@
       "camera_fire_record": { "name": "Flame record" }
     },
     "light": {
+      "fill_light_1": { "name": "Fill light 1" },
+      "fill_light_2": { "name": "Fill light 2" },
+      "fill_light_3": { "name": "Fill light 3" },
       "fill_light": { "name": "Fill light" },
       "fill_light_front": { "name": "Fill light front" },
       "fill_light_back": { "name": "Fill light back" }
@@ -205,6 +210,9 @@
       "accessory_ductfanv3_fan": { "name": "Fan" }
     },
     "switch": {
+      "safety_lock": { "name": "Safety lock" },
+      "aimed_measure_light": { "name": "Aimed-measure light" },
+      "quick_measure_light": { "name": "Quick-measure light" },
       "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },
       "move_stop": { "name": "Move stop" },
@@ -236,6 +244,8 @@
       "camera_main_crop_height": { "name": "Main camera crop height" },
       "camera_main_crop_center_x": { "name": "Main camera crop center X" },
       "camera_main_crop_center_y": { "name": "Main camera crop center Y" },
+      "fill_light_brightness": { "name": "Fill light brightness" },
+      "lowest_output_power": { "name": "Lowest output power" },
       "air_assist_close_delay": { "name": "Air assist delay" },
       "smoking_fan_duration": { "name": "Exhaust time after processing" },
       "tilt_threshold": { "name": "Tilt threshold" },
@@ -253,6 +263,7 @@
           "straightened": "Straightened"
         }
       },
+      "flame_alarm_level": { "name": "Flame alarm", "state": { "low": "Low", "high": "High" } },
       "flame_alarm_sensitivity": {
         "name": "Flame alarm sensitivity",
         "state": {

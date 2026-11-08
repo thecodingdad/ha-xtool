@@ -1279,7 +1279,10 @@ class XtoolActiveAlarms(XtoolReadOnlyEntity, SensorEntity):
 
 
 def build_p2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
-    entities = build_rest_sensors(coordinator)
+    # /gethardwaretype answers "Not Implement" on the P2
+    entities = [
+        e for e in build_rest_sensors(coordinator) if e.translation_key != "hardware_type"
+    ]
     entities.extend(XtoolSensor(coordinator, d) for d in _P2_SENSOR_DESCRIPTIONS)
     entities.append(XtoolActiveAlarms(coordinator))
     return entities

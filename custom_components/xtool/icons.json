@@ -1,6 +1,14 @@
 {
   "entity": {
     "binary_sensor": {
+      "lid": {
+        "default": "mdi:window-shutter-open",
+        "state": { "off": "mdi:window-shutter" }
+      },
+      "baseplate": {
+        "default": "mdi:tray",
+        "state": { "off": "mdi:tray-remove" }
+      },
       "accessory_airpump_connected": {
         "default": "mdi:power-plug",
         "state": { "off": "mdi:power-plug-off" }
@@ -83,6 +91,18 @@
       }
     },
     "switch": {
+      "safety_lock": {
+        "default": "mdi:lock",
+        "state": { "off": "mdi:lock-open-variant" }
+      },
+      "aimed_measure_light": {
+        "default": "mdi:led-on",
+        "state": { "off": "mdi:led-off" }
+      },
+      "quick_measure_light": {
+        "default": "mdi:led-on",
+        "state": { "off": "mdi:led-off" }
+      },
       "accessory_ductfan_buzzer": {
         "default": "mdi:bell-ring",
         "state": { "off": "mdi:bell-off" }

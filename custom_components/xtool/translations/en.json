@@ -458,6 +458,12 @@
       },
       "filter_installed": {
         "name": "Air filter installed"
+      },
+      "lid": {
+        "name": "Lid"
+      },
+      "baseplate": {
+        "name": "Baseplate"
       }
     },
     "camera": {
@@ -495,6 +501,15 @@
       },
       "fill_light_back": {
         "name": "Fill light back"
+      },
+      "fill_light_1": {
+        "name": "Fill light 1"
+      },
+      "fill_light_2": {
+        "name": "Fill light 2"
+      },
+      "fill_light_3": {
+        "name": "Fill light 3"
       }
     },
     "fan": {
@@ -592,6 +607,15 @@
       },
       "accessory_largepurifierv3_auto_continue": {
         "name": "Auto continue"
+      },
+      "safety_lock": {
+        "name": "Safety lock"
+      },
+      "aimed_measure_light": {
+        "name": "Aimed-measure light"
+      },
+      "quick_measure_light": {
+        "name": "Quick-measure light"
       }
     },
     "number": {
@@ -720,6 +744,12 @@
       },
       "focus_height": {
         "name": "Focus height"
+      },
+      "fill_light_brightness": {
+        "name": "Fill light brightness"
+      },
+      "lowest_output_power": {
+        "name": "Lowest output power"
       }
     },
     "select": {
@@ -788,6 +818,13 @@
       },
       "accessory_largepurifierv3_speed_select": {
         "name": "Speed"
+      },
+      "flame_alarm_level": {
+        "name": "Flame alarm",
+        "state": {
+          "low": "Low",
+          "high": "High"
+        }
       }
     },
     "update": {
