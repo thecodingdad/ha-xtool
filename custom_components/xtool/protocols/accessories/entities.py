@@ -501,6 +501,7 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
     # ``suggested_object_id`` + the one-shot registry migration.
     _attr_has_entity_name = True
     _attr_device_class = UpdateDeviceClass.FIRMWARE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,

@@ -171,7 +171,7 @@
         "state": { "off": "mdi:autorenew-off" }
       },
       "smoking_fan": {
-        "default": "mdi:fan-chevron-up",
+        "default": "mdi:fan",
         "state": { "off": "mdi:fan-off" }
       },
       "stops_when_moved": {
