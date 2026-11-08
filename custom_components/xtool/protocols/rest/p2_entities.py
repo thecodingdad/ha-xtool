@@ -29,10 +29,6 @@ from .entities import (
     XtoolReboot,
     _RestCoverSensor,
     _RestPushBinary,
-    _fill_light_auto_off,
-    _ir_light_auto_off,
-    _sleep_timeout,
-    _sleep_timeout_open_gap,
 )
 from .protocol import REST_BRIGHTNESS_MAX
 
@@ -316,10 +312,6 @@ def build_p2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     return [
         XtoolCameraExposure(coordinator, "overview"),
         XtoolCameraExposure(coordinator, "closeup"),
-        _sleep_timeout(coordinator),
-        _sleep_timeout_open_gap(coordinator),
-        _fill_light_auto_off(coordinator),
-        _ir_light_auto_off(coordinator),
         P2ExhaustTime(coordinator),
         P2FillLightBrightness(coordinator),
         P2LowestOutputPower(coordinator),

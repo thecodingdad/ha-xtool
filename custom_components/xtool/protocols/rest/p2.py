@@ -196,13 +196,6 @@ def describe_alarm(entry: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _result(reply: Any) -> str | None:
-    """The value of a ``/get*`` reply such as ``{"result": "600"}``."""
-    if isinstance(reply, dict) and reply.get("result") is not None:
-        return str(reply["result"])
-    return None
-
-
 class P2Protocol(RestProtocol):
     """The P2's REST API, with Studio's push channel for live changes."""
 
@@ -488,7 +481,7 @@ class P2Protocol(RestProtocol):
             state.fill_light_b = level
         ir = replies.get(REST_PATH_IR_LED)
         if isinstance(ir, dict):
-            # ir1 = index 1 (laser head), ir2 = index 2 (lid)
+            # ir1 = Aimed measure (laser head), ir2 = Quick measure (back right)
             if "ir1" in ir:
                 state.ir_led_close = str(ir["ir1"]).lower() == "on"
             if "ir2" in ir:
@@ -501,15 +494,6 @@ class P2Protocol(RestProtocol):
         )
         if isinstance(config, dict):
             self._apply_config(state, config)
-        for path, attr in (
-            ("/getsleeptimeout", "sleep_timeout"),
-            ("/getsleeptimeoutopengap", "sleep_timeout_open_gap"),
-            ("/getFilllightAutoClosetimout", "fill_light_auto_off"),
-            ("/getIrlightAutoClosetimout", "ir_light_auto_off"),
-        ):
-            value = _result(await self._get_json(path))
-            if value is not None and value.isdigit():
-                setattr(state, attr, int(value))
         for path, attr in (
             ("/peripheral/cooling_fan?action=get", "cooling_fan_running"),
             ("/peripheral/smoking_fan?action=get", "smoking_fan_running"),

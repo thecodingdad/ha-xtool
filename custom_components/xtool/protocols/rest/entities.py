@@ -37,7 +37,7 @@ from homeassistant.const import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
+from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX, XtoolStatus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -331,6 +331,10 @@ class XtoolCamera(XtoolEntity, Camera):
     ) -> bytes | None:
         now = dt_util.utcnow()
         if self._last_image and (now - self._last_fetch) < MIN_SNAPSHOT_INTERVAL:
+            return self._last_image
+        data = self.coordinator.data
+        if data is not None and data.status == XtoolStatus.SLEEPING:
+            # A photo wakes a sleeping P2; keep showing the last one
             return self._last_image
 
         url = (

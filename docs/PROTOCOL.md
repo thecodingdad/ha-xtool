@@ -2336,6 +2336,11 @@ object to write). Studio's Device settings for firmware 25 and later:
   the back right corner to the middle of the bed (xTool's Quick Measure). Pause is `GET /processing/pause` and cancel
 `GET /processing/stop`; Studio has no resume request.
 
+**Sleep.** After the sleep timeout (600 s) the P2 pushes `P_SLEEP` and turns
+the fill lights off. A camera photo (`:8329/camera/snap`) wakes it at once
+(`P_IDLE`); the status and settings reads above and a push connection do
+not. The integration takes no photo while the P2 sleeps.
+
 **Replies that do not work on the P2** (the integration creates no entity
 for them):
 
@@ -2348,6 +2353,7 @@ for them):
 | `/peripheral/airassist`, `/peripheral/uv_fire_sensor`, `/peripheral/cpu_fan` | `invalid request` |
 | `/config/get {"keys": [...]}` | refused: `key 'kv' not found` |
 | `/system` | `{"result": "failed"}` (Studio reads `/system?action=version_v2`) |
+| `/setsleeptimeout`, `/setsleeptimeoutopengap`, `/setFilllightAutoClosetimout`, `/setIrlightAutoClosetimout` | `invalid request` as JSON, form or query (the `/get…` forms read 600, 180, 180, 120 s); Studio does not set them |
 
 Not offered on the P2 because Studio does not offer them: Filter check,
 Purifier check, Purifier continue (Studio uses `purifierEnable` and
