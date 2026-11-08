@@ -43,7 +43,9 @@ class XtoolAutoPowerOff(XtoolEntity, RestoreNumber):
     linked in the options (for example a smart plug). The count starts
     when the laser becomes Idle or Sleeping and keeps going while it goes
     between the two; any other state, or the laser going offline, stops
-    it. 0 turns it off. The value is kept across restarts.
+    it. Changing the minutes starts the count again, so a shorter time
+    does not turn a laser that has long been idle off at once. 0 turns
+    it off. The value is kept across restarts.
     """
 
     _attr_translation_key = "auto_power_off"
@@ -80,6 +82,8 @@ class XtoolAutoPowerOff(XtoolEntity, RestoreNumber):
 
     async def async_set_native_value(self, value: float) -> None:
         self._attr_native_value = value
+        if self._idle_since is not None:
+            self._idle_since = dt_util.utcnow()
         self._schedule()
         self.async_write_ha_state()
 
