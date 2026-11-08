@@ -103,7 +103,10 @@
     },
     "sensor": {
       "measured_thickness": {
-        "default": "mdi:tape-measure"
+        "default": "mdi:format-line-weight"
+      },
+      "measured_distance": {
+        "default": "mdi:arrow-expand-down"
       },
       "connection": {
         "default": "mdi:ethernet",

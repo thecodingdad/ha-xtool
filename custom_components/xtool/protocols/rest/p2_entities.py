@@ -8,6 +8,7 @@ refuse or ignore the request are not created (see docs/PROTOCOL.md).
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
@@ -43,7 +44,10 @@ from .entities import (
 )
 from .protocol import REST_BRIGHTNESS_MAX
 
+_LOGGER = logging.getLogger(__name__)
+
 P2_EXPOSURE_MAX = 1000
+P2_EXPOSURE_STEP = 10
 P2_EXPOSURE_SETTLE_SECONDS = 1.0
 
 # The P2's fill lights by /peripheral/fill_light index
@@ -171,6 +175,8 @@ class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure):
     """
 
     _attr_native_max_value = P2_EXPOSURE_MAX
+    _attr_native_step = P2_EXPOSURE_STEP
+    _attr_mode = NumberMode.SLIDER
 
     def __init__(self, coordinator: XtoolCoordinator, stream: str) -> None:
         super().__init__(coordinator, stream)
@@ -441,6 +447,33 @@ class P2Alarm(XtoolReadOnlyEntity, BinarySensorEntity):
 
 # The head moves only while the P2 waits for work, as in Studio
 P2_HEAD_MOVE_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED)
+# Studio's distance in the modes without slats (Honeycomb panel, Slats
+# removed) is measured down from this height above the slats
+P2_DISTANCE_ZERO_MM = 25.0
+
+
+def _head_lock(coordinator: XtoolCoordinator) -> asyncio.Lock:
+    """One move at a time: a move asked for during another waits for it."""
+    lock = getattr(coordinator, "_p2_head_lock", None)
+    if lock is None:
+        lock = coordinator._p2_head_lock = asyncio.Lock()
+    return lock
+
+
+def _axis_limit_message(
+    axis: str, target: float, wanted: float, highest: float,
+    step: float | None, steps: int, current: float | None,
+) -> str:
+    """Why an axis stopped at a limit, as the F2's focus says it."""
+    limit = "lower" if target == 0 else "upper"
+    text = f"{axis} moved to {target:.2f} mm, the {limit} limit."
+    if step is not None and current is not None:
+        count = "1 step" if steps == 1 else f"{steps} steps"
+        return (
+            f"{text} {count} of {step:+.2f} mm from {current:.2f} mm "
+            f"would have gone to {wanted:.2f} mm."
+        )
+    return f"{text} {wanted:.2f} mm is outside 0-{highest:.0f} mm."
 
 
 async def async_move_laser_head(
@@ -453,51 +486,66 @@ async def async_move_laser_head(
 ) -> dict[str, float]:
     """Move the head to x and y, or by signed steps, in mm from home.
 
-    An axis with neither stays where it is. The position is read from the
-    laser first, so a step starts where the head really is. A move past
-    Studio's limits stops at the limit and then raises an error that says
-    so, so Home Assistant shows the message.
+    An axis with neither stays where it is. Moves run one at a time, in
+    the order asked: each starts when the one before has arrived, and a
+    step starts from the position the laser reports then. A move past
+    Studio's limits stops at the limit and then raises an error that
+    says so, so Home Assistant shows the message (the move was made).
     """
     from .p2 import P2_HEAD_MAX_X, P2_HEAD_MAX_Y
 
-    protocol = coordinator.protocol
-    data = coordinator.data
-    status = getattr(data, "status", None)
-    if status not in P2_HEAD_MOVE_STATUSES:
-        raise HomeAssistantError(
-            f"Laser head not moved: the laser is {status or 'not connected'}, not idle"
-        )
-    if x is None or y is None:
-        current = await protocol.read_head_position()
-        if current is None:
+    async with _head_lock(coordinator):
+        protocol = coordinator.protocol
+        data = coordinator.data
+        status = getattr(data, "status", None)
+        if status not in P2_HEAD_MOVE_STATUSES:
             raise HomeAssistantError(
-                "Laser head not moved: the laser did not say where the head is"
+                f"Laser head not moved: the laser is {status or 'not connected'}, not idle"
             )
-        x = current[0] + (step_x or 0.0) * steps if x is None else x
-        y = current[1] + (step_y or 0.0) * steps if y is None else y
-    wanted = (round(x, 2), round(y, 2))
-    target = (
-        round(min(max(x, 0.0), P2_HEAD_MAX_X), 2),
-        round(min(max(y, 0.0), P2_HEAD_MAX_Y), 2),
-    )
-    await protocol.move_laser_head(*target)
-    if data is not None:
-        data.position_x, data.position_y = target
-        coordinator.async_set_updated_data(data)
-    if target != wanted:
+        current: tuple[float, float] | None = None
+        if x is None or y is None:
+            current = await protocol.read_head_position()
+            if current is None:
+                raise HomeAssistantError(
+                    "Laser head not moved: the laser did not say where the head is"
+                )
+        axes = []
+        for name, value, step, index, highest in (
+            ("X", x, step_x, 0, P2_HEAD_MAX_X),
+            ("Y", y, step_y, 1, P2_HEAD_MAX_Y),
+        ):
+            now = current[index] if current is not None else None
+            if value is None:
+                value = now + (step or 0.0) * steps
+                stepped = step if step else None
+            else:
+                stepped = None
+            wanted = round(value, 2)
+            target = round(min(max(value, 0.0), highest), 2)
+            message = None
+            if target != wanted:
+                message = _axis_limit_message(
+                    name, target, wanted, highest, stepped, steps, now,
+                )
+            axes.append((target, message))
+        (target_x, message_x), (target_y, message_y) = axes
+        await protocol.move_laser_head(target_x, target_y)
+        if data is not None:
+            data.position_x, data.position_y = target_x, target_y
+            coordinator.async_set_updated_data(data)
+    messages = [m for m in (message_x, message_y) if m]
+    if messages:
+        message = "Laser head: " + " ".join(messages)
+        _LOGGER.warning("%s", message)
         # Reported as an error so Home Assistant shows it; the move was made
-        raise HomeAssistantError(
-            f"Laser head moved to X {target[0]:.2f}, Y {target[1]:.2f} mm, at the limit. "
-            f"X {wanted[0]:.2f}, Y {wanted[1]:.2f} mm is outside "
-            f"0-{P2_HEAD_MAX_X:.0f} by 0-{P2_HEAD_MAX_Y:.0f} mm."
-        )
-    return {"x": target[0], "y": target[1]}
+        raise HomeAssistantError(message)
+    return {"x": target_x, "y": target_y}
 
 
 class P2LaserPosition(XtoolEntity, NumberEntity):
     """Where the laser head is, in mm from home; setting it moves the head.
 
-    X grows to the right and Y toward the front. The ``xtool.move_laser_head``
+    X grows to the right and Y toward the front. The ``xtool.move``
     action also moves the head in steps.
     """
 
@@ -553,33 +601,45 @@ class P2MeasureDistance(XtoolMeasureDistance):
         self.coordinator.async_set_updated_data(data)
 
 
-class P2MeasuredThickness(XtoolRestoringSensor, SensorEntity):
-    """The material thickness from the last Measure distance.
+class P2Measured(XtoolRestoringSensor, SensorEntity):
+    """The last Measure distance, as Studio enters it for each mode.
 
-    Attributes: where on the bed it was measured (the IR sensor's position,
-    mm from home) and the distance read.
+    Thickness (Process on slats): the material's height above the slats.
+    Distance (Honeycomb panel and Slats removed): how far the material's
+    top is below 25 mm above the slats. Attributes: where on the bed it
+    was measured (the IR sensor's position, mm from home) and the distance
+    the sensor read.
     """
 
-    _attr_translation_key = "measured_thickness"
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_suggested_display_precision = 1
 
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
+    def __init__(self, coordinator: XtoolCoordinator, key: str) -> None:
         super().__init__(coordinator)
-        self._set_unique_id("measured_thickness")
+        self._key = key
+        self._attr_translation_key = key
+        self._set_unique_id(key)
+
+    def _live(self) -> float | None:
+        d = self.coordinator.data
+        thickness = d.measured_thickness_mm if d else None
+        if thickness is None:
+            return None
+        if self._key == "measured_distance":
+            return round(P2_DISTANCE_ZERO_MM - thickness, 2)
+        return thickness
 
     @property
     def native_value(self) -> float | None:
-        d = self.coordinator.data
-        return self._value_or_restored(d.measured_thickness_mm if d else None)
+        return self._value_or_restored(self._live())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         d = self.coordinator.data
         if d is None or d.measured_thickness_mm is None:
             return None
-        attributes: dict[str, Any] = {"distance": d.last_distance_mm}
+        attributes: dict[str, Any] = {"sensor_distance": d.last_distance_mm}
         if d.measured_at is not None:
             attributes["x"], attributes["y"] = d.measured_at
         return attributes

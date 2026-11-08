@@ -428,8 +428,13 @@ class P2Coordinator(RestCoordinator):
 
     def build_sensors(self) -> list["SensorEntity"]:
         from .entities import build_p2_sensors
-        from .p2_entities import P2Connection, P2MeasuredThickness
-        return [*build_p2_sensors(self), P2Connection(self), P2MeasuredThickness(self)]
+        from .p2_entities import P2Connection, P2Measured
+        return [
+            *build_p2_sensors(self),
+            P2Connection(self),
+            P2Measured(self, "measured_thickness"),
+            P2Measured(self, "measured_distance"),
+        ]
 
     def build_switches(self) -> list["SwitchEntity"]:
         from .p2_entities import build_p2_switches

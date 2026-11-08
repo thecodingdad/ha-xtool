@@ -31,7 +31,7 @@ FOCUS_SCHEMA = {
 }
 
 _MM = vol.Coerce(float)
-MOVE_LASER_HEAD_SCHEMA = {
+MOVE_SCHEMA = {
     vol.Exclusive(ATTR_X, "x"): _MM,
     vol.Exclusive(ATTR_STEP_X, "x"): _MM,
     vol.Exclusive(ATTR_Y, "y"): _MM,
@@ -73,7 +73,7 @@ async def _async_focus(entity, call: ServiceCall) -> ServiceResponse:
 
 
 
-async def _async_move_laser_head(entity, call: ServiceCall) -> ServiceResponse:
+async def _async_move(entity, call: ServiceCall) -> ServiceResponse:
     """Move the laser head to X and Y, or by signed steps (times ``steps``).
 
     The response gives the position moved to. A move that stopped at a
@@ -133,10 +133,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async_register_platform_entity_service(
         hass,
         DOMAIN,
-        "move_laser_head",
+        "move",
         entity_domain=NUMBER_DOMAIN,
-        schema=MOVE_LASER_HEAD_SCHEMA,
-        func=_async_move_laser_head,
+        schema=MOVE_SCHEMA,
+        func=_async_move,
         supports_response=SupportsResponse.OPTIONAL,
     )
     async_register_platform_entity_service(

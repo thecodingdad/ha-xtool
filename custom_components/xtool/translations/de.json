@@ -570,6 +570,9 @@
       },
       "measured_thickness": {
         "name": "Gemessene Materialstärke"
+      },
+      "measured_distance": {
+        "name": "Gemessene Distanz"
       }
     },
     "binary_sensor": {
@@ -1275,9 +1278,9 @@
         }
       }
     },
-    "move_laser_head": {
-      "name": "Laserkopf bewegen",
-      "description": "Bewegt den Laserkopf des P2 wie die Bewegungssteuerung in xTool Studio: auf eine X- und Y-Position oder um Schritte mit Vorzeichen (mehrfach wiederholt). Eine Achse ohne Angabe bleibt, wo sie ist. Hält bei 0-620 mal 0-308 mm an. Abgelehnt, solange der Laser nicht bereit ist.",
+    "move": {
+      "name": "Bewegen",
+      "description": "Bewegt den Laserkopf des P2 wie die Bewegungssteuerung in xTool Studio: auf eine X- und Y-Position oder um Schritte mit Vorzeichen (mehrfach wiederholt). Eine Achse ohne Angabe bleibt, wo sie ist. Hält bei 0-620 mal 0-308 mm an. Abgelehnt, solange der Laser nicht bereit ist. Bewegungen laufen nacheinander, in der angefragten Reihenfolge.",
       "fields": {
         "x": {
           "name": "X",

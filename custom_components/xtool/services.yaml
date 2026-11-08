@@ -32,7 +32,7 @@ focus:
           step: 0.1
           unit_of_measurement: mm
           mode: box
-move_laser_head:
+move:
   target:
     entity:
       integration: xtool

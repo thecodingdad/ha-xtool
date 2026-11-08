@@ -636,6 +636,9 @@
       },
       "measured_thickness": {
         "name": "Measured thickness"
+      },
+      "measured_distance": {
+        "name": "Measured distance"
       }
     },
     "binary_sensor": {
@@ -1356,9 +1359,9 @@
         }
       }
     },
-    "move_laser_head": {
-      "name": "Move laser head",
-      "description": "Moves the P2's laser head as xTool Studio's move controls do: to an X and Y position, or by signed steps (repeated a number of times). An axis given neither stays where it is. Stops at 0-620 by 0-308 mm. Refused unless the laser is idle.",
+    "move": {
+      "name": "Move",
+      "description": "Moves the P2's laser head as xTool Studio's move controls do: to an X and Y position, or by signed steps (repeated a number of times). An axis given neither stays where it is. Stops at 0-620 by 0-308 mm. Refused unless the laser is idle. Moves run one at a time, in the order asked.",
       "fields": {
         "x": {
           "name": "X",
