@@ -236,6 +236,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="task_id",
         translation_key="task_id",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:identifier",
         value_fn=lambda state, _: state.task_id or None,
     ),
@@ -260,6 +261,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="session_count",
         translation_key="session_count",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:counter",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda state, _: state.session_count,
@@ -277,6 +279,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="tool_runtime",
         translation_key="tool_runtime",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:laser-pointer",
         native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,

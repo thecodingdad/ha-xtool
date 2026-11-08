@@ -421,6 +421,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="task_id",
         translation_key="task_id",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:identifier",
         # Studio-side UUID; rarely meaningful to a HA user — opt-in.
         entity_registry_enabled_default=False,

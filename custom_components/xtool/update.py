@@ -11,6 +11,7 @@ from homeassistant.components.update import (
     UpdateEntity,
     UpdateEntityFeature,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -56,6 +57,8 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
 
     _attr_translation_key = "firmware"
     _attr_device_class = UpdateDeviceClass.FIRMWARE
+    # The same group on every model (Home Assistant's default is Configuration)
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
