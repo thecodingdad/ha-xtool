@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import time
 
 import aiohttp
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.storage import Store
@@ -305,10 +306,19 @@ class P2Coordinator(RestCoordinator):
             return
         _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
                      self.device_name, ethernet, self.protocol.host)
-        # Updating the entry reloads it with the new address
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, data={**self.config_entry.data, CONF_HOST: ethernet},
+        self._move_to(ethernet)
+
+    def _move_to(self, host: str) -> None:
+        """Save the new address and reload the entry with it."""
+        entry = self.config_entry
+        changed = self.hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_HOST: host},
         )
+        # The update listener reloads only a loaded entry with changed data.
+        # While it is still being set up, or when the entry already has this
+        # address, nothing else would reload it.
+        if not changed or entry.state is not ConfigEntryState.LOADED:
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
     def _store(self) -> Store:
         if self._hosts_store is None:
@@ -343,10 +353,7 @@ class P2Coordinator(RestCoordinator):
             serial = await _serial_at(host)
             if serial and serial == self.serial_number:
                 _LOGGER.info("%s answers at %s instead of %s; switching", self.device_name, host, current)
-                # Updating the entry reloads it with the new address
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, data={**self.config_entry.data, CONF_HOST: host},
-                )
+                self._move_to(host)
                 return
 
     def _on_push(self) -> None:
