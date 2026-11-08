@@ -200,9 +200,9 @@
       "camera_fire_record": { "name": "Flame record" }
     },
     "light": {
-      "fill_light_1": { "name": "Fill light 1" },
-      "fill_light_2": { "name": "Fill light 2" },
-      "fill_light_3": { "name": "Fill light 3" },
+      "fill_light_1": { "name": "Close-view fill light" },
+      "fill_light_2": { "name": "Fill light (right)" },
+      "fill_light_3": { "name": "Fill light (left)" },
       "fill_light": { "name": "Fill light" },
       "fill_light_front": { "name": "Fill light front" },
       "fill_light_back": { "name": "Fill light back" }
@@ -212,8 +212,8 @@
     },
     "switch": {
       "safety_lock": { "name": "Safety lock" },
-      "aimed_measure_light": { "name": "Aimed-measure light" },
-      "quick_measure_light": { "name": "Quick-measure light" },
+      "aimed_measure_light": { "name": "Aimed measure light" },
+      "quick_measure_light": { "name": "Quick measure light" },
       "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },
       "move_stop": { "name": "Move stop" },

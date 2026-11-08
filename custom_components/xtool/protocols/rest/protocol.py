@@ -571,7 +571,8 @@ class RestProtocol(XtoolProtocol):
         """Lock or unlock the motorised cover (P2/P2S)."""
         await self._post(
             REST_PATH_DIGITAL_LOCK,
-            data={"action": "lock" if locked else "unlock"},
+            # The P2 accepts only "on" and "off" ("action failed, not on|off")
+            data={"action": "on" if locked else "off"},
         )
 
     async def move_laser_head(self, x: float, y: float, wait: int = 0) -> None:

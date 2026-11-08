@@ -2085,11 +2085,11 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness. **Note:** on F2 family V2 firmware this endpoint accepts the PUT but never persists the value — Studio writes brightness through `/v1/device/configs` with `fillLightBrightFront` / `fillLightBrightBack` keys instead. The peripheral endpoint is read-only on those models. |
 | `/peripheral/laser_head` | POST | `{action:"go_to",x,y,waitTime}` move head, `{action:"get_coord"}` query |
 | `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close-up, 2=global) — P2/P2S |
-| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover open |
+| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover closed (Studio's `isCover`; checked on the P2) |
 | `/peripheral/airassist?action=get` | GET | Air-Assist V2 connect state — `state==="on"` means accessory attached. Used by M1 Ultra. |
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
 | `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
-| `/peripheral/digital_lock` | POST | Lock cover |
+| `/peripheral/digital_lock` | POST `{action:"on/off"}` | Lock (`on`) or unlock the cover (P2) |
 | `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR distance |
 | `/device/modeSwitch` | POST | Switch mode |
 | `/parts` | POST multipart, port **8080** | Upload accessory firmware |
@@ -2289,8 +2289,8 @@ current `MODE_CHANGE` at once.
 |---|---|---|
 | `STATUS_CONTROLLER` | `MODE_CHANGE` (`info.mode`, `info.subMode`, `info.taskId`) | status change |
 | `STATUS_CONTROLLER` | `WORK_PREPARED`, `WORK_STARTED`, `WORK_PAUSED`, `WORK_STOPED`, `WORK_FINISHED`, `CLEAN_START`, `IDLE` | job steps; Studio reads `WORK_STOPED` and then `WORK_FINISHED` as a cancelled job |
-| `GAP` | `OPEN`, `CLOSE` | lid |
-| `DRAWER` | `OPEN`, `CLOSE` | baseplate |
+| `GAP` | `OPEN`, `CLOSE` | lid opened, lid closed |
+| `DRAWER` | `OPEN`, `CLOSE` | baseplate taken out, baseplate in place |
 | `BUTTON` | `SHOERT_PRESS` (sic) | button |
 | `FIRE_RECOGNITION` | `FIND_EXCEPTION` (`level`: `fatal` = large flame) | flame alarm |
 | `BOARDS` | `CONNNECT` (sic), `DISCONNECT` (`info`: `ext_firebox_esp32`) | seen about every 8 minutes |
@@ -2317,12 +2317,23 @@ object to write). Studio's Device settings for firmware 25 and later:
 | Lowest output power | `motionPowerCut` | `M37S<1-10>` |
 | Baseplate detection, Background brightness increase | none | stored in Studio only |
 
-**Peripherals.** `/peripheral/gap` `state` `off` = lid closed (Studio's
-`isCover`). `/peripheral/fill_light` reads `[{idx, value}]` for indexes 1-3
-(0-255); Studio writes `{action: set_bri, idx: 0, value}` (0 = all).
-`/peripheral/ir_led` reads `{ir1, ir2}`; Studio writes `{action: on|off,
-index: 1|2}` (1 = laser head, used for aimed-measure; 2 = lid, used for
-quick-measure). Pause is `GET /processing/pause` and cancel
+**Peripherals** (checked on a P2 with firmware 40.21.025):
+
+- `/peripheral/gap` `state` `off` = lid closed (Studio's `isCover`).
+- `/peripheral/drawer` `state` `off` = baseplate in place (Studio's
+  `drawerStatus`). The P2 does not detect a baseplate in the riser.
+- `/peripheral/digital_lock` reads `{state, limit_state, curOpen, curClose}`
+  and takes `{action: on|off}` (`on` locks); any other action is refused
+  with `action failed, not on|off`. A lock change is not pushed. Studio
+  never locks the lid itself (its calls are commented out).
+- `/peripheral/fill_light` reads `[{idx, value}]` (0-255): 1 = on the laser
+  head (the close-view camera's light), 2 = right, 3 = left. Studio writes
+  `{action: set_bri, idx: 0, value}` (0 = all three). A value of 3 (1 %) is
+  too dim to see.
+- `/peripheral/ir_led` reads `{ir1, ir2}` and takes `{action: on|off,
+  index: 1|2}`: 1 = the close-view infrared laser, a red dot under the laser
+  head (xTool's Aimed Measure); 2 = the distant-view infrared laser, from
+  the back right corner to the middle of the bed (xTool's Quick Measure). Pause is `GET /processing/pause` and cancel
 `GET /processing/stop`; Studio has no resume request.
 
 **Replies that do not work on the P2** (the integration creates no entity
