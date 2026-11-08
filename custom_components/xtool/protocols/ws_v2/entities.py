@@ -1805,23 +1805,69 @@ CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float, str], ...] = (
 )
 
 
-def _camera_view_values(coordinator: XtoolCoordinator) -> dict[str, float]:
-    values = getattr(coordinator, "_camera_view", None)
+def _calibration_spec(
+    coordinator: XtoolCoordinator, camera_name: str,
+) -> tuple[str | None, float | None, tuple[float, float]] | None:
+    """``(file name, pixels per mm, area in mm)`` of a calibrated camera.
+
+    None for a camera without a calibration. The main camera's file and
+    area are the F2 Ultra UV's (``global_calib.json``, 200 mm).
+    """
+    model = coordinator.model
+    for name, file_name, pixels_per_mm, area in getattr(model, "camera_calibrations", ()) or ():
+        if name == camera_name:
+            return file_name, pixels_per_mm, area
+    if camera_name == "main" and getattr(model, "has_camera_calibration", False):
+        return None, None, (CALIBRATED_AREA_MM, CALIBRATED_AREA_MM)
+    return None
+
+
+def _crop_settings(
+    coordinator: XtoolCoordinator, camera_name: str,
+) -> tuple[tuple[str, float, float, float, str], ...]:
+    """A calibrated camera's crop rows (see ``CAMERA_VIEW_SETTINGS``).
+
+    The default is the calibrated area; a side may grow to half as much
+    again, and the centre may move half the area each way.
+    """
+    if camera_name == "main":
+        return CAMERA_VIEW_SETTINGS
+    spec = _calibration_spec(coordinator, camera_name)
+    width, height = spec[2] if spec else (CALIBRATED_AREA_MM, CALIBRATED_AREA_MM)
+    return (
+        ("width", width, 0, round(width * 1.5), "mdi:arrow-expand-horizontal"),
+        ("height", height, 0, round(height * 1.5), "mdi:arrow-expand-vertical"),
+        ("center_x", 0, -round(width / 2), round(width / 2), "mdi:arrow-left-right"),
+        ("center_y", 0, -round(height / 2), round(height / 2), "mdi:arrow-up-down"),
+    )
+
+
+def _camera_view_values(
+    coordinator: XtoolCoordinator, camera_name: str = "main",
+) -> dict[str, float]:
+    views = getattr(coordinator, "_camera_views", None)
+    if views is None:
+        views = {}
+        coordinator._camera_views = views
+    values = views.get(camera_name)
     if values is None:
-        values = {key: spec[0] for key, *spec in CAMERA_VIEW_SETTINGS}
-        coordinator._camera_view = values
+        values = {key: spec[0] for key, *spec in _crop_settings(coordinator, camera_name)}
+        views[camera_name] = values
     return values
 
 
-def _camera_view(coordinator: XtoolCoordinator) -> CameraView:
-    v = _camera_view_values(coordinator)
+def _camera_view(coordinator: XtoolCoordinator, camera_name: str = "main") -> CameraView:
+    v = _camera_view_values(coordinator, camera_name)
     return CameraView(v["width"], v["height"], v["center_x"], v["center_y"])
 
 
-def _clamp_crop(setting: str, value: float) -> float:
+def _clamp_crop(
+    setting: str, value: float,
+    settings: tuple[tuple[str, float, float, float, str], ...] = CAMERA_VIEW_SETTINGS,
+) -> float:
     """A crop value within its limits (a side of 0 means the whole photo)."""
     _, minimum, maximum, _ = next(
-        spec for key, *spec in CAMERA_VIEW_SETTINGS if key == setting
+        spec for key, *spec in settings if key == setting
     )
     value = min(max(float(value), minimum), maximum)
     if setting in ("width", "height") and 0 < value < CROP_MIN_SIDE:
@@ -1829,17 +1875,17 @@ def _clamp_crop(setting: str, value: float) -> float:
     return value
 
 
-def _crop_numbers(coordinator: XtoolCoordinator) -> dict[str, Any]:
-    """The main camera's crop number entities, by setting."""
+def _crop_numbers(coordinator: XtoolCoordinator, camera_name: str = "main") -> dict[str, Any]:
+    """A camera's crop number entities, by setting."""
     numbers = getattr(coordinator, "_camera_crop_numbers", None)
     if numbers is None:
         numbers = {}
         coordinator._camera_crop_numbers = numbers
-    return numbers
+    return numbers.setdefault(camera_name, {})
 
 
 class _WSV2CameraViewNumber(_CameraDeviceEntity, RestoreNumber):
-    """Part of the work surface the straightened main camera shows (mm).
+    """Part of the work surface a straightened camera shows (mm).
 
     Width and height set the area (and so the picture's shape); 0 shows
     the whole photo that way. The centre moves the area from the centre
@@ -1854,17 +1900,19 @@ class _WSV2CameraViewNumber(_CameraDeviceEntity, RestoreNumber):
     def __init__(
         self, coordinator: XtoolCoordinator, setting: str,
         default: float, minimum: float, maximum: float, icon: str,
-    ) -> None:  # one row of CAMERA_VIEW_SETTINGS
+        camera_name: str = "main",
+    ) -> None:  # one row of the camera's crop settings
         super().__init__(coordinator)
         # The unique ID keeps its first name ("view"), so settings and
         # history stay.
-        self._set_unique_id(f"camera_main_view_{setting}")
-        own_device = self._use_camera_device("main")
+        self._set_unique_id(f"camera_{camera_name}_view_{setting}")
+        own_device = self._use_camera_device(camera_name)
         self._attr_translation_key = (
             f"crop_{setting}" if own_device else f"camera_main_crop_{setting}"
         )
         self._attr_icon = icon
         self._setting = setting
+        self._camera_name = camera_name
         self._attr_native_min_value = minimum
         self._attr_native_max_value = maximum
         self._attr_native_value = default
@@ -1875,18 +1923,18 @@ class _WSV2CameraViewNumber(_CameraDeviceEntity, RestoreNumber):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        _crop_numbers(self.coordinator)[self._setting] = self
+        _crop_numbers(self.coordinator, self._camera_name)[self._setting] = self
         last = await self.async_get_last_number_data()
         if last is not None and last.native_value is not None:
             self._apply(last.native_value)
 
     async def async_will_remove_from_hass(self) -> None:
-        _crop_numbers(self.coordinator).pop(self._setting, None)
+        _crop_numbers(self.coordinator, self._camera_name).pop(self._setting, None)
         await super().async_will_remove_from_hass()
 
     async def async_set_native_value(self, value: float) -> None:
         self.set_crop(value)
-        camera = _thumbnail_registry(self.coordinator).cameras.get("main")
+        camera = _thumbnail_registry(self.coordinator).cameras.get(self._camera_name)
         if camera is not None:
             # Show the new crop now, not at the next thumbnail refresh.
             await camera.refresh_picture()
@@ -1898,9 +1946,11 @@ class _WSV2CameraViewNumber(_CameraDeviceEntity, RestoreNumber):
         self.async_write_ha_state()
 
     def _apply(self, value: float) -> None:
-        value = _clamp_crop(self._setting, value)
+        value = _clamp_crop(
+            self._setting, value, _crop_settings(self.coordinator, self._camera_name),
+        )
         self._attr_native_value = value
-        _camera_view_values(self.coordinator)[self._setting] = value
+        _camera_view_values(self.coordinator, self._camera_name)[self._setting] = value
 
 
 class _WSV2Camera(_CameraDeviceEntity, Camera):
@@ -1941,11 +1991,10 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         self._last_snapshot: bytes | None = None
         self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
         self._live_viewers = 0
-        # Straighten photos with the laser's calibration grid (main
-        # camera of models that store one).
-        self._uses_calibration = camera_name == "main" and bool(
-            getattr(coordinator.model, "has_camera_calibration", False)
-        )
+        # Straighten photos with the laser's calibration grid (cameras
+        # of models that store one).
+        self._calibration_spec = _calibration_spec(coordinator, camera_name)
+        self._uses_calibration = self._calibration_spec is not None
         self._calibration: CameraCalibration | None = None
         self._calibration_next_try = 0.0
         self._thumbnail_seconds: float = THUMBNAIL_REFRESH_DEFAULT
@@ -2000,8 +2049,13 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
                 )
                 return image
         if self._calibration is None and time.monotonic() >= self._calibration_next_try:
-            raw = await self.coordinator.protocol.camera_calibration_file()
-            self._calibration = parse_calibration(raw) if raw else None
+            file_name, pixels_per_mm, _ = self._calibration_spec
+            protocol = self.coordinator.protocol
+            raw = await (
+                protocol.camera_calibration_file(file_name)
+                if file_name else protocol.camera_calibration_file()
+            )
+            self._calibration = parse_calibration(raw, pixels_per_mm) if raw else None
             if self._calibration is None:
                 _LOGGER.debug(
                     "V2 camera %s: no usable calibration; showing raw photos",
@@ -2013,7 +2067,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         try:
             return await self.hass.async_add_executor_job(
                 correct_image, image, self._calibration,
-                _camera_view(self.coordinator),
+                _camera_view(self.coordinator, self._camera_name),
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug(
@@ -2064,7 +2118,8 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         center_y: float | None = None,
     ) -> None:
         """Set the crop numbers given (mm), then refresh the picture once."""
-        numbers = _crop_numbers(self.coordinator)
+        numbers = _crop_numbers(self.coordinator, self._camera_name)
+        settings = _crop_settings(self.coordinator, self._camera_name)
         values = {
             "width": width, "height": height,
             "center_x": center_x, "center_y": center_y,
@@ -2076,7 +2131,9 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             if number is not None:
                 number.set_crop(value)
             else:  # the number entity is disabled
-                _camera_view_values(self.coordinator)[setting] = _clamp_crop(setting, value)
+                _camera_view_values(self.coordinator, self._camera_name)[setting] = (
+                    _clamp_crop(setting, value, settings)
+                )
         await self.refresh_picture()
 
     @callback

@@ -156,6 +156,14 @@ class XtoolDeviceModel:
     # (``global_calib.json``); photos are straightened with it, as
     # Studio does (F2 Ultra UV).
     has_camera_calibration: bool = False
+    # Other cameras with a calibration file of their own: ``(camera
+    # name, file name, pixels per mm of the straightened image, the
+    # calibrated area's width and height in mm)``, as the laser's Studio
+    # extension names them (P2: ``global_calib.json`` for the overview
+    # camera, ``local_calib.json`` for the close camera).
+    camera_calibrations: tuple[
+        tuple[str, str, float, tuple[float, float]], ...
+    ] = ()
     # Cameras that look at the bed at an angle: ``(camera name,
     # perspective coefficients, photo size, result size)``. The eight
     # Pillow perspective coefficients map the result to the photo and

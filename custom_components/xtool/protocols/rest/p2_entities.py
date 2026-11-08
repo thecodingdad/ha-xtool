@@ -11,6 +11,7 @@ from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.components.button import ButtonEntity
+from homeassistant.components.camera import Camera
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.components.select import SelectEntity
@@ -19,8 +20,16 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
 from homeassistant.exceptions import HomeAssistantError
 
+from ...const import XtoolStatus
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity
+from ..ws_v2.entities import (
+    _CameraDeviceEntity,
+    _crop_settings,
+    _WSV2Camera,
+    _WSV2CameraThumbnailRefresh,
+    _WSV2CameraViewNumber,
+)
 from .entities import (
     XtoolCameraExposure,
     XtoolDigitalLock,
@@ -53,8 +62,12 @@ def _off_by_default(entity: Any) -> Any:
 # --- Lights ----------------------------------------------------------------
 
 
-class P2FillLight(XtoolEntity, LightEntity):
-    """One of the P2's fill lights (``/peripheral/fill_light`` index 1-3)."""
+class P2FillLight(_CameraDeviceEntity, LightEntity):
+    """One of the P2's fill lights (``/peripheral/fill_light`` index 1-3).
+
+    The close light (1) lights the close camera's view, so it is on that
+    camera's device.
+    """
 
     _attr_icon = "mdi:track-light"
     _attr_color_mode = ColorMode.BRIGHTNESS
@@ -65,6 +78,8 @@ class P2FillLight(XtoolEntity, LightEntity):
         self._index = index
         self._set_unique_id(f"fill_light_{index}")
         self._attr_translation_key = f"fill_light_{index}"
+        if index == 1 and self._use_camera_device("closeup"):
+            self._attr_translation_key = "fill_light"
 
     def _level(self) -> int | None:
         data = self.coordinator.data
@@ -124,6 +139,45 @@ class P2FillLight(XtoolEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._write(0)
+
+
+# --- Cameras ----------------------------------------------------------------
+
+
+class P2Camera(_WSV2Camera):
+    """A P2 camera on its own device, straightened with the P2's calibration.
+
+    Photos come from ``/camera/snap`` (port 8329). A photo wakes a
+    sleeping P2, so while it sleeps the last photo is shown.
+    """
+
+    async def _image(self, max_age: Any) -> bytes | None:
+        data = self.coordinator.data
+        if data is not None and data.status == XtoolStatus.SLEEPING:
+            return self._last_snapshot
+        return await super()._image(max_age)
+
+
+class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure):
+    """A camera's exposure, on that camera's device."""
+
+    def __init__(self, coordinator: XtoolCoordinator, stream: str) -> None:
+        super().__init__(coordinator, stream)
+        if self._use_camera_device(stream):
+            self._attr_translation_key = "exposure"
+
+
+def _p2_camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
+    """``(entity key, camera name)``: the keys the P2's cameras always had."""
+    return [(f"camera_{name}", name) for name in coordinator.model.camera_names]
+
+
+def build_p2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
+    icons = {"overview": "mdi:camera", "closeup": "mdi:camera-burst"}
+    return [
+        P2Camera(coordinator, key, name, icons.get(name), key)
+        for key, name in _p2_camera_keys(coordinator)
+    ]
 
 
 # --- Settings (Studio's /config/set keys) ----------------------------------
@@ -326,9 +380,15 @@ def build_p2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
 
 
 def build_p2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
+    cameras = _p2_camera_keys(coordinator)
     return [
-        XtoolCameraExposure(coordinator, "overview"),
-        XtoolCameraExposure(coordinator, "closeup"),
+        *(P2CameraExposure(coordinator, name) for _, name in cameras),
+        *(_WSV2CameraThumbnailRefresh(coordinator, key, name) for key, name in cameras),
+        *(
+            _WSV2CameraViewNumber(coordinator, *setting, camera_name=name)
+            for _, name in cameras
+            for setting in _crop_settings(coordinator, name)
+        ),
         P2ExhaustTime(coordinator),
         P2LowestOutputPower(coordinator),
     ]

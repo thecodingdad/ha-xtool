@@ -590,6 +590,9 @@
       "camera_thumbnail_refresh": {
         "name": "Kamera Vorschaubild-Aktualisierungsintervall"
       },
+      "exposure": {
+        "name": "Belichtung"
+      },
       "thumbnail_refresh": {
         "name": "Vorschaubild-Aktualisierungsintervall"
       },

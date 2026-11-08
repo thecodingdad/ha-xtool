@@ -632,6 +632,9 @@
       "camera_thumbnail_refresh": {
         "name": "Camera thumbnail refresh interval"
       },
+      "exposure": {
+        "name": "Exposure"
+      },
       "thumbnail_refresh": {
         "name": "Thumbnail refresh interval"
       },

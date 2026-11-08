@@ -36,6 +36,7 @@ from ..base import DeviceInfo, XtoolDeviceState
 from .protocol import (
     PERIPHERAL_ACTION_GET_COORD,
     REST_BRIGHTNESS_MAX,
+    REST_CAMERA_PORT,
     REST_HTTP_PORT,
     REST_PATH_DIGITAL_LOCK,
     REST_PATH_FILL_LIGHT,
@@ -638,6 +639,30 @@ class P2Protocol(RestProtocol):
     async def set_beep_enabled(self, on: bool) -> None:
         """Buzzer (Studio writes ``beepEnable``; ``/setBeepEnable`` is refused)."""
         await self.set_config(beepEnable=bool(on))
+
+    # --- Cameras -----------------------------------------------------------
+
+    # Studio: stream 0 is the overview camera, 1 the close camera
+    CAMERA_STREAMS = {"overview": 0, "closeup": 1}
+
+    async def camera_snap(self, camera_name: str) -> bytes | None:
+        """A photo (``/camera/snap`` on port 8329). A photo wakes a sleeping P2."""
+        stream = self.CAMERA_STREAMS[camera_name]
+        url = f"http://{self.host}:{REST_CAMERA_PORT}/camera/snap?stream={stream}"
+        async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status != 200:
+                raise ConnectionError(f"P2 {camera_name} photo: HTTP {resp.status}")
+            return await resp.read()
+
+    async def camera_calibration_file(self, file_name: str) -> bytes | None:
+        """A camera's calibration, as Studio downloads it (``/file?action=download``)."""
+        text = await self._request(
+            "GET", f"/file?action=download&filename={file_name}", timeout=30, as_json=False,
+        )
+        # A missing file reads {"result":"failed"}
+        if not text or '"grid_num_w"' not in text:
+            return None
+        return text.encode()
 
     # --- HTTP: one session for every request ---------------------------
 

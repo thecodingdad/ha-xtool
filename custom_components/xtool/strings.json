@@ -240,6 +240,7 @@
     "number": {
       "focus_height": { "name": "Focus height" },
       "camera_thumbnail_refresh": { "name": "Camera thumbnail refresh interval" },
+      "exposure": { "name": "Exposure" },
       "thumbnail_refresh": { "name": "Thumbnail refresh interval" },
       "crop_width": { "name": "Crop width" },
       "crop_height": { "name": "Crop height" },

@@ -51,13 +51,27 @@ class CameraCalibration:
     dst_w: int
     dst_h: int
     points: tuple[tuple[float, float], ...]
+    # Width of the calibrated area on the work surface
+    area_mm: float = CALIBRATED_AREA_MM
+
+    @property
+    def area_h_mm(self) -> float:
+        return self.area_mm * self.dst_h / self.dst_w
 
     def point(self, row: int, col: int) -> tuple[float, float]:
         return self.points[row * self.grid_w + col]
 
 
-def parse_calibration(raw: Any) -> CameraCalibration | None:
-    """Parse ``global_calib.json``; return None when it is not usable."""
+def parse_calibration(
+    raw: Any, pixels_per_mm: float | None = None,
+) -> CameraCalibration | None:
+    """Parse a calibration file; return None when it is not usable.
+
+    ``pixels_per_mm`` is the straightened image's scale, when the laser's
+    Studio extension names it (the P2: 4 for the overview camera, 20 for
+    the close camera); the calibrated area is then ``image_dst_w`` / it.
+    Without it the area is the F2 Ultra UV's measured 200 mm.
+    """
     try:
         data = raw if isinstance(raw, dict) else json.loads(raw)
         grid_w = int(data["grid_num_w"])
@@ -73,8 +87,12 @@ def parse_calibration(raw: Any) -> CameraCalibration | None:
             dst_w=int(data["image_dst_w"]),
             dst_h=int(data["image_dst_h"]),
             points=points,
+            area_mm=(
+                int(data["image_dst_w"]) / pixels_per_mm
+                if pixels_per_mm else CALIBRATED_AREA_MM
+            ),
         )
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError, ZeroDivisionError):
         return None
     if (
         grid_w < 2
@@ -116,11 +134,9 @@ class _SurfaceMap:
         self.cal = calibration
         self.cells_x = calibration.grid_w - 1
         self.cells_y = calibration.grid_h - 1
-        self.cell_mm_x = CALIBRATED_AREA_MM / self.cells_x
-        self.cell_mm_y = (
-            CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / self.cells_y
-        )
-        self.width_mm = CALIBRATED_AREA_MM
+        self.cell_mm_x = calibration.area_mm / self.cells_x
+        self.cell_mm_y = calibration.area_h_mm / self.cells_y
+        self.width_mm = calibration.area_mm
         self.height_mm = self.cell_mm_y * self.cells_y
         samples = [
             (col * self.cell_mm_x, row * self.cell_mm_y, calibration.point(row, col))
@@ -272,8 +288,8 @@ def correct_image(
     cells_x = calibration.grid_w - 1
     cells_y = calibration.grid_h - 1
     # Millimetres per grid cell across and down.
-    cell_mm_x = CALIBRATED_AREA_MM / cells_x
-    cell_mm_y = CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / cells_y
+    cell_mm_x = calibration.area_mm / cells_x
+    cell_mm_y = calibration.area_h_mm / cells_y
     area_h_mm = cell_mm_y * cells_y
 
     px_per_mm = min(
@@ -281,7 +297,7 @@ def correct_image(
     )
     width = max(1, round(view.width_mm * px_per_mm))
     height = max(1, round(view.height_mm * px_per_mm))
-    left_mm = CALIBRATED_AREA_MM / 2 + view.center_x_mm - view.width_mm / 2
+    left_mm = calibration.area_mm / 2 + view.center_x_mm - view.width_mm / 2
     top_mm = area_h_mm / 2 + view.center_y_mm - view.height_mm / 2
 
     surface = _surface_map(calibration)

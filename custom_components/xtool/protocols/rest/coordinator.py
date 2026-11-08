@@ -444,6 +444,10 @@ class P2Coordinator(RestCoordinator):
         from .p2_entities import build_p2_lights
         return build_p2_lights(self)
 
+    def build_cameras(self) -> list["Camera"]:
+        from .p2_entities import build_p2_cameras
+        return build_p2_cameras(self)
+
     def build_binary_sensors(self) -> list["BinarySensorEntity"]:
         from .p2_entities import build_p2_binary_sensors
         return build_p2_binary_sensors(self)
