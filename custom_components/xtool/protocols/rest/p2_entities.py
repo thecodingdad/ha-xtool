@@ -87,7 +87,14 @@ class P2FillLight(XtoolEntity, LightEntity):
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._write(int(kwargs.get(ATTR_BRIGHTNESS, REST_BRIGHTNESS_MAX)))
+        if ATTR_BRIGHTNESS in kwargs:
+            await self._write(int(kwargs[ATTR_BRIGHTNESS]))
+            return
+        # Without a brightness, use Studio's Fill light brightness, as Studio does
+        data = self.coordinator.data
+        stored = data.device_config.get("fillLightBrightness") if data is not None else None
+        level = int(stored) if isinstance(stored, (int, float)) and stored > 0 else REST_BRIGHTNESS_MAX
+        await self._write(level)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._write(0)
@@ -190,29 +197,6 @@ class P2ExhaustTime(_P2Setting, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         await self._write(purifierTimeout=int(value))
-
-
-class P2FillLightBrightness(_P2Setting, NumberEntity):
-    """Studio: Fill light brightness, 0-100 % (stored as 0-255)."""
-
-    _config_key = "fillLightBrightness"
-    _attr_icon = "mdi:brightness-percent"
-    _attr_mode = NumberMode.SLIDER
-    _attr_native_min_value = 0
-    _attr_native_max_value = 100
-    _attr_native_step = 1
-    _attr_native_unit_of_measurement = PERCENTAGE
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "fill_light_brightness", "fill_light_brightness")
-
-    @property
-    def native_value(self) -> float | None:
-        value = self._value()
-        return None if value is None else round(float(value) / REST_BRIGHTNESS_MAX * 100)
-
-    async def async_set_native_value(self, value: float) -> None:
-        await self._write(fillLightBrightness=round(value / 100 * REST_BRIGHTNESS_MAX))
 
 
 class P2LowestOutputPower(_P2Setting, NumberEntity):
@@ -320,7 +304,6 @@ def build_p2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         XtoolCameraExposure(coordinator, "overview"),
         XtoolCameraExposure(coordinator, "closeup"),
         P2ExhaustTime(coordinator),
-        P2FillLightBrightness(coordinator),
         P2LowestOutputPower(coordinator),
     ]
 

@@ -513,7 +513,7 @@
         "name": "Fill light back"
       },
       "fill_light_1": {
-        "name": "Close-view fill light"
+        "name": "Fill light (close)"
       },
       "fill_light_2": {
         "name": "Fill light (right)"
@@ -754,9 +754,6 @@
       },
       "focus_height": {
         "name": "Focus height"
-      },
-      "fill_light_brightness": {
-        "name": "Fill light brightness"
       },
       "lowest_output_power": {
         "name": "Lowest output power"
