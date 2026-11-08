@@ -7,6 +7,7 @@ refuse or ignore the request are not created (see docs/PROTOCOL.md).
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
@@ -27,6 +28,7 @@ from ...entity import XtoolEntity, XtoolReadOnlyEntity
 from ..ws_v2.entities import (
     _CameraDeviceEntity,
     _crop_settings,
+    _thumbnail_registry,
     _WSV2Camera,
     _WSV2CameraThumbnailRefresh,
     _WSV2CameraViewNumber,
@@ -40,6 +42,9 @@ from .entities import (
     _RestPushBinary,
 )
 from .protocol import REST_BRIGHTNESS_MAX
+
+P2_EXPOSURE_MAX = 1000
+P2_EXPOSURE_SETTLE_SECONDS = 1.0
 
 # The P2's fill lights by /peripheral/fill_light index
 P2_FILL_LIGHTS = (1, 2, 3)
@@ -159,12 +164,26 @@ class P2Camera(_WSV2Camera):
 
 
 class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure):
-    """A camera's exposure, on that camera's device."""
+    """A camera's exposure, on that camera's device.
+
+    Studio sets 80-1000 (overview 100, or 1000 with Background brightness
+    increase; close camera 150, or 500) and waits a second before the photo.
+    """
+
+    _attr_native_max_value = P2_EXPOSURE_MAX
 
     def __init__(self, coordinator: XtoolCoordinator, stream: str) -> None:
         super().__init__(coordinator, stream)
         if self._use_camera_device(stream):
             self._attr_translation_key = "exposure"
+
+    async def async_set_native_value(self, value: float) -> None:
+        await super().async_set_native_value(value)
+        camera = _thumbnail_registry(self.coordinator).cameras.get(self._stream_name)
+        if camera is not None:
+            # The P2 takes the new exposure about a second later
+            await asyncio.sleep(P2_EXPOSURE_SETTLE_SECONDS)
+            await camera.refresh_picture()
 
 
 def _p2_camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:

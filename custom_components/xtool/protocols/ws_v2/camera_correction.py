@@ -53,10 +53,21 @@ class CameraCalibration:
     points: tuple[tuple[float, float], ...]
     # Width of the calibrated area on the work surface
     area_mm: float = CALIBRATED_AREA_MM
+    # The grid's cells are square (the P2's are 10 mm), even when the
+    # straightened image is not a whole number of cells tall
+    square_cells: bool = False
 
     @property
     def area_h_mm(self) -> float:
         return self.area_mm * self.dst_h / self.dst_w
+
+    @property
+    def cell_mm(self) -> tuple[float, float]:
+        """Millimetres per grid cell, across and down."""
+        across = self.area_mm / (self.grid_w - 1)
+        if self.square_cells:
+            return across, across
+        return across, self.area_h_mm / (self.grid_h - 1)
 
     def point(self, row: int, col: int) -> tuple[float, float]:
         return self.points[row * self.grid_w + col]
@@ -91,6 +102,7 @@ def parse_calibration(
                 int(data["image_dst_w"]) / pixels_per_mm
                 if pixels_per_mm else CALIBRATED_AREA_MM
             ),
+            square_cells=bool(pixels_per_mm),
         )
     except (TypeError, ValueError, KeyError, ZeroDivisionError):
         return None
@@ -134,8 +146,7 @@ class _SurfaceMap:
         self.cal = calibration
         self.cells_x = calibration.grid_w - 1
         self.cells_y = calibration.grid_h - 1
-        self.cell_mm_x = calibration.area_mm / self.cells_x
-        self.cell_mm_y = calibration.area_h_mm / self.cells_y
+        self.cell_mm_x, self.cell_mm_y = calibration.cell_mm
         self.width_mm = calibration.area_mm
         self.height_mm = self.cell_mm_y * self.cells_y
         samples = [
@@ -288,9 +299,9 @@ def correct_image(
     cells_x = calibration.grid_w - 1
     cells_y = calibration.grid_h - 1
     # Millimetres per grid cell across and down.
-    cell_mm_x = calibration.area_mm / cells_x
-    cell_mm_y = calibration.area_h_mm / cells_y
-    area_h_mm = cell_mm_y * cells_y
+    cell_mm_x, cell_mm_y = calibration.cell_mm
+    # The view is centred on the straightened image's area
+    area_h_mm = calibration.area_h_mm
 
     px_per_mm = min(
         PIXELS_PER_MM, MAX_OUTPUT_SIDE / max(view.width_mm, view.height_mm),
