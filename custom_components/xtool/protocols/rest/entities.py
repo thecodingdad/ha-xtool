@@ -1306,13 +1306,26 @@ class XtoolActiveAlarms(XtoolReadOnlyEntity, SensorEntity):
         return {"alarms": alarms, "codes": [a["code"] for a in alarms]}
 
 
+# Not on the P2: /gethardwaretype answers "Not Implement"; the P2 never
+# reports a tool type or a working mode; the gyro reads 0 while the laser
+# stands still; laser power and module never change
+_P2_LEFT_OUT = {
+    "hardware_type", "print_tool_type", "working_mode",
+    "gyro_x", "gyro_y", "gyro_z", "laser_power", "laser_module",
+}
+# Kept, but off until turned on
+_P2_OFF_BY_DEFAULT = {"task_id", "cpu_temp"}
+
+
 def build_p2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
-    # /gethardwaretype answers "Not Implement" on the P2
     entities = [
-        e for e in build_rest_sensors(coordinator) if e.translation_key != "hardware_type"
+        e for e in build_rest_sensors(coordinator) if e.translation_key not in _P2_LEFT_OUT
     ]
     entities.extend(XtoolSensor(coordinator, d) for d in _P2_SENSOR_DESCRIPTIONS)
     entities.append(XtoolActiveAlarms(coordinator))
+    for entity in entities:
+        if entity.translation_key in _P2_OFF_BY_DEFAULT:
+            entity._attr_entity_registry_enabled_default = False
     return entities
 
 

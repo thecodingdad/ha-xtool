@@ -511,11 +511,6 @@ class P2Protocol(RestProtocol):
         value = _peri_float(await self._get_json("/peripheral/water_flow?action=get"))
         if value is not None:
             state.water_flow = value
-        gyro = await self._get_json("/peripheral/gyro?action=get")
-        if isinstance(gyro, dict):
-            for axis in ("x", "y", "z"):
-                if isinstance(gyro.get(f"gyro_{axis}"), (int, float)):
-                    setattr(state, f"gyro_{axis}", float(gyro[f"gyro_{axis}"]))
         work = await self._get_json("/device/workingInfo")
         if isinstance(work, dict):
             # Studio's Work info: Working time, Operating times, Standby time

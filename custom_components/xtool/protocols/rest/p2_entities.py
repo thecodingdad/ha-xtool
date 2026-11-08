@@ -45,6 +45,12 @@ def _renamed(entity: Any, translation_key: str) -> Any:
     return entity
 
 
+def _off_by_default(entity: Any) -> Any:
+    """The entity, off until turned on in Home Assistant."""
+    entity._attr_entity_registry_enabled_default = False
+    return entity
+
+
 # --- Lights ----------------------------------------------------------------
 
 
@@ -341,12 +347,13 @@ def build_p2_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorE
     return [
         _renamed(_RestCoverSensor(coordinator), "lid"),
         P2Baseplate(coordinator),
-        _RestPushBinary(coordinator, "cooling_fan_running", "cooling_fan_running",
-                        BinarySensorDeviceClass.RUNNING),
+        # Both run whenever the P2 is awake; the alarms report a failure
+        _off_by_default(_RestPushBinary(coordinator, "cooling_fan_running", "cooling_fan_running",
+                                        BinarySensorDeviceClass.RUNNING)),
         _RestPushBinary(coordinator, "smoking_fan_running", "smoking_fan_running",
                         BinarySensorDeviceClass.RUNNING),
-        _RestPushBinary(coordinator, "water_pump_running", "water_pump_running",
-                        BinarySensorDeviceClass.RUNNING),
+        _off_by_default(_RestPushBinary(coordinator, "water_pump_running", "water_pump_running",
+                                        BinarySensorDeviceClass.RUNNING)),
     ]
 
 

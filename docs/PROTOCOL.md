@@ -2361,6 +2361,13 @@ Purifier check, Purifier continue (Studio uses `purifierEnable` and
 the cooling fan switch (the water cooling's fans), Time sync, the
 `/peripheral/water_line` reading (its meaning is not known).
 
+Left out because they tell nothing on the P2: Tool type and Working mode
+(never reported), Gyro X/Y/Z (`/peripheral/gyro` reads 0 rotation while
+the laser stands still; it also has `acc_*`, `pitch`, `roll`, `yaw`),
+Laser power and Laser module (fixed for the model). Task ID, CPU
+temperature, Cooling fan running and Water pump running are created
+turned off.
+
 ## M2 protocol
 
 xTool M2 (model_id `JS002`, added in Studio v1.7.23) is a
