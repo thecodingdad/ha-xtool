@@ -2328,6 +2328,30 @@ put the close camera over the mat 100 mm right of and 50 mm below home).
 refused. The integration reads the position once a minute and on the poll
 after each move.
 
+**Bed positions** (mm in the laser's coordinates, which Studio's canvas and
+the overview camera's straightened picture share; measured on a P2 with a
+cutting mat and the red dots):
+
+| What | X | Y | Width | Height |
+|---|---|---|---|---|
+| Actual work bed | -20.5 | -40.5 | 684 | 376 |
+| Process on slats, Honeycomb panel | 0 | 0 | 600 | 305 |
+| Slats removed | 50 | 0 | 500 | 250 |
+| Head travel (Studio's limits) | 0 | 0 | 620 | 308 |
+| Close camera picture | head + 55 | head - 30 | 140 | 100 |
+| IR measuring spot (`laserMeasureOffset`) | head + 64.3 | head + 0.9 | | |
+| Slat 0 reference (348 from the left wall) | 327.5 | | | |
+
+Slats are 13.2 mm apart, numbered from the 0 reference outward: 1-24 to
+the left and 1-23 to the right, each slat 1 half a pitch from the 0
+reference. The overview picture showed a mat's centre line at X 327.4,
+the close camera's picture started at the head plus (54.9, -31.5), and
+the close red dot (`ir_led` index 1, on the head) landed at the head plus
+(64.4, -0.8). The quick red dot (index 2) is fixed in the machine, at
+(343.2, 81.9). The overview calibration's plane is `thick0` (3 mm) above
+the slats; Studio's distance with the honeycomb panel or the slats removed
+is measured down from 25 mm above the slats.
+
 **Peripherals** (checked on a P2 with firmware 40.21.025):
 
 - `/peripheral/gap` `state` `off` = lid closed (Studio's `isCover`).

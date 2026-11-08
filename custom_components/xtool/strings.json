@@ -220,6 +220,12 @@
       "safety_lock": { "name": "Safety lock" }
     },
     "switch": {
+      "slat_overlay": {
+        "name": "Slat overlay"
+      },
+      "overlay": {
+        "name": "Overlay"
+      },
       "aimed_measure_light": { "name": "Red dot (close)" },
       "quick_measure_light": { "name": "Red dot (quick)" },
       "flame_alarm": { "name": "Flame alarm" },
@@ -243,6 +249,15 @@
       "md_mode": { "name": "Auto mode (access control)" }
     },
     "number": {
+      "thickness_on_slats": {
+        "name": "Thickness on slats"
+      },
+      "distance_honeycomb_panel": {
+        "name": "Distance with honeycomb panel"
+      },
+      "distance_slats_removed": {
+        "name": "Distance with slats removed"
+      },
       "auto_power_off": { "name": "Auto power-off" },
       "laser_position_x": { "name": "Laser position X" },
       "laser_position_y": { "name": "Laser position Y" },
@@ -269,6 +284,37 @@
       "purifier_timeout": { "name": "Purifier auto-off" }
     },
     "select": {
+      "crop_preset": {
+        "name": "Crop",
+        "state": {
+          "custom": "Custom",
+          "work_bed": "Actual work bed",
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed",
+          "close_camera": "Close camera image"
+        }
+      },
+      "overlay": {
+        "name": "Overlay",
+        "state": {
+          "none": "None",
+          "work_bed": "Actual work bed",
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed",
+          "close_camera": "Close camera image",
+          "custom": "Custom"
+        }
+      },
+      "processing_mode": {
+        "name": "Processing mode",
+        "state": {
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed"
+        }
+      },
       "perspective": {
         "name": "Perspective",
         "state": {

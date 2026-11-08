@@ -56,6 +56,8 @@ class CameraCalibration:
     # The grid's cells are square (the P2's are 10 mm), even when the
     # straightened image is not a whole number of cells tall
     square_cells: bool = False
+    # Height of the calibrated plane above the bed (the P2: thick0, 3 mm)
+    plane_mm: float = 0.0
 
     @property
     def area_h_mm(self) -> float:
@@ -103,6 +105,7 @@ def parse_calibration(
                 if pixels_per_mm else CALIBRATED_AREA_MM
             ),
             square_cells=bool(pixels_per_mm),
+            plane_mm=float(data.get("thick0") or 0.0),
         )
     except (TypeError, ValueError, KeyError, ZeroDivisionError):
         return None
@@ -130,6 +133,85 @@ class CameraView:
     height_mm: float = CALIBRATED_AREA_MM
     center_x_mm: float = 0.0
     center_y_mm: float = 0.0
+
+
+@dataclass(frozen=True)
+class SurfaceLift:
+    """A material surface above (or below) the calibrated plane.
+
+    A camera sees a raised surface larger and shifted away from the point
+    straight below it. The camera's position is in the calibrated area's
+    millimetres (x, y of the point below it, and its height above the
+    calibrated plane). ``surface_mm`` is the surface's height above the
+    calibrated plane.
+    """
+
+    camera_x_mm: float
+    camera_y_mm: float
+    camera_height_mm: float
+    surface_mm: float = 0.0
+
+    def seen_at(self, x_mm: float, y_mm: float) -> tuple[float, float]:
+        """Where on the calibrated plane a point of the surface appears."""
+        scale = self.camera_height_mm / max(self.camera_height_mm - self.surface_mm, 1.0)
+        return (
+            self.camera_x_mm + (x_mm - self.camera_x_mm) * scale,
+            self.camera_y_mm + (y_mm - self.camera_y_mm) * scale,
+        )
+
+
+@dataclass(frozen=True)
+class Overlay:
+    """Shapes drawn on a straightened picture, in the calibrated area's mm.
+
+    ``rects``: (x, y, width, height). ``lines``: (x0, y0, x1, y1, label),
+    the label written at the lower end. ``markers``: (x, y), a ring with
+    a cross.
+    """
+
+    rects: tuple[tuple[float, float, float, float], ...] = ()
+    lines: tuple[tuple[float, float, float, float, str], ...] = ()
+    markers: tuple[tuple[float, float], ...] = ()
+
+
+OVERLAY_RECT_COLOR = (255, 214, 0)
+OVERLAY_LINE_COLOR = (0, 200, 255)
+OVERLAY_MARKER_COLOR = (255, 40, 40)
+
+
+def _draw_overlay(
+    image: Any, overlay: Overlay, left_mm: float, top_mm: float, px_per_mm: float,
+) -> None:
+    from PIL import ImageDraw, ImageFont  # Home Assistant ships Pillow
+
+    draw = ImageDraw.Draw(image)
+    width = max(2, round(image.width / 500))
+
+    def px(x_mm: float, y_mm: float) -> tuple[float, float]:
+        return (x_mm - left_mm) * px_per_mm, (y_mm - top_mm) * px_per_mm
+
+    try:
+        font = ImageFont.load_default(size=max(10, round(4 * px_per_mm)))
+    except TypeError:  # Pillow before 10.1
+        font = ImageFont.load_default()
+    for x0, y0, x1, y1, label in overlay.lines:
+        start, end = px(x0, y0), px(x1, y1)
+        draw.line((start, end), fill=OVERLAY_LINE_COLOR, width=max(1, width // 2))
+        if label:
+            draw.text(
+                (end[0], min(end[1], image.height - 2)), label,
+                fill=OVERLAY_LINE_COLOR, font=font, anchor="md",
+                stroke_width=1, stroke_fill=(0, 0, 0),
+            )
+    for x, y, w, h in overlay.rects:
+        (a, b), (c, d) = px(x, y), px(x + w, y + h)
+        draw.rectangle((a, b, c, d), outline=OVERLAY_RECT_COLOR, width=width)
+    for x, y in overlay.markers:
+        cx, cy = px(x, y)
+        r = max(6.0, 2.5 * px_per_mm)
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=OVERLAY_MARKER_COLOR, width=width)
+        draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
+        draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
 
 
 class _SurfaceMap:
@@ -271,11 +353,15 @@ def correct_image(
     jpeg: bytes,
     calibration: CameraCalibration,
     view: CameraView | None = None,
+    lift: SurfaceLift | None = None,
+    overlay: Overlay | None = None,
 ) -> bytes:
     """Return the photo straightened onto the chosen area, as JPEG.
 
     Inside the calibrated area each grid cell is mapped exactly; outside
-    it the nearest cell is extended, which is less accurate. Runs in an
+    it the nearest cell is extended, which is less accurate. With a
+    ``lift`` the picture shows that surface to scale instead of the
+    calibrated plane. An ``overlay`` is drawn on the result. Runs in an
     executor: decoding and mapping take tens of milliseconds.
     """
     from PIL import Image  # Home Assistant ships Pillow
@@ -315,6 +401,8 @@ def correct_image(
 
     def src(x_mm: float, y_mm: float) -> tuple[float, float]:
         """Photo pixel of a work-surface point."""
+        if lift is not None:
+            x_mm, y_mm = lift.seen_at(x_mm, y_mm)
         x, y = surface.photo_point(x_mm, y_mm)
         return x * scale_x, y * scale_y
 
@@ -352,6 +440,8 @@ def correct_image(
         mesh,
         Image.Resampling.BILINEAR,
     )
+    if overlay is not None:
+        _draw_overlay(result, overlay, left_mm, top_mm, width / view.width_mm)
     out = io.BytesIO()
     result.save(out, "JPEG", quality=JPEG_QUALITY)
     return out.getvalue()

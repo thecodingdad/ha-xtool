@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import timedelta
+from functools import partial
 import logging
 from typing import Any
 
@@ -2066,14 +2067,17 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             return image
         try:
             return await self.hass.async_add_executor_job(
-                correct_image, image, self._calibration,
-                _camera_view(self.coordinator, self._camera_name),
+                partial(correct_image, image, self._calibration, **self._correction()),
             )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug(
                 "V2 camera %s: correction failed: %s", self._camera_name, err,
             )
             return image
+
+    def _correction(self) -> dict[str, Any]:
+        """How to straighten the next photo (``correct_image`` arguments)."""
+        return {"view": _camera_view(self.coordinator, self._camera_name)}
 
     @callback
     def async_update_token(self) -> None:

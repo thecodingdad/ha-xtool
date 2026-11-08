@@ -902,6 +902,12 @@
       },
       "quick_measure_light": {
         "name": "Red dot (quick)"
+      },
+      "slat_overlay": {
+        "name": "Slat overlay"
+      },
+      "overlay": {
+        "name": "Overlay"
       }
     },
     "number": {
@@ -1042,6 +1048,15 @@
       },
       "laser_position_y": {
         "name": "Laser position Y"
+      },
+      "thickness_on_slats": {
+        "name": "Thickness on slats"
+      },
+      "distance_honeycomb_panel": {
+        "name": "Distance with honeycomb panel"
+      },
+      "distance_slats_removed": {
+        "name": "Distance with slats removed"
       }
     },
     "select": {
@@ -1116,6 +1131,37 @@
         "state": {
           "low": "Low",
           "high": "High"
+        }
+      },
+      "crop_preset": {
+        "name": "Crop",
+        "state": {
+          "custom": "Custom",
+          "work_bed": "Actual work bed",
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed",
+          "close_camera": "Close camera image"
+        }
+      },
+      "overlay": {
+        "name": "Overlay",
+        "state": {
+          "none": "None",
+          "work_bed": "Actual work bed",
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed",
+          "close_camera": "Close camera image",
+          "custom": "Custom"
+        }
+      },
+      "processing_mode": {
+        "name": "Processing mode",
+        "state": {
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed"
         }
       }
     },

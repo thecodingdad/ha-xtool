@@ -81,6 +81,15 @@
       }
     },
     "number": {
+      "thickness_on_slats": {
+        "default": "mdi:format-line-weight"
+      },
+      "distance_honeycomb_panel": {
+        "default": "mdi:arrow-expand-down"
+      },
+      "distance_slats_removed": {
+        "default": "mdi:arrow-expand-down"
+      },
       "auto_power_off": {
         "default": "mdi:timer-off-outline"
       },
@@ -92,6 +101,15 @@
       }
     },
     "select": {
+      "crop_preset": {
+        "default": "mdi:crop"
+      },
+      "overlay": {
+        "default": "mdi:vector-rectangle"
+      },
+      "processing_mode": {
+        "default": "mdi:layers-outline"
+      },
       "perspective": {
         "default": "mdi:perspective-less",
         "state": {
@@ -114,6 +132,12 @@
       }
     },
     "switch": {
+      "slat_overlay": {
+        "default": "mdi:view-parallel-outline"
+      },
+      "overlay": {
+        "default": "mdi:vector-rectangle"
+      },
       "aimed_measure_light": {
         "default": "mdi:led-on",
         "state": { "off": "mdi:led-off" }
