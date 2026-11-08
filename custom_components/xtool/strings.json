@@ -216,8 +216,8 @@
     },
     "switch": {
       "safety_lock": { "name": "Safety lock" },
-      "aimed_measure_light": { "name": "Aimed measure light" },
-      "quick_measure_light": { "name": "Quick measure light" },
+      "aimed_measure_light": { "name": "Red dot (close)" },
+      "quick_measure_light": { "name": "Red dot (quick)" },
       "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },
       "move_stop": { "name": "Move stop" },

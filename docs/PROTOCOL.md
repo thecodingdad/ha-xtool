@@ -2311,7 +2311,7 @@ object to write). Studio's Device settings for firmware 25 and later:
 |---|---|---|
 | Buzzer | `beepEnable` | bool |
 | Flame alarm (Low / High) | `flameAlarmLevel1` (written with `flameLevelHLSelect: 1`) | bool, true = High |
-| Fill light brightness | `fillLightBrightness` | 0-255, shown as %; changing it in Studio also sets the lights that are on. The integration has no entity for it: each fill light has its own brightness and turns on at this level |
+| Fill light brightness | `fillLightBrightness` | 0-255, shown as %; changing it in Studio also sets the lights that are on. The integration has no entity for it: each fill light has its own brightness and turns on at this level. Studio has one brightness for the right and left lights, so the integration keeps them in step: a change to either writes the brighter of the two here, and a change made in Studio sets both |
 | Exhaust fan | `purifierEnable` | bool; Studio also writes `purifierTimeout: 5` when turned on |
 | Exhaust time after processing | `purifierTimeout` | 1-60 s |
 | Lowest output power | `motionPowerCut` | `M37S<1-10>` |

@@ -622,10 +622,10 @@
         "name": "Safety lock"
       },
       "aimed_measure_light": {
-        "name": "Aimed measure light"
+        "name": "Red dot (close)"
       },
       "quick_measure_light": {
-        "name": "Quick measure light"
+        "name": "Red dot (quick)"
       }
     },
     "number": {

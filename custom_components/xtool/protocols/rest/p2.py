@@ -218,6 +218,8 @@ class P2Protocol(RestProtocol):
         self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
+        # Studio's Fill light brightness as last read or written
+        self._studio_brightness: int | None = None
 
     # --- Connection -----------------------------------------------------
 
@@ -494,6 +496,7 @@ class P2Protocol(RestProtocol):
         )
         if isinstance(config, dict):
             self._apply_config(state, config)
+            await self._follow_studio_brightness(state, config.get("fillLightBrightness"))
         for path, attr in (
             ("/peripheral/cooling_fan?action=get", "cooling_fan_running"),
             ("/peripheral/smoking_fan?action=get", "smoking_fan_running"),
@@ -530,6 +533,23 @@ class P2Protocol(RestProtocol):
                 state.position_x = float(coord["x"])
             if isinstance(coord.get("y"), (int, float)):
                 state.position_y = float(coord["y"])
+
+    async def _follow_studio_brightness(self, state: XtoolDeviceState, setting: Any) -> None:
+        """When Studio's Fill light brightness changes, the right and left lights take it."""
+        if not isinstance(setting, int) or isinstance(setting, bool):
+            return
+        previous, self._studio_brightness = self._studio_brightness, setting
+        if previous is None or setting == previous:
+            return
+        for index in (2, 3):
+            if state.fill_light_levels.get(index) == setting:
+                continue
+            try:
+                await self.set_fill_light_level(index, setting)
+            except ConnectionError as err:
+                _LOGGER.debug("%s", err)
+                continue
+            state.fill_light_levels = {**state.fill_light_levels, index: setting}
 
     @staticmethod
     def _apply_config(state: XtoolDeviceState, config: dict[str, Any]) -> None:
@@ -604,6 +624,9 @@ class P2Protocol(RestProtocol):
         ok = reply is not None and not (isinstance(reply, dict) and reply.get("code") not in (None, 0))
         if not ok:
             _LOGGER.debug("P2 /config/set %s refused: %r", kv, reply)
+        elif isinstance(kv.get("fillLightBrightness"), int):
+            # Our own change, so the lights do not follow it as Studio's
+            self._studio_brightness = kv["fillLightBrightness"]
         return ok
 
     async def set_fill_light_level(self, index: int, value: int) -> None:

@@ -580,10 +580,10 @@
         "name": "Sicherheitsschloss"
       },
       "aimed_measure_light": {
-        "name": "Licht für gezielte Messung"
+        "name": "Roter Punkt (nah)"
       },
       "quick_measure_light": {
-        "name": "Licht für Schnellmessung"
+        "name": "Roter Punkt (schnell)"
       }
     },
     "number": {

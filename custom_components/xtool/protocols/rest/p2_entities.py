@@ -35,6 +35,8 @@ from .protocol import REST_BRIGHTNESS_MAX
 
 # The P2's fill lights by /peripheral/fill_light index
 P2_FILL_LIGHTS = (1, 2, 3)
+# The right and left lights, which Studio's Fill light brightness sets
+P2_STUDIO_FILL_LIGHTS = (2, 3)
 
 
 def _renamed(entity: Any, translation_key: str) -> Any:
@@ -81,9 +83,28 @@ class P2FillLight(XtoolEntity, LightEntity):
         data = self.coordinator.data
         if data is None:
             return
+        levels = {**data.fill_light_levels, self._index: level}
         await self.coordinator.async_write(
-            {"fill_light_levels": {**data.fill_light_levels, self._index: level}},
+            {"fill_light_levels": levels},
             self.coordinator.protocol.set_fill_light_level(self._index, level),
+        )
+        if self._index in P2_STUDIO_FILL_LIGHTS:
+            await self._write_studio_brightness(levels)
+
+    async def _write_studio_brightness(self, levels: dict[int, int]) -> None:
+        """Studio has one brightness for the right and left lights: the brighter of the two."""
+        data = self.coordinator.data
+        studio = max(levels.get(index) or 0 for index in P2_STUDIO_FILL_LIGHTS)
+        if data is None or not studio or studio == data.device_config.get("fillLightBrightness"):
+            return
+        protocol = self.coordinator.protocol
+
+        async def send() -> None:
+            if not await protocol.set_config(fillLightBrightness=studio):
+                raise HomeAssistantError("The P2 did not accept fillLightBrightness")
+
+        await self.coordinator.async_write(
+            {"device_config": {**data.device_config, "fillLightBrightness": studio}}, send(),
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
