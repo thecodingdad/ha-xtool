@@ -15,7 +15,7 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.components.camera import Camera
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.components.lock import LockEntity
-from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
+from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
@@ -501,7 +501,7 @@ class P2LaserPosition(XtoolEntity, NumberEntity):
     action also moves the head in steps.
     """
 
-    _attr_device_class = NumberDeviceClass.DISTANCE
+    # Not a distance number: the xtool.focus action targets those
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_native_min_value = 0.0
     _attr_native_step = 0.01

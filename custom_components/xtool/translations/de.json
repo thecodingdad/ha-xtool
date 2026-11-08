@@ -181,9 +181,6 @@
           "working_mode": {
             "name": "Betriebsmodus"
           },
-          "measured_thickness": {
-            "name": "Gemessene Materialstärke"
-          },
           "last_distance": {
             "name": "Letzte Distanz"
           },
@@ -570,6 +567,9 @@
       },
       "uv_lamp_runtime": {
         "name": "Laufzeit UV-Lampe"
+      },
+      "measured_thickness": {
+        "name": "Gemessene Materialstärke"
       }
     },
     "binary_sensor": {

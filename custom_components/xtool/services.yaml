@@ -37,7 +37,6 @@ move_laser_head:
     entity:
       integration: xtool
       domain: number
-      device_class: distance
   fields:
     x:
       example: 100
