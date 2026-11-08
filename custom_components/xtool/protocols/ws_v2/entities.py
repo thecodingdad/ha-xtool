@@ -1552,7 +1552,7 @@ CAMERA_LABELS: dict[str, str] = {
     "main": "Main camera",
     "deep": "Deep camera",
     "overview": "Overview camera",
-    "closeup": "Close-up camera",
+    "closeup": "Close camera",
     "far": "Global camera",
     "near": "Local camera",
     "side": "Side camera",

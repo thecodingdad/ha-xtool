@@ -358,7 +358,7 @@
     "camera_main": { "name": "{laser} Main camera" },
     "camera_deep": { "name": "{laser} Deep camera" },
     "camera_overview": { "name": "{laser} Overview camera" },
-    "camera_closeup": { "name": "{laser} Close-up camera" },
+    "camera_closeup": { "name": "{laser} Close camera" },
     "camera_far": { "name": "{laser} Global camera" },
     "camera_near": { "name": "{laser} Local camera" },
     "camera_side": { "name": "{laser} Side camera" }
