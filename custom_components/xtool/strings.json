@@ -226,6 +226,7 @@
       "tilt_stop": { "name": "Tilt stop" },
       "limit_stop": { "name": "Limit stop" },
       "smoking_fan": { "name": "Exhaust fan" },
+      "exhaust_fan_setting": { "name": "Exhaust fan" },
       "power_switch": { "name": "Power" },
       "ir_led_close": { "name": "IR LED (close-up)" },
       "ir_led_global": { "name": "Red dot" },

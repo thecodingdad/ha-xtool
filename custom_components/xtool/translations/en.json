@@ -553,6 +553,9 @@
       "smoking_fan": {
         "name": "Exhaust fan"
       },
+      "exhaust_fan_setting": {
+        "name": "Exhaust fan"
+      },
       "power_switch": {
         "name": "Power"
       },

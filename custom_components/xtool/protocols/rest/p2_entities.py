@@ -263,7 +263,8 @@ class P2ExhaustFan(_P2Setting, SwitchEntity):
     _config_key = "purifierEnable"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator, "smoking_fan", "smoking_fan")
+        # A setting, not the fan itself (Exhaust fan running shows the fan)
+        super().__init__(coordinator, "smoking_fan", "exhaust_fan_setting")
 
     @property
     def is_on(self) -> bool | None:
