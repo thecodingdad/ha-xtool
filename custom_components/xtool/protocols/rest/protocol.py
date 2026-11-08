@@ -173,6 +173,17 @@ class RestProtocol(XtoolProtocol):
         self._base_url = f"http://{host}:{port}"
         self._offline_until: float = 0.0
 
+    async def change_host(self, host: str) -> None:
+        """Talk to the laser at another address from now on, without a reload."""
+        await self.disconnect()
+        self.host = host
+        self._base_url = f"http://{host}:{self._port}"
+        self._offline_until = 0.0
+        try:
+            await self.connect()
+        except Exception:  # noqa: BLE001 - the next poll connects again
+            pass
+
     @property
     def connected(self) -> bool:
         """REST is stateless — always 'connected'."""

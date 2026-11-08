@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 import time
 
 import aiohttp
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.storage import Store
@@ -284,6 +283,7 @@ class P2Coordinator(RestCoordinator):
         self._hosts_store: Store | None = None
         self._known_hosts: list[str] = []
         self._next_host_search = 0.0
+        self._own_entry_update: tuple[dict[str, Any], dict[str, Any]] | None = None
 
     # --- Identity and addresses ------------------------------------------
 
@@ -306,19 +306,21 @@ class P2Coordinator(RestCoordinator):
             return
         _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
                      self.device_name, ethernet, self.protocol.host)
-        self._move_to(ethernet)
+        await self._move_to(ethernet)
 
-    def _move_to(self, host: str) -> None:
-        """Save the new address and reload the entry with it."""
+    async def _move_to(self, host: str) -> None:
+        """Use the new address at once and save it, without reloading the entry."""
         entry = self.config_entry
-        changed = self.hass.config_entries.async_update_entry(
-            entry, data={**entry.data, CONF_HOST: host},
-        )
-        # The update listener reloads only a loaded entry with changed data.
-        # While it is still being set up, or when the entry already has this
-        # address, nothing else would reload it.
-        if not changed or entry.state is not ConfigEntryState.LOADED:
-            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        await self.protocol.change_host(host)
+        self.host = host
+        data = {**entry.data, CONF_HOST: host}
+        # The update listener skips this change: nothing needs a reload
+        self._own_entry_update = (data, dict(entry.options))
+        self.hass.config_entries.async_update_entry(entry, data=data)
+
+    def made_entry_update(self, entry: Any) -> bool:
+        """True when the entry holds exactly what this coordinator wrote to it."""
+        return self._own_entry_update == (dict(entry.data), dict(entry.options))
 
     def _store(self) -> Store:
         if self._hosts_store is None:
@@ -353,7 +355,7 @@ class P2Coordinator(RestCoordinator):
             serial = await _serial_at(host)
             if serial and serial == self.serial_number:
                 _LOGGER.info("%s answers at %s instead of %s; switching", self.device_name, host, current)
-                self._move_to(host)
+                await self._move_to(host)
                 return
 
     def _on_push(self) -> None:
