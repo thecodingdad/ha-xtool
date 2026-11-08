@@ -286,7 +286,7 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle; its Perspective select turns the photos upright and, by default, also straightens them, so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
-| Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
+| Close camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
 | Flame record | Snapshot of the most recent flame-detection event |
 | Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
