@@ -294,6 +294,21 @@ class P2Coordinator(RestCoordinator):
         if mac and format_mac(mac) != format_mac(self.mac_address or ""):
             self.other_mac_addresses.add(format_mac(mac))
         await self._remember_hosts([protocol.host, *protocol.addresses()])
+        await self._prefer_ethernet()
+
+    async def _prefer_ethernet(self) -> None:
+        """Move to the Ethernet address when a cable is connected and it answers."""
+        ethernet = self.protocol.ethernet_address()
+        if not ethernet or ethernet == self.protocol.host or not self.config_entry:
+            return
+        if await _serial_at(ethernet) != self.serial_number:
+            return
+        _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
+                     self.device_name, ethernet, self.protocol.host)
+        # Updating the entry reloads it with the new address
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, data={**self.config_entry.data, CONF_HOST: ethernet},
+        )
 
     def _store(self) -> Store:
         if self._hosts_store is None:
@@ -403,7 +418,8 @@ class P2Coordinator(RestCoordinator):
 
     def build_sensors(self) -> list["SensorEntity"]:
         from .entities import build_p2_sensors
-        return build_p2_sensors(self)
+        from .p2_entities import P2Connection
+        return [*build_p2_sensors(self), P2Connection(self)]
 
     def build_switches(self) -> list["SwitchEntity"]:
         from .p2_entities import build_p2_switches

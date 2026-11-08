@@ -75,6 +75,13 @@
   },
   "entity": {
     "sensor": {
+      "connection": {
+        "name": "Connection",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "Wi-Fi"
+        }
+      },
       "operating_times": {
         "name": "Operating times"
       },

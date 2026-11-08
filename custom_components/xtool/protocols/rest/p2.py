@@ -587,6 +587,24 @@ class P2Protocol(RestProtocol):
             found.append(ip)
         return found
 
+    def ethernet_address(self) -> str:
+        """The Ethernet address, or "" while no cable is connected."""
+        ips = self.machine_info.get("ip") if isinstance(self.machine_info, dict) else None
+        ip = str(ips.get("eth0-ip") or "") if isinstance(ips, dict) else ""
+        # eth0's 169.254 address is there without a cable
+        return "" if ip.startswith("169.254.") else ip
+
+    def connection(self) -> str | None:
+        """How Home Assistant reaches the laser: "ethernet" or "wifi"."""
+        ips = self.machine_info.get("ip") if isinstance(self.machine_info, dict) else None
+        if not isinstance(ips, dict):
+            return None
+        if self.host == ips.get("eth0-ip"):
+            return "ethernet"
+        if self.host == ips.get("wlan0-ip"):
+            return "wifi"
+        return None
+
     def model_variant(self) -> str:
         """Studio's Laser safety classification (the P2 reports no SKU)."""
         sub_type = str(self.machine_info.get("machineSubType") or "")

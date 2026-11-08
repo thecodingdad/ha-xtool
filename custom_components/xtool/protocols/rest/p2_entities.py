@@ -14,6 +14,7 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.components.select import SelectEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
 
@@ -279,6 +280,23 @@ class P2Baseplate(_RestPushBinary):
         d = self.coordinator.data
         live = getattr(d, self._state_attr) if d else None
         return self._is_on_or_restored(None if live is None else not live)
+
+
+class P2Connection(XtoolEntity, SensorEntity):
+    """Whether Home Assistant reaches the P2 over Ethernet or Wi-Fi."""
+
+    _attr_translation_key = "connection"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["ethernet", "wifi"]
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("connection")
+
+    @property
+    def native_value(self) -> str | None:
+        return self.coordinator.protocol.connection()
 
 
 # --- Builders ----------------------------------------------------------------

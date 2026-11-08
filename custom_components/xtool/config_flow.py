@@ -112,6 +112,10 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if conn_info.serial_number:
             await self.async_set_unique_id(conn_info.serial_number)
+            if await self._configured_host_answers(conn_info.serial_number, host):
+                # A laser on Ethernet and Wi-Fi at once is seen at both
+                # addresses; keep the one in use while it answers
+                self._abort_if_unique_id_configured()
             self._abort_if_unique_id_configured(updates={CONF_HOST: host})
 
         self._discovered_host = host
@@ -119,6 +123,16 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
 
         self.context["title_placeholders"] = {"name": self._discovered_name}
         return await self.async_step_discovery_confirm()
+
+    async def _configured_host_answers(self, serial: str, host: str) -> bool:
+        """True when this laser's entry has another address that still answers."""
+        for entry in self._async_current_entries(include_ignore=False):
+            current = entry.data.get(CONF_HOST)
+            if entry.unique_id != serial or not current or current == host:
+                continue
+            info = await validate_connection(current)
+            return isinstance(info, ConnectionInfo) and info.serial_number == serial
+        return False
 
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
