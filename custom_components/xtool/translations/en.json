@@ -936,7 +936,14 @@
               "camera_fault": "Camera fault",
               "dongle_fault": "Bluetooth dongle fault",
               "udisk_fault": "USB disk fault",
-              "machine_lock_md_fault": "Machine lock fault"
+              "machine_lock_md_fault": "Machine lock fault",
+              "firmware": "Firmware",
+              "water_cooling": "Water cooling",
+              "exhaust_fan": "Exhaust fan",
+              "safety_lock": "Safety lock",
+              "air_pump": "Air pump",
+              "short_circuit": "Short circuit",
+              "other": "Other"
             }
           }
         }

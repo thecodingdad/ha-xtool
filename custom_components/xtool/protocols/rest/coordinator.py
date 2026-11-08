@@ -268,6 +268,8 @@ class P2Coordinator(RestCoordinator):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.protocol._push_notify = self._on_push
+        # Error codes already sent as events from a push
+        self._announced: set[str] = set()
 
     def _on_push(self) -> None:
         if self.data is None:
@@ -295,9 +297,49 @@ class P2Coordinator(RestCoordinator):
 
     def _emit_push_events(self) -> None:
         for kind, event_type, attributes in self.protocol.take_push_events():
+            if kind == "error" and attributes.get("code"):
+                self._announced.add(attributes["code"])
             self._emit_event(kind, event_type, attributes)
 
     async def _async_update_data(self) -> XtoolDeviceState:
+        prev_alarms = list(self.data.active_alarms) if self.data else []
         state = await super()._async_update_data()
         self._emit_push_events()
+        if state.available:
+            self._emit_alarm_changes(prev_alarms, state.active_alarms)
         return state
+
+    def _emit_alarm_changes(
+        self, prev: list[dict[str, Any]], new: list[dict[str, Any]],
+    ) -> None:
+        """Events for alarms that appeared since the last poll (and were not pushed)."""
+
+        def key(alarm: dict[str, Any]) -> str:
+            return str(alarm.get("code") or alarm.get("message") or "")
+
+        before = {key(a) for a in prev}
+        now = {key(a) for a in new}
+        for alarm in new:
+            if key(alarm) in before or key(alarm) in self._announced:
+                continue
+            if alarm.get("event_type") == "fire":
+                self._emit_event("fire_warning", "triggered", {"level": alarm.get("level")})
+                continue
+            self._emit_event("error", alarm.get("event_type") or "other", {
+                "code": alarm.get("code"),
+                "message": alarm.get("message"),
+                "level": alarm.get("level"),
+            })
+        fire_before = any(a.get("event_type") == "fire" for a in prev)
+        fire_now = any(a.get("event_type") == "fire" for a in new)
+        if fire_before and not fire_now:
+            self._emit_event("fire_warning", "cleared", None)
+        self._announced.intersection_update(now)
+
+    def build_sensors(self) -> list["SensorEntity"]:
+        from .entities import build_p2_sensors
+        return build_p2_sensors(self)
+
+    def build_events(self) -> list["EventEntity"]:
+        from .entities import build_p2_events
+        return build_p2_events(self)

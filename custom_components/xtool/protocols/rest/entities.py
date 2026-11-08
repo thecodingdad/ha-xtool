@@ -21,7 +21,7 @@ from homeassistant.components.light import (
 )
 from homeassistant.components.number import NumberEntity
 from homeassistant.components.select import SelectEntity
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.components.switch import (
     SwitchDeviceClass,
     SwitchEntity,
@@ -1222,3 +1222,83 @@ def build_rest_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
     if coordinator.model.has_button_event:
         entities.insert(0, RestButtonEvent(coordinator))
     return entities
+
+
+# --- P2 --------------------------------------------------------------------
+
+_P2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
+    XtoolSensorEntityDescription(
+        key="task_progress",
+        translation_key="task_progress",
+        icon="mdi:progress-clock",
+        native_unit_of_measurement="%",
+        suggested_display_precision=0,
+        value_fn=lambda state, _: state.task_progress,
+    ),
+    XtoolSensorEntityDescription(
+        key="cpu_temp",
+        translation_key="cpu_temp",
+        icon="mdi:cpu-64-bit",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda state, _: state.cpu_temp,
+    ),
+)
+
+
+class XtoolActiveAlarms(XtoolReadOnlyEntity, SensorEntity):
+    """Number of active alarms, with each alarm's code and Studio's message.
+
+    The state is the count so automations can trigger on ``> 0``; the
+    attributes carry the detail. Codes are the ones Studio shows.
+    """
+
+    _attr_translation_key = "active_alarms"
+    _attr_icon = "mdi:alert-circle-outline"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("active_alarms")
+
+    @property
+    def native_value(self) -> int | None:
+        data = self.coordinator.data
+        return None if data is None else len(data.active_alarms)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self.coordinator.data
+        alarms = [
+            {k: a.get(k) for k in ("code", "message", "level")}
+            for a in (data.active_alarms if data is not None else [])
+        ]
+        return {"alarms": alarms, "codes": [a["code"] for a in alarms]}
+
+
+def build_p2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
+    entities = build_rest_sensors(coordinator)
+    entities.extend(XtoolSensor(coordinator, d) for d in _P2_SENSOR_DESCRIPTIONS)
+    entities.append(XtoolActiveAlarms(coordinator))
+    return entities
+
+
+class P2ErrorEvent(XtoolEvent):
+    """The P2's errors, by the codes and messages Studio shows."""
+
+    _kind = "error"
+    _attr_icon = "mdi:alert-circle"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        from .p2 import P2_ERROR_EVENT_TYPES
+
+        super().__init__(coordinator, "error", P2_ERROR_EVENT_TYPES)
+
+
+def build_p2_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
+    return [
+        P2ErrorEvent(coordinator) if isinstance(e, RestErrorEvent) else e
+        for e in build_rest_events(coordinator)
+    ]

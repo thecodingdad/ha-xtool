@@ -14,6 +14,10 @@ the JSON that follows, little-endian) and then JSON such as::
 On connect the laser pushes its current mode at once. When neither a push
 nor a keepalive arrives for 11 seconds (Studio's heartbeat timeout), the
 laser is gone.
+
+The poll reads what Studio reads (``/device/runningStatus``,
+``/processing/progress`` and the peripherals) over one reused HTTP
+session. Settings change rarely and are read once a minute.
 """
 
 from __future__ import annotations
@@ -29,7 +33,19 @@ import aiohttp
 
 from ...const import XtoolStatus
 from ..base import XtoolDeviceState
-from .protocol import REST_HTTP_PORT, RestProtocol, _map_rest_mode
+from .protocol import (
+    PERIPHERAL_ACTION_GET_COORD,
+    REST_BRIGHTNESS_MAX,
+    REST_HTTP_PORT,
+    REST_PATH_DIGITAL_LOCK,
+    REST_PATH_FILL_LIGHT,
+    REST_PATH_GAP,
+    REST_PATH_IR_LED,
+    REST_PATH_LASER_HEAD,
+    RestProtocol,
+    _map_rest_mode,
+    _peri_float,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +55,71 @@ PING_SECONDS = 3.0
 PUSH_TIMEOUT_SECONDS = 11.0
 CONNECT_TIMEOUT_SECONDS = 5.0
 FRAME_HEADER_BYTES = 10
+# Settings and slow-moving values are read this often, not every poll
+SLOW_READ_SECONDS = 60.0
+
+# Studio's config keys for the P2 (its deviceInfo read), plus Baseplate detection
+P2_CONFIG_KEYS: tuple[str, ...] = (
+    "offlineProtoModeEnable", "offlineProtoProModeEnable", "offlineOptionModeEnable",
+    "flameAlarm", "flameSensitivity", "fillLightBrightness", "purifierTimeout",
+    "motionPowerCut", "laserMeasureOffset", "flameLevelHLSelect", "purifierEnable",
+    "beepEnable", "taskId", "flameAlarmLevel1", "drawerCheck",
+)
+
+# Studio's P2 error table (P2/index.js): code, "<module>.<type>.<info>",
+# Studio's English title, and the Error event type it is reported as.
+# The flame alarm (Qx_x_3) is reported by the Fire warning event instead.
+P2_ERRORS: tuple[tuple[str, str, str, str], ...] = (
+    ("Qx30_0", "FIRMWARE.NOT_MATCHED.", "Firmware version info not found", "firmware"),
+    ("Qx30_1", "BOARDS.ELEMENT_NOT_FOUND.", "Board communication failure", "board_fault"),
+    ("Qx30_1_1", "BOARDS.ELEMENT_NOT_FOUND.motion_gd450", "Board communication failure", "board_fault"),
+    ("Qx30_1_2", "BOARDS.ELEMENT_NOT_FOUND.ui_gd330", "Board communication failure", "board_fault"),
+    ("Qx30_1_3", "BOARDS.ELEMENT_NOT_FOUND.wcb_gd330", "Board communication failure", "board_fault"),
+    ("Qx16", "CONTROLLER.TMP_HIGH.", "Main control board temperature exception", "temperature"),
+    ("Qx16_1", "CONTROLLER.TMP_HIGH.MASTER", "Main control board temperature exception", "temperature"),
+    ("Qx01_2", "WATER_TMP.ELEMENT_NOT_FOUND.", "Water tank temperature sensor exception", "water_cooling"),
+    ("Qx01_1", "WATER_TMP.TMP_HIGH.", "Water tank temperature too high", "water_cooling"),
+    ("Qx01_0", "WATER_TMP.TMP_LOW.", "Water tank temperature too low", "water_cooling"),
+    ("Qx30_2", "WATER_LINE.VALUE_LOW.", "Water level in the water tank too low", "water_cooling"),
+    ("Qx08_0", "WATER_PUMP.CUR_LOW.", "Water pump current too low", "water_cooling"),
+    ("Qx08_1", "WATER_PUMP.CUR_HIGH.", "Water pump current too high", "water_cooling"),
+    ("Qx08_2", "WATER_PUMP.CUR_ABNORMAL.", "Water pump current exception", "water_cooling"),
+    ("Qx30_3", "WATER_FAN.CUR_ABNORMAL.", "Water-cooled fan exception", "water_cooling"),
+    ("Qx30_3_1", "WATER_FAN.CUR_ABNORMAL.1", "Water-cooled fan exception", "water_cooling"),
+    ("Qx30_3_2", "WATER_FAN.CUR_ABNORMAL.2", "Water-cooled fan exception", "water_cooling"),
+    ("Qx30_3_3", "WATER_FAN.CUR_ABNORMAL.3", "Water-cooled fan exception", "water_cooling"),
+    ("Qx30_4", "WATER_FLOW.VALUE_LOW.", "Water tank flow too low", "water_cooling"),
+    ("Qx14_4", "MOTOR_DRIVER.ELEMENT_ABNORMAL.M23 S135", "X-axis driver exception", "moving"),
+    ("Qx14_5", "MOTOR_DRIVER.ELEMENT_ABNORMAL.M23 S136", "Y-axis driver exception", "moving"),
+    ("Qx14_6", "MOTOR_DRIVER.ELEMENT_ABNORMAL.M23 S137", "Z-axis driver exception", "moving"),
+    ("Qx14_7", "MOTOR_DRIVER.ELEMENT_ABNORMAL.M23 S138", "U-axis driver exception", "moving"),
+    ("Qx14", "MOTOR_LIMIT.ELEMENT_NOT_FOUND.", "Motion axis limit error", "limit"),
+    ("Qx14_1", "MOTOR_LIMIT.OPERATION_FAILED.M23 S140", "X-axis homing failure", "limit"),
+    ("Qx14_2", "MOTOR_LIMIT.OPERATION_FAILED.M23 S141", "Y-axis homing failure", "limit"),
+    ("Qx14_3", "MOTOR_LIMIT.OPERATION_FAILED.M23 S142", "Z-axis homing failure", "limit"),
+    ("Qx14_8", "MOTOR_LIMIT.OPERATION_FAILED.M23 S143", "U-axis homing failure", "limit"),
+    ("Qx30_5", "MOTOR_LIMIT.OPERATION_FAILED.M23 S148", "X-axis initialization exception", "limit"),
+    ("Qx30_6", "MOTOR_LIMIT.OPERATION_FAILED.M23 S149", "Y-axis initialization exception", "limit"),
+    ("Qx30_7", "MOTOR_LIMIT.OPERATION_FAILED.M23 S150", "Z-axis initialization exception", "limit"),
+    ("Qx30_8", "MOTOR_LIMIT.OPERATION_FAILED.M23 S151", "U-axis initialization exception", "limit"),
+    ("Qx32_0", "SMOKING_FAN.CUR_LOW.", "Fan current too low", "exhaust_fan"),
+    ("Qx32_1", "SMOKING_FAN.CUR_HIGH.", "Fan current too high", "exhaust_fan"),
+    ("Qx17_0", "CAMERA.ELEMENT_NOT_FOUND.", "Camera not found", "camera_fault"),
+    ("Qx17_1", "CAMERA.OPERATION_FAILED.", "Camera exception", "camera_fault"),
+    ("Qx31_1", "ELECTRONICLOCK.OPERATION_FAILED.NOT OPEN", "Safety lock unlocking exception", "safety_lock"),
+    ("Qx31_0", "ELECTRONICLOCK.OPERATION_FAILED.NOT CLOSE", "Safety lock locking exception", "safety_lock"),
+    ("Qx31_2", "AIRPUMP.CUR_ABNORMAL.", "Air pump current exception", "air_pump"),
+    ("Qx_x_1", "GYRO_SENSOR.MACHINE_TILTED.", "Device tilted", "tilt"),
+    ("Qx_x_2", "SHORT_CIRCUIT_PROTECT.GND_SHORT_CIRCUTE.", "Device casing short-circuited with the circuit board", "short_circuit"),
+    ("Qx_x_3", "FIRE_RECOGNITION.FIND_EXCEPTION.", "Flame detected", "fire"),
+)
+_ERRORS_BY_KEY: dict[str, tuple[str, str, str]] = {
+    key: (code, title, kind) for code, key, title, kind in P2_ERRORS
+}
+# The Error event types the P2 reports
+P2_ERROR_EVENT_TYPES: tuple[str, ...] = tuple(
+    dict.fromkeys(kind for _, _, _, kind in P2_ERRORS if kind != "fire")
+) + ("other",)
 
 # Studio's getCurrentStatus: "<mode>.<subMode>" -> status. "Work" carries the
 # job's phase in its sub-mode.
@@ -85,6 +166,40 @@ def decode_push_frame(data: bytes | str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
+def describe_alarm(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """An alarm as Studio shows it (code, message, level, event type), or None.
+
+    Studio looks up ``<module>.<type>.<info>``; an ``info`` holding several
+    values separated by ``:`` is looked up value by value.
+    """
+    module = str(entry.get("module") or "")
+    kind = str(entry.get("type") or "")
+    if not module or not kind:
+        return None
+    info = entry.get("info")
+    info_s = "" if info is None or isinstance(info, dict) else str(info)
+    keys = [f"{module}.{kind}.{info_s}"]
+    keys += [f"{module}.{kind}.{part}" for part in info_s.split(":") if part]
+    keys.append(f"{module}.{kind}.")
+    for key in keys:
+        if key in _ERRORS_BY_KEY:
+            code, title, event_type = _ERRORS_BY_KEY[key]
+            return {
+                "code": code,
+                "message": title,
+                "level": entry.get("level"),
+                "event_type": event_type,
+            }
+    return None
+
+
+def _result(reply: Any) -> str | None:
+    """The value of a ``/get*`` reply such as ``{"result": "600"}``."""
+    if isinstance(reply, dict) and reply.get("result") is not None:
+        return str(reply["result"])
+    return None
+
+
 class P2Protocol(RestProtocol):
     """The P2's REST API, with Studio's push channel for live changes."""
 
@@ -102,6 +217,10 @@ class P2Protocol(RestProtocol):
         # (kind, event type, attributes) for the coordinator to send as events
         self._push_events: list[tuple[str, str, dict[str, Any]]] = []
         self._push_notify: Callable[[], None] | None = None
+        self._http: aiohttp.ClientSession | None = None
+        self._next_slow_read = 0.0
+        # Set by a WORK_STOPED push: the job that ends next was cancelled
+        self._stopping = False
 
     # --- Connection -----------------------------------------------------
 
@@ -140,6 +259,9 @@ class P2Protocol(RestProtocol):
             except (asyncio.CancelledError, Exception):
                 pass
         await self._close_push()
+        http, self._http = self._http, None
+        if http is not None and not http.closed:
+            await http.close()
 
     async def _close_push(self) -> None:
         ws, self._ws = self._ws, None
@@ -207,10 +329,16 @@ class P2Protocol(RestProtocol):
             if kind == "MODE_CHANGE" and isinstance(info, dict):
                 status = map_p2_mode(info.get("mode"), info.get("subMode"))
                 if status is not None:
-                    self._set("status", status)
+                    self._set("status", self._after_stop(status))
                 self._set("working_mode", str(info.get("subMode") or ""))
                 if info.get("taskId"):
                     self._set("task_id", str(info["taskId"]))
+            elif kind == "WORK_STOPED":
+                # Studio: a stop and then the job ending is a cancelled job
+                self._stopping = True
+                self._set("status", XtoolStatus.CANCELLING)
+            elif kind == "WORK_PREPARED":
+                self._stopping = False
         elif module == "GAP" and kind in ("OPEN", "CLOSE"):
             self._set("cover_open", kind == "OPEN")
         elif module == "DRAWER" and kind in ("OPEN", "CLOSE"):
@@ -223,7 +351,23 @@ class P2Protocol(RestProtocol):
                 self._push_events.append(("button", event, {"raw_type": kind}))
         elif module == "FIRE_RECOGNITION" and kind == "FIND_EXCEPTION":
             self._push_events.append(("fire_warning", "triggered", {"level": info}))
+        else:
+            alarm = describe_alarm(obj)
+            if alarm is not None:
+                self._push_events.append(("error", alarm["event_type"], {
+                    "code": alarm["code"], "message": alarm["message"], "level": alarm["level"],
+                }))
         self._notify()
+
+    def _after_stop(self, status: XtoolStatus) -> XtoolStatus:
+        """After a stop, the job ending reads Cancelling instead of Finished."""
+        if not self._stopping:
+            return status
+        if status == XtoolStatus.FINISHED:
+            return XtoolStatus.CANCELLING
+        if status != XtoolStatus.CANCELLING:
+            self._stopping = False
+        return status
 
     def apply_latest(self, state: XtoolDeviceState, since: float = 0.0) -> None:
         """Copy pushed values newer than ``since`` into ``state``."""
@@ -241,10 +385,216 @@ class P2Protocol(RestProtocol):
         return map_p2_mode(cur_mode.get("mode"), cur_mode.get("subMode"))
 
     async def poll_state(self, state: XtoolDeviceState) -> None:
-        """Poll, then fail when the laser did not answer, and keep newer pushes."""
+        """Read what Studio reads, then keep pushes newer than the reads."""
         started = time.monotonic()
-        await super().poll_state(state)
+        self._offline_until = 0.0
+        running = await self._get_json("/device/runningStatus")
+        if self._is_offline():
+            raise ConnectionError(f"P2 at {self.host} did not answer")
+        if isinstance(running, dict):
+            self._apply_running_status(state, running)
+        self._apply_progress(state, await self._get_json("/processing/progress"))
+        replies = {}
+        for path in (REST_PATH_GAP, "/peripheral/drawer", REST_PATH_DIGITAL_LOCK,
+                     REST_PATH_FILL_LIGHT, REST_PATH_IR_LED):
+            replies[path] = await self._get_json(path)
+        self._apply_peripherals(state, replies)
+        if started >= self._next_slow_read:
+            await self._read_slow(state)
+            if not self._is_offline():
+                self._next_slow_read = started + SLOW_READ_SECONDS
         if self._is_offline():
             raise ConnectionError(f"P2 at {self.host} did not answer")
         # A push that arrived while the poll ran is newer than what the poll read
         self.apply_latest(state, since=started)
+        _LOGGER.debug(
+            "P2 poll: status=%s progress=%s time=%s lid_open=%s alarms=%s",
+            state.status, state.task_progress, state.task_time,
+            state.cover_open, [a.get("code") for a in state.active_alarms],
+        )
+
+    def _apply_running_status(self, state: XtoolDeviceState, running: dict[str, Any]) -> None:
+        cur_mode = running.get("curMode")
+        if isinstance(cur_mode, dict):
+            status = self._map_running_mode(cur_mode)
+            if status is not None:
+                state.status = self._after_stop(status)
+            state.working_mode = str(cur_mode.get("subMode") or "")
+            if cur_mode.get("taskId"):
+                state.task_id = str(cur_mode["taskId"])
+        if isinstance(running.get("cpuTemp"), (int, float)):
+            state.cpu_temp = int(running["cpuTemp"])
+        alarm_info = running.get("curAlarmInfo")
+        if isinstance(alarm_info, dict):
+            raw = alarm_info.get("alarm")
+            alarms = []
+            for entry in raw if isinstance(raw, list) else []:
+                if not isinstance(entry, dict):
+                    continue
+                alarms.append(describe_alarm(entry) or {
+                    "code": None,
+                    "message": " ".join(
+                        str(entry.get(key) or "") for key in ("module", "type", "info")
+                    ).strip(),
+                    "level": entry.get("level"),
+                    "event_type": "other",
+                })
+            state.active_alarms = alarms
+
+    @staticmethod
+    def _apply_progress(state: XtoolDeviceState, progress: Any) -> None:
+        """``{"time": <seconds>, "total": 100, "value": <done>}``."""
+        if not isinstance(progress, dict):
+            return
+        try:
+            total = float(progress.get("total") or 0)
+            value = float(progress.get("value") or 0)
+            state.task_progress = max(0.0, min(100.0, value * 100.0 / total)) if total else None
+            state.task_time = int(progress.get("time") or 0)
+        except (TypeError, ValueError):
+            pass
+
+    def _apply_peripherals(self, state: XtoolDeviceState, replies: dict[str, Any]) -> None:
+        def on_off(path: str) -> bool | None:
+            reply = replies.get(path)
+            value = str(reply.get("state", "")).lower() if isinstance(reply, dict) else ""
+            return {"on": True, "off": False}.get(value)
+
+        gap = on_off(REST_PATH_GAP)
+        if gap is not None:
+            # "off" is a closed lid (Studio: isCover)
+            state.cover_open = gap
+        drawer = on_off("/peripheral/drawer")
+        if drawer is not None:
+            state.drawer_open = drawer
+        lock = on_off(REST_PATH_DIGITAL_LOCK)
+        if lock is not None:
+            state.cover_locked = lock
+        lights = replies.get(REST_PATH_FILL_LIGHT)
+        if isinstance(lights, list):
+            # [{"idx": 1, "value": 0-255}, ...]
+            values = [
+                int(light.get("value") or 0)
+                for light in lights
+                if isinstance(light, dict) and isinstance(light.get("value"), (int, float))
+            ]
+            level = round(max(values, default=0) * 100 / REST_BRIGHTNESS_MAX)
+            state.fill_light_a = level
+            state.fill_light_b = level
+        ir = replies.get(REST_PATH_IR_LED)
+        if isinstance(ir, dict):
+            # ir1 = index 1 (laser head), ir2 = index 2 (lid)
+            if "ir1" in ir:
+                state.ir_led_close = str(ir["ir1"]).lower() == "on"
+            if "ir2" in ir:
+                state.ir_led_global = str(ir["ir2"]).lower() == "on"
+
+    async def _read_slow(self, state: XtoolDeviceState) -> None:
+        """Settings and values that change rarely."""
+        config = await self._post_json(
+            "/config/get", data={"alias": "config", "type": "user", "kv": list(P2_CONFIG_KEYS)},
+        )
+        if isinstance(config, dict):
+            self._apply_config(state, config)
+        for path, attr in (
+            ("/getsleeptimeout", "sleep_timeout"),
+            ("/getsleeptimeoutopengap", "sleep_timeout_open_gap"),
+            ("/getFilllightAutoClosetimout", "fill_light_auto_off"),
+            ("/getIrlightAutoClosetimout", "ir_light_auto_off"),
+        ):
+            value = _result(await self._get_json(path))
+            if value is not None and value.isdigit():
+                setattr(state, attr, int(value))
+        for path, attr in (
+            ("/peripheral/cooling_fan?action=get", "cooling_fan_running"),
+            ("/peripheral/smoking_fan?action=get", "smoking_fan_running"),
+            ("/peripheral/water_pump?action=get", "water_pump_running"),
+        ):
+            reply = await self._get_json(path)
+            if isinstance(reply, dict) and str(reply.get("state", "")).lower() in ("on", "off"):
+                setattr(state, attr, str(reply["state"]).lower() == "on")
+        value = _peri_float(await self._get_json("/peripheral/water_tmp?action=get"))
+        if value is not None:
+            state.water_temperature = value
+        value = _peri_float(await self._get_json("/peripheral/water_flow?action=get"))
+        if value is not None:
+            state.water_flow = value
+        gyro = await self._get_json("/peripheral/gyro?action=get")
+        if isinstance(gyro, dict):
+            for axis in ("x", "y", "z"):
+                if isinstance(gyro.get(f"gyro_{axis}"), (int, float)):
+                    setattr(state, f"gyro_{axis}", float(gyro[f"gyro_{axis}"]))
+        coord = await self._post_json(
+            REST_PATH_LASER_HEAD, data={"action": PERIPHERAL_ACTION_GET_COORD, "waitTime": 0},
+        )
+        if isinstance(coord, dict):
+            if isinstance(coord.get("x"), (int, float)):
+                state.position_x = float(coord["x"])
+            if isinstance(coord.get("y"), (int, float)):
+                state.position_y = float(coord["y"])
+
+    @staticmethod
+    def _apply_config(state: XtoolDeviceState, config: dict[str, Any]) -> None:
+        if isinstance(config.get("beepEnable"), bool):
+            state.beep_enabled = config["beepEnable"]
+        if isinstance(config.get("drawerCheck"), bool):
+            state.drawer_check = config["drawerCheck"]
+        if isinstance(config.get("flameLevelHLSelect"), int):
+            state.flame_level_hl = config["flameLevelHLSelect"]
+        if isinstance(config.get("flameAlarm"), bool):
+            # The integration's flame_alarm scale: 0 = high, 1 = low, 2 = off
+            if not config["flameAlarm"]:
+                state.flame_alarm = 2
+            else:
+                state.flame_alarm = 0 if config.get("flameAlarmLevel1") else 1
+
+    # --- HTTP: one session for every request ---------------------------
+
+    def _session(self) -> aiohttp.ClientSession:
+        if self._http is None or self._http.closed:
+            self._http = aiohttp.ClientSession()
+        return self._http
+
+    async def _request(
+        self, method: str, path: str, data: Any = None, timeout: float = 5.0, as_json: bool = True,
+    ) -> Any:
+        if self._is_offline():
+            return None
+        url = f"{self._base_url}{path}"
+        try:
+            async with self._session().request(
+                method, url, json=data, timeout=aiohttp.ClientTimeout(total=timeout),
+            ) as resp:
+                self._offline_until = 0.0
+                if resp.status != 200:
+                    _LOGGER.debug("P2 %s %s -> HTTP %d", method, url, resp.status)
+                    return None
+                text = await resp.text()
+        except (aiohttp.ClientConnectorError, asyncio.TimeoutError) as err:
+            self._mark_offline(url, err)
+            return None
+        except Exception as err:
+            _LOGGER.debug("P2 %s %s failed: %s", method, url, err)
+            return None
+        _LOGGER.debug("P2 %s %s body=%r -> %r", method, url, data, text[:500])
+        if not as_json:
+            return text
+        try:
+            result = json.loads(text)
+        except ValueError:
+            return None
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        return result
+
+    async def _get(self, path: str, timeout: float = 5.0) -> str | None:
+        return await self._request("GET", path, timeout=timeout, as_json=False)
+
+    async def _get_json(self, path: str, timeout: float = 5.0) -> Any:
+        return await self._request("GET", path, timeout=timeout)
+
+    async def _post(self, path: str, data: Any = None, timeout: float = 5.0) -> str | None:
+        return await self._request("POST", path, data, timeout, as_json=False)
+
+    async def _post_json(self, path: str, data: Any = None, timeout: float = 5.0) -> Any:
+        return await self._request("POST", path, data, timeout)
