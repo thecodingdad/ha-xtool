@@ -139,11 +139,18 @@ class WSV2Coordinator(XtoolCoordinator):
             state.firmware_version = self.firmware_version
             state.laser = self.laser
 
+            await self._poll_accessories(state)
+
+            # A push that arrived while the accessories were read is
+            # newer than this poll: apply it again, or the poll would
+            # put back the state it replaced (an F2 Ultra UV went
+            # Sleeping, Idle, Sleeping within 5 s when it fell asleep
+            # during a poll).
+            self.protocol._apply_latest_to_state(state)  # type: ignore[attr-defined]
+
             self._emit_status_transition_events(prev_status, state)
             self._emit_fire_warning_if_changed(prev_alarm, state.alarm_present)
             self._drain_protocol_events()
-
-            await self._poll_accessories(state)
 
         except Exception as err:
             _LOGGER.debug("WS-V2 poll failed: %s", err)
