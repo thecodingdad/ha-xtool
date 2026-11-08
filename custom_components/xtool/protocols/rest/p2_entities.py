@@ -257,6 +257,9 @@ class P2Buzzer(_P2Setting, SwitchEntity):
 class P2ExhaustFan(_P2Setting, SwitchEntity):
     """Studio: Exhaust fan (runs after processing; Studio sets 5 s when turned on)."""
 
+    # A setting, not the fan itself (Exhaust fan running shows the fan)
+    _attr_icon = "mdi:fan-chevron-up"
+
     _config_key = "purifierEnable"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
