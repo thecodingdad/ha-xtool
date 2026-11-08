@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from homeassistant.components.camera import Camera
     from homeassistant.components.event import EventEntity
     from homeassistant.components.light import LightEntity
+    from homeassistant.components.lock import LockEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
     from homeassistant.components.sensor import SensorEntity
@@ -433,6 +434,10 @@ class P2Coordinator(RestCoordinator):
     def build_switches(self) -> list["SwitchEntity"]:
         from .p2_entities import build_p2_switches
         return build_p2_switches(self)
+
+    def build_locks(self) -> list["LockEntity"]:
+        from .p2_entities import build_p2_locks
+        return build_p2_locks(self)
 
     def build_numbers(self) -> list["NumberEntity"]:
         from .p2_entities import build_p2_numbers

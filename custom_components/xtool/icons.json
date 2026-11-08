@@ -97,10 +97,6 @@
       }
     },
     "switch": {
-      "safety_lock": {
-        "default": "mdi:lock",
-        "state": { "off": "mdi:lock-open-variant" }
-      },
       "aimed_measure_light": {
         "default": "mdi:led-on",
         "state": { "off": "mdi:led-off" }

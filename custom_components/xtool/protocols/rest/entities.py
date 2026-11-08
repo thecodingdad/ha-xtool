@@ -41,7 +41,6 @@ from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX, XtoolStatus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
-    XtoolReadOnlyEntity,
     XtoolRestoringBinarySensor,
     XtoolRestoringSensor,
 )
@@ -402,7 +401,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="laser_position_x",
         translation_key="laser_position_x",
-        icon="mdi:axis-x-arrow",
+        icon="mdi:arrow-left-right",
         native_unit_of_measurement=UnitOfLength.MILLIMETERS,
         suggested_display_precision=2,
         value_fn=lambda state, _: state.position_x,
@@ -410,7 +409,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="laser_position_y",
         translation_key="laser_position_y",
-        icon="mdi:axis-y-arrow",
+        icon="mdi:arrow-up-down",
         native_unit_of_measurement=UnitOfLength.MILLIMETERS,
         suggested_display_precision=2,
         value_fn=lambda state, _: state.position_y,
@@ -1276,36 +1275,6 @@ _P2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
 )
 
 
-class XtoolActiveAlarms(XtoolReadOnlyEntity, SensorEntity):
-    """Number of active alarms, with each alarm's code and Studio's message.
-
-    The state is the count so automations can trigger on ``> 0``; the
-    attributes carry the detail. Codes are the ones Studio shows.
-    """
-
-    _attr_translation_key = "active_alarms"
-    _attr_icon = "mdi:alert-circle-outline"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
-    def __init__(self, coordinator: XtoolCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_unique_id("active_alarms")
-
-    @property
-    def native_value(self) -> int | None:
-        data = self.coordinator.data
-        return None if data is None else len(data.active_alarms)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        data = self.coordinator.data
-        alarms = [
-            {k: a.get(k) for k in ("code", "message", "level")}
-            for a in (data.active_alarms if data is not None else [])
-        ]
-        return {"alarms": alarms, "codes": [a["code"] for a in alarms]}
-
-
 # Not on the P2: /gethardwaretype answers "Not Implement"; the P2 never
 # reports a tool type or a working mode; the gyro reads 0 while the laser
 # stands still; laser power and module never change
@@ -1322,7 +1291,6 @@ def build_p2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
         e for e in build_rest_sensors(coordinator) if e.translation_key not in _P2_LEFT_OUT
     ]
     entities.extend(XtoolSensor(coordinator, d) for d in _P2_SENSOR_DESCRIPTIONS)
-    entities.append(XtoolActiveAlarms(coordinator))
     for entity in entities:
         if entity.translation_key in _P2_OFF_BY_DEFAULT:
             entity._attr_entity_registry_enabled_default = False

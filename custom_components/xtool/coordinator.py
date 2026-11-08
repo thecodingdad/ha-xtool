@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from homeassistant.components.event import EventEntity
     from homeassistant.components.fan import FanEntity
     from homeassistant.components.light import LightEntity
+    from homeassistant.components.lock import LockEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
     from homeassistant.components.sensor import SensorEntity
@@ -370,6 +371,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         return []
 
     def build_fans(self) -> list["FanEntity"]:
+        return []
+
+    def build_locks(self) -> list["LockEntity"]:
         return []
 
     def build_selects(self) -> list["SelectEntity"]:

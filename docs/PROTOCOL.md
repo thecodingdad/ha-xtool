@@ -2305,7 +2305,9 @@ temperature. `/processing/progress` is `{time, total, value}`.
 
 **Settings** are `POST /config/get` and `/config/set` with
 `{"alias": "config", "type": "user", "kv": ...}` (a list of keys to read, an
-object to write). Studio's Device settings for firmware 25 and later:
+object to write). A settings change, made by Studio or anyone else, is not
+pushed, so the integration reads the settings on every poll (5 s). Studio's
+Device settings for firmware 25 and later:
 
 | Studio label | key | values |
 |---|---|---|
@@ -2315,7 +2317,16 @@ object to write). Studio's Device settings for firmware 25 and later:
 | Exhaust fan | `purifierEnable` | bool; Studio also writes `purifierTimeout: 5` when turned on |
 | Exhaust time after processing | `purifierTimeout` | 1-60 s |
 | Lowest output power | `motionPowerCut` | `M37S<1-10>` |
-| Baseplate detection, Background brightness increase | none | stored in Studio only |
+| Baseplate detection, Background brightness increase | none | stored in Studio only; Background brightness increase only changes the exposure Studio sets before each photo (overview 100, or 1000 with it on; close camera 150, or 500) |
+
+**Laser head.** `POST /peripheral/laser_head` `{action: "go_to", x, y, f,
+waitTime}` moves the head; Studio sends `f: 9600` and `waitTime: 30000`, and
+the reply comes when the head has arrived. x and y are mm from home (0, 0) at
+the top left; x grows to the right and y toward the front (tested: (100, 50)
+put the close camera over the mat 100 mm right of and 50 mm below home).
+`{action: "get_coord", waitTime: 0}` reads `{x, y, z, a, u}`. A plain GET is
+refused. The integration reads the position once a minute and on the poll
+after each move.
 
 **Peripherals** (checked on a P2 with firmware 40.21.025):
 

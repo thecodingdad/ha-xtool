@@ -35,6 +35,7 @@ from ...const import XtoolStatus
 from ..base import DeviceInfo, XtoolDeviceState
 from .protocol import (
     PERIPHERAL_ACTION_GET_COORD,
+    PERIPHERAL_ACTION_GO_TO,
     REST_BRIGHTNESS_MAX,
     REST_CAMERA_PORT,
     REST_HTTP_PORT,
@@ -58,6 +59,9 @@ CONNECT_TIMEOUT_SECONDS = 5.0
 FRAME_HEADER_BYTES = 10
 # Settings and slow-moving values are read this often, not every poll
 SLOW_READ_SECONDS = 60.0
+# Studio's laser head moves: speed (mm/min) and how long the P2 may take
+P2_HEAD_SPEED = 9600
+P2_HEAD_WAIT_MS = 30000
 
 # Studio's config keys for the P2 (its deviceInfo read), plus Baseplate detection
 P2_CONFIG_KEYS: tuple[str, ...] = (
@@ -216,6 +220,8 @@ class P2Protocol(RestProtocol):
         self._push_notify: Callable[[], None] | None = None
         self._http: aiohttp.ClientSession | None = None
         self._next_slow_read = 0.0
+        # After a move, the next poll reads where the head is
+        self._read_position = True
         self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
@@ -399,6 +405,11 @@ class P2Protocol(RestProtocol):
                      REST_PATH_FILL_LIGHT, REST_PATH_IR_LED):
             replies[path] = await self._get_json(path)
         self._apply_peripherals(state, replies)
+        # The P2 pushes no settings changes (Studio's included): read them
+        # on every poll, so a change shows within one poll
+        await self._read_config(state)
+        if self._read_position:
+            await self._read_head_position(state)
         if started >= self._next_slow_read:
             await self._read_slow(state)
             if not self._is_offline():
@@ -490,14 +501,38 @@ class P2Protocol(RestProtocol):
             if "ir2" in ir:
                 state.ir_led_global = str(ir["ir2"]).lower() == "on"
 
-    async def _read_slow(self, state: XtoolDeviceState) -> None:
-        """Settings and values that change rarely."""
+    async def _read_config(self, state: XtoolDeviceState) -> None:
+        """Studio's Device settings."""
         config = await self._post_json(
             "/config/get", data={"alias": "config", "type": "user", "kv": list(P2_CONFIG_KEYS)},
         )
         if isinstance(config, dict):
             self._apply_config(state, config)
             await self._follow_studio_brightness(state, config.get("fillLightBrightness"))
+
+    async def _read_head_position(self, state: XtoolDeviceState) -> None:
+        coord = await self._post_json(
+            REST_PATH_LASER_HEAD, data={"action": PERIPHERAL_ACTION_GET_COORD, "waitTime": 0},
+        )
+        if isinstance(coord, dict):
+            self._read_position = False
+            if isinstance(coord.get("x"), (int, float)):
+                state.position_x = float(coord["x"])
+            if isinstance(coord.get("y"), (int, float)):
+                state.position_y = float(coord["y"])
+
+    async def move_laser_head(self, x: float, y: float, wait: int = 0) -> None:
+        """Move the head to (x, y) mm from home; Studio's speed and wait."""
+        self._read_position = True
+        await self._post(
+            REST_PATH_LASER_HEAD,
+            data={"action": PERIPHERAL_ACTION_GO_TO, "x": x, "y": y,
+                  "f": P2_HEAD_SPEED, "waitTime": wait or P2_HEAD_WAIT_MS},
+            timeout=P2_HEAD_WAIT_MS / 1000 + 5,
+        )
+
+    async def _read_slow(self, state: XtoolDeviceState) -> None:
+        """Values that change rarely."""
         for path, attr in (
             ("/peripheral/cooling_fan?action=get", "cooling_fan_running"),
             ("/peripheral/smoking_fan?action=get", "smoking_fan_running"),
@@ -521,14 +556,7 @@ class P2Protocol(RestProtocol):
                 state.standby_seconds = int(work["timeSystemWork"])
             except (KeyError, TypeError, ValueError):
                 pass
-        coord = await self._post_json(
-            REST_PATH_LASER_HEAD, data={"action": PERIPHERAL_ACTION_GET_COORD, "waitTime": 0},
-        )
-        if isinstance(coord, dict):
-            if isinstance(coord.get("x"), (int, float)):
-                state.position_x = float(coord["x"])
-            if isinstance(coord.get("y"), (int, float)):
-                state.position_y = float(coord["y"])
+        await self._read_head_position(state)
 
     async def _follow_studio_brightness(self, state: XtoolDeviceState, setting: Any) -> None:
         """When Studio's Fill light brightness changes, the right and left lights take it."""

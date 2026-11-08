@@ -434,7 +434,11 @@
         "name": "Deckel"
       },
       "baseplate": {
-        "name": "Bodenplatte"
+        "name": "Bodenplatte",
+        "state": {
+          "on": "Eingesetzt",
+          "off": "Entfernt"
+        }
       }
     },
     "camera": {
@@ -575,9 +579,6 @@
       },
       "accessory_largepurifierv3_auto_continue": {
         "name": "Auto-Weiterlauf"
-      },
-      "safety_lock": {
-        "name": "Sicherheitsschloss"
       },
       "aimed_measure_light": {
         "name": "Roter Punkt (nah)"
@@ -963,6 +964,11 @@
             }
           }
         }
+      }
+    },
+    "lock": {
+      "safety_lock": {
+        "name": "Sicherheitsschloss"
       }
     }
   },
