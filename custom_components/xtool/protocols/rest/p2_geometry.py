@@ -37,6 +37,15 @@ CLOSE_CAMERA_SIZE: Final = (140.0, 100.0)
 # (its laserMeasureOffset setting)
 MEASURE_OFFSET: Final = (64.3, 0.9)
 
+# The red dots, measured on a P2 on the mat on the slats. Close (the
+# IR sensor's spot): beside the head, a round dot. Quick: fixed in the
+# machine, lit from the back right corner, so long that way.
+CLOSE_RED_DOT_OFFSET: Final = (64.4, -0.8)
+CLOSE_RED_DOT_SIZE: Final = (2.0, 2.0)
+QUICK_RED_DOT: Final = (343.2, 81.9)
+QUICK_RED_DOT_SIZE: Final = (5.0, 2.0)
+QUICK_RED_DOT_FROM: Final = (BED_LEFT + 684.0, BED_TOP)
+
 # Slat positions: the 0 reference, the pitch, and how many each way.
 # Numbered from the 0 reference outward: 1-24 to the left, 1-23 to the
 # right (47 in all), each half a pitch further than the last number.
@@ -81,6 +90,14 @@ def slats() -> list[tuple[float, str]]:
         (SLAT_ZERO_X + (n - 0.5) * SLAT_PITCH, str(n)) for n in range(1, SLATS_RIGHT + 1)
     ]
     return left + right
+
+
+def quick_red_dot_angle() -> float:
+    """The quick red dot's long axis: degrees from X toward Y."""
+    import math
+
+    (x, y), (fx, fy) = QUICK_RED_DOT, QUICK_RED_DOT_FROM
+    return math.degrees(math.atan2(y - fy, x - fx))
 
 
 def close_camera_area(head_x: float, head_y: float) -> tuple[float, float, float, float]:

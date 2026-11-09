@@ -39,6 +39,7 @@ from ..ws_v2.entities import (
     _camera_view_values,
     _CameraDeviceEntity,
     _clamp_crop,
+    _crop_from_origin,
     _crop_numbers,
     _crop_settings,
     _thumbnail_registry,
@@ -480,7 +481,6 @@ class P2Alarm(XtoolReadOnlyEntity, BinarySensorEntity):
 
 # --- Camera views: crop presets, overlays, material height ----------------
 
-VIEW_NONE = "none"
 VIEW_CUSTOM = "custom"
 VIEW_UNCROPPED = "uncropped"
 VIEW_STUDIO = "studio"
@@ -495,12 +495,26 @@ P2_CROP_OPTIONS: dict[str, list[str]] = {
     "overview": [VIEW_UNCROPPED, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, VIEW_CUSTOM],
     "closeup": [VIEW_UNCROPPED, VIEW_STUDIO, VIEW_CUSTOM],
 }
-P2_OVERLAY_OPTIONS: dict[str, list[str]] = {
-    "overview": [VIEW_NONE, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS],
+# Drawn on top of the areas: where the laser fires, the slats, the red dots
+OVERLAY_MARKS = ("laser_target", "slat_lines", "red_dot_close", "red_dot_quick")
+# Each overlay is a switch; any number may be on
+P2_OVERLAYS: dict[str, list[str]] = {
+    "overview": [*p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, *OVERLAY_MARKS],
     "closeup": [
-        VIEW_NONE, VIEW_STUDIO, VIEW_CUSTOM,
+        VIEW_STUDIO, VIEW_CUSTOM,
         *(f"{OVERVIEW_PREFIX}{area}" for area in p2_geometry.AREAS),
+        *OVERLAY_MARKS,
     ],
+}
+# An area's colour, the same on both cameras (outline, origin and centre)
+AREA_COLORS: dict[str, tuple[int, int, int]] = {
+    "work_bed": (255, 214, 0),
+    "process_on_slats": (60, 220, 90),
+    "honeycomb_panel": (255, 140, 0),
+    "slats_removed": (200, 90, 255),
+    VIEW_UNCROPPED: (255, 105, 180),
+    VIEW_STUDIO: (255, 255, 255),
+    VIEW_CUSTOM: (120, 190, 255),
 }
 P2_MODE_OPTIONS = list(p2_geometry.MODES)
 # Settings changed while working: on the device page's Controls
@@ -513,6 +527,10 @@ def _key(camera_name: str, name: str) -> str:
     return name if camera_name == "overview" else f"{name}_{camera_name}"
 
 
+def _overlay_key(camera_name: str, overlay: str) -> str:
+    return _key(camera_name, f"overlay_{overlay}")
+
+
 def _p2_view(coordinator: XtoolCoordinator) -> dict[str, Any]:
     """The P2 cameras' view settings (kept by Home Assistant)."""
     view = getattr(coordinator, "_p2_view", None)
@@ -523,9 +541,8 @@ def _p2_view(coordinator: XtoolCoordinator) -> dict[str, Any]:
         }
         for camera_name in P2_VIEW_CAMERAS:
             view[_key(camera_name, "crop_preset")] = VIEW_CUSTOM
-            view[_key(camera_name, "overlay")] = VIEW_NONE
-            view[_key(camera_name, "laser_target")] = False
-            view[_key(camera_name, "slat_lines")] = False
+            for overlay in P2_OVERLAYS[camera_name]:
+                view[_overlay_key(camera_name, overlay)] = False
         coordinator._p2_view = view
     return view
 
@@ -606,7 +623,11 @@ def _preset_view(
     coordinator: XtoolCoordinator, camera_name: str, preset: str,
     calibration: CameraCalibration,
 ) -> CameraView | None:
-    """The crop that shows a preset (None: Custom, or not known yet)."""
+    """The crop that shows a preset (None: Custom, or not known yet).
+
+    As ``correct_image`` takes it: the centre from the calibrated area's
+    centre.
+    """
     if preset == VIEW_CUSTOM:
         return None
     if preset == VIEW_UNCROPPED:
@@ -622,14 +643,24 @@ def _preset_view(
     )
 
 
-def _show_crop(coordinator: XtoolCoordinator, camera_name: str, view: CameraView) -> None:
-    """Write a preset's crop into the camera's crop numbers."""
+def _show_crop(
+    coordinator: XtoolCoordinator, camera_name: str, view: CameraView,
+    calibration: CameraCalibration,
+) -> None:
+    """Write a preset's crop into the camera's crop numbers.
+
+    The overview's centre numbers are in the laser's mm (from home).
+    """
+    dx, dy = (
+        (calibration.area_mm / 2, calibration.area_h_mm / 2)
+        if _crop_from_origin(coordinator, camera_name) else (0.0, 0.0)
+    )
     stored = _camera_view_values(coordinator, camera_name)
     numbers = _crop_numbers(coordinator, camera_name)
     settings = _crop_settings(coordinator, camera_name)
     for setting, value in (
         ("width", view.width_mm), ("height", view.height_mm),
-        ("center_x", view.center_x_mm), ("center_y", view.center_y_mm),
+        ("center_x", view.center_x_mm + dx), ("center_y", view.center_y_mm + dy),
     ):
         value = _clamp_crop(setting, round(value, 1), settings)
         if stored.get(setting) == value:
@@ -652,7 +683,7 @@ def _thickness_or_distance(coordinator: XtoolCoordinator) -> tuple[str, float]:
 def _overlay_rect(
     coordinator: XtoolCoordinator, camera_name: str, name: str,
 ) -> tuple[float, float, float, float] | None:
-    """The Overlay choice's outline, in the laser's mm."""
+    """An area overlay's outline, in the laser's mm."""
     if camera_name == "overview":
         return _overview_area(coordinator, name)
     if name.startswith(OVERVIEW_PREFIX):
@@ -662,6 +693,10 @@ def _overlay_rect(
         return None
     left, top = _close_origin(coordinator)
     return (rect[0] + left, rect[1] + top, rect[2], rect[3])
+
+
+def _area_color(name: str) -> tuple[int, int, int]:
+    return AREA_COLORS[name.removeprefix(OVERVIEW_PREFIX).removeprefix(CLOSE_CAMERA_PREFIX)]
 
 
 def p2_correction(
@@ -676,29 +711,42 @@ def p2_correction(
     if preset is not None:
         # The crop numbers show the preset (a close camera area follows the head)
         view = preset
-        _show_crop(coordinator, camera_name, view)
+        _show_crop(coordinator, camera_name, view, calibration)
+
+    def on(overlay: str) -> bool:
+        return bool(settings[_overlay_key(camera_name, overlay)])
+
     # Overlays are worked out in the laser's mm, then moved to the
     # camera's calibrated area (the close camera's moves with the head)
-    rects = []
-    overlay_name = settings[_key(camera_name, "overlay")]
-    if overlay_name != VIEW_NONE:
-        rect = _overlay_rect(coordinator, camera_name, overlay_name)
-        if rect is not None:
-            rects.append(rect)
+    areas = []
+    for name in P2_OVERLAYS[camera_name]:
+        if name not in OVERLAY_MARKS and on(name):
+            rect = _overlay_rect(coordinator, camera_name, name)
+            if rect is not None:
+                areas.append((*rect, _area_color(name)))
     lines = ()
-    if settings[_key(camera_name, "slat_lines")]:
+    if on("slat_lines"):
         _, top, _, height = p2_geometry.AREAS["work_bed"]
         lines = tuple((x, top, x, top + height, label) for x, label in p2_geometry.slats())
-    markers = (_head(coordinator),) if settings[_key(camera_name, "laser_target")] else ()
+    head_x, head_y = _head(coordinator)
+    markers = ((head_x, head_y),) if on("laser_target") else ()
+    spots = []
+    if on("red_dot_close"):
+        dx, dy = p2_geometry.CLOSE_RED_DOT_OFFSET
+        spots.append((head_x + dx, head_y + dy, *p2_geometry.CLOSE_RED_DOT_SIZE, 0.0))
+    if on("red_dot_quick"):
+        spots.append((
+            *p2_geometry.QUICK_RED_DOT, *p2_geometry.QUICK_RED_DOT_SIZE,
+            p2_geometry.quick_red_dot_angle(),
+        ))
     overlay = None
-    if rects or lines or markers:
+    if areas or lines or markers or spots:
         dx, dy = (0.0, 0.0) if camera_name == "overview" else _close_origin(coordinator)
         overlay = Overlay(
-            rects=tuple((x - dx, y - dy, w, h) for x, y, w, h in rects),
+            areas=tuple((x - dx, y - dy, w, h, color) for x, y, w, h, color in areas),
             lines=tuple((x0 - dx, y0 - dy, x1 - dx, y1 - dy, t) for x0, y0, x1, y1, t in lines),
             markers=tuple((x - dx, y - dy) for x, y in markers),
-            # Home (X 0, Y 0): where the laser points with the head there
-            dots=((-dx, -dy),),
+            spots=tuple((x - dx, y - dy, *rest) for x, y, *rest in spots),
         )
     if camera_name != "overview":
         return {"view": view, "overlay": overlay}
@@ -712,13 +760,24 @@ def p2_correction(
 def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:
     """Whether the next picture depends on where the head is."""
     settings = _p2_view(coordinator)
-    if settings[_key(camera_name, "laser_target")]:
+
+    def on(overlay: str) -> bool:
+        return bool(settings[_overlay_key(camera_name, overlay)])
+
+    if on("laser_target") or on("red_dot_close"):
         return True
-    overlay = settings[_key(camera_name, "overlay")]
     if camera_name != "overview":
         # The close camera's picture moves with the head
-        return overlay != VIEW_NONE or settings[_key(camera_name, "slat_lines")]
-    return settings["crop_preset"] in CLOSE_CAMERA_AREAS or overlay in CLOSE_CAMERA_AREAS
+        return any(on(name) for name in P2_OVERLAYS[camera_name])
+    return settings["crop_preset"] in CLOSE_CAMERA_AREAS or any(
+        on(name) for name in CLOSE_CAMERA_AREAS
+    )
+
+
+async def _refresh(coordinator: XtoolCoordinator, camera_name: str) -> None:
+    camera = _thumbnail_registry(coordinator).cameras.get(camera_name)
+    if camera is not None:
+        await camera.refresh_picture()
 
 
 class _P2ViewSetting(_CameraDeviceEntity):
@@ -746,13 +805,11 @@ class _P2ViewSetting(_CameraDeviceEntity):
     async def _store(self, value: Any) -> None:
         _p2_view(self.coordinator)[self._key] = value
         self.async_write_ha_state()
-        camera = _thumbnail_registry(self.coordinator).cameras.get(self._camera_name)
-        if camera is not None:
-            await camera.refresh_picture()
+        await _refresh(self.coordinator, self._camera_name)
 
 
 class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
-    """A camera's crop preset or overlay, or the processing mode."""
+    """A camera's crop preset, or the processing mode."""
 
     def __init__(
         self, coordinator: XtoolCoordinator, camera_name: str, name: str, options: list[str],
@@ -772,7 +829,7 @@ class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
                 self.coordinator, self._camera_name, option, calibration,
             )
             if preset is not None:
-                _show_crop(self.coordinator, self._camera_name, preset)
+                _show_crop(self.coordinator, self._camera_name, preset, calibration)
         if self._key == "processing_mode":
             # Thickness or distance takes the new mode's range, and the
             # measured value its meaning
@@ -789,7 +846,7 @@ class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
 
 
 class P2ViewSwitch(_P2ViewSetting, SwitchEntity, RestoreEntity):
-    """Draw the laser target or the slats on a camera's picture."""
+    """One overlay on a camera's picture (any number may be on)."""
 
     @property
     def is_on(self) -> bool:
@@ -814,7 +871,8 @@ class P2ThicknessOrDistance(_P2ViewSetting, RestoreNumber):
     Process on slats: the material's thickness. Honeycomb panel and Slats
     removed: Studio's distance (25 mm above the slats minus the material's
     top). The range is the mode's; the overview picture shows the
-    material's top to scale.
+    material's top to scale. Measure thickness or distance fills it in;
+    it can be changed after.
     """
 
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
@@ -870,7 +928,6 @@ def build_p2_view_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
     entities: list[SelectEntity] = []
     for name in _view_cameras(coordinator):
         entities.append(P2ViewSelect(coordinator, name, "crop_preset", P2_CROP_OPTIONS[name]))
-        entities.append(P2ViewSelect(coordinator, name, "overlay", P2_OVERLAY_OPTIONS[name]))
         if name == "overview":
             entities.append(
                 P2ViewSelect(coordinator, name, "processing_mode", P2_MODE_OPTIONS),
@@ -880,9 +937,9 @@ def build_p2_view_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 def build_p2_view_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     return [
-        P2ViewSwitch(coordinator, name, setting)
+        P2ViewSwitch(coordinator, name, f"overlay_{overlay}")
         for name in _view_cameras(coordinator)
-        for setting in ("laser_target", "slat_lines")
+        for overlay in P2_OVERLAYS[name]
     ]
 
 
@@ -1026,8 +1083,12 @@ class P2MeasureDistance(XtoolMeasureDistance):
     """Reads the material under the IR sensor, beside the laser.
 
     The thickness is the P2's own reading at thickness 0 (its
-    ``laserMeasureOffset`` setting) minus the distance read.
+    ``laserMeasureOffset`` setting) minus the distance read. The result,
+    as the selected Mode takes it, goes into Thickness or distance (which
+    can be changed after).
     """
+
+    _attr_translation_key = "measure_thickness_or_distance"
 
     async def async_press(self) -> None:
         protocol = self.coordinator.protocol
@@ -1044,7 +1105,14 @@ class P2MeasureDistance(XtoolMeasureDistance):
                     round(reading["coord_x"] + offset["x"], 2),
                     round(reading["coord_y"] + offset["y"], 2),
                 )
+            settings = _p2_view(self.coordinator)
+            mode = settings["processing_mode"]
+            low, high = p2_geometry.MODES[mode]
+            value = round(p2_geometry.mode_value(mode, data.measured_thickness_mm), 1)
+            settings["thickness_or_distance"] = min(max(value, low), high)
         self.coordinator.async_set_updated_data(data)
+        if offset:
+            await _refresh(self.coordinator, "overview")
 
 
 class P2Measured(XtoolRestoringSensor, SensorEntity):

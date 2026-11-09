@@ -1825,6 +1825,12 @@ def _calibration_spec(
     return None
 
 
+def _crop_from_origin(coordinator: XtoolCoordinator, camera_name: str) -> bool:
+    """Whether a camera's crop centre is measured from its calibrated
+    area's origin (the laser's home on a P2) instead of its centre."""
+    return camera_name in (getattr(coordinator.model, "camera_crop_from_origin", ()) or ())
+
+
 def _crop_settings(
     coordinator: XtoolCoordinator, camera_name: str,
 ) -> tuple[tuple[str, float, float, float, str], ...]:
@@ -1837,6 +1843,13 @@ def _crop_settings(
         return CAMERA_VIEW_SETTINGS
     spec = _calibration_spec(coordinator, camera_name)
     width, height = spec[2] if spec else (CALIBRATED_AREA_MM, CALIBRATED_AREA_MM)
+    if _crop_from_origin(coordinator, camera_name):
+        return (
+            ("width", width, 0, round(width * 1.5), "mdi:arrow-expand-horizontal"),
+            ("height", height, 0, round(height * 1.5), "mdi:arrow-expand-vertical"),
+            ("center_x", width / 2, 0, width, "mdi:arrow-left-right"),
+            ("center_y", height / 2, 0, height, "mdi:arrow-up-down"),
+        )
     return (
         ("width", width, 0, round(width * 1.5), "mdi:arrow-expand-horizontal"),
         ("height", height, 0, round(height * 1.5), "mdi:arrow-expand-vertical"),
@@ -2084,7 +2097,15 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
 
     def _correction(self) -> dict[str, Any]:
         """How to straighten the next photo (``correct_image`` arguments)."""
-        return {"view": _camera_view(self.coordinator, self._camera_name)}
+        view = _camera_view(self.coordinator, self._camera_name)
+        if _crop_from_origin(self.coordinator, self._camera_name) and self._calibration:
+            # correct_image measures the centre from the area's centre
+            view = CameraView(
+                view.width_mm, view.height_mm,
+                view.center_x_mm - self._calibration.area_mm / 2,
+                view.center_y_mm - self._calibration.area_h_mm / 2,
+            )
+        return {"view": view}
 
     @callback
     def async_update_token(self) -> None:

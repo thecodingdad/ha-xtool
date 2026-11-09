@@ -900,11 +900,56 @@
       "quick_measure_light": {
         "name": "Red dot (quick)"
       },
-      "laser_target": {
-        "name": "Laser target"
+      "overlay_work_bed": {
+        "name": "Overlay work bed"
       },
-      "slat_lines": {
-        "name": "Slat lines"
+      "overlay_process_on_slats": {
+        "name": "Overlay process on slats"
+      },
+      "overlay_honeycomb_panel": {
+        "name": "Overlay honeycomb panel"
+      },
+      "overlay_slats_removed": {
+        "name": "Overlay slats removed"
+      },
+      "overlay_close_camera_uncropped": {
+        "name": "Overlay close camera (uncropped)"
+      },
+      "overlay_close_camera_studio": {
+        "name": "Overlay close camera (studio)"
+      },
+      "overlay_close_camera_custom": {
+        "name": "Overlay close camera (custom)"
+      },
+      "overlay_studio": {
+        "name": "Overlay studio"
+      },
+      "overlay_custom": {
+        "name": "Overlay custom"
+      },
+      "overlay_overview_work_bed": {
+        "name": "Overlay overview (work bed)"
+      },
+      "overlay_overview_process_on_slats": {
+        "name": "Overlay overview (process on slats)"
+      },
+      "overlay_overview_honeycomb_panel": {
+        "name": "Overlay overview (honeycomb panel)"
+      },
+      "overlay_overview_slats_removed": {
+        "name": "Overlay overview (slats removed)"
+      },
+      "overlay_laser_target": {
+        "name": "Overlay laser target"
+      },
+      "overlay_slat_lines": {
+        "name": "Overlay slat lines"
+      },
+      "overlay_red_dot_close": {
+        "name": "Overlay red dot (close)"
+      },
+      "overlay_red_dot_quick": {
+        "name": "Overlay red dot (quick)"
       }
     },
     "number": {
@@ -1139,25 +1184,6 @@
           "studio": "Studio"
         }
       },
-      "overlay": {
-        "name": "Overlay",
-        "state": {
-          "none": "None",
-          "work_bed": "Work bed",
-          "process_on_slats": "Process on slats",
-          "honeycomb_panel": "Honeycomb panel",
-          "slats_removed": "Slats removed",
-          "custom": "Custom",
-          "close_camera_uncropped": "Close camera (uncropped)",
-          "close_camera_studio": "Close camera (studio)",
-          "close_camera_custom": "Close camera (custom)",
-          "studio": "Studio",
-          "overview_work_bed": "Overview (work bed)",
-          "overview_process_on_slats": "Overview (process on slats)",
-          "overview_honeycomb_panel": "Overview (honeycomb panel)",
-          "overview_slats_removed": "Overview (slats removed)"
-        }
-      },
       "processing_mode": {
         "name": "Mode",
         "state": {
@@ -1253,6 +1279,9 @@
       },
       "autofocus": {
         "name": "Autofocus"
+      },
+      "measure_thickness_or_distance": {
+        "name": "Measure thickness or distance"
       }
     },
     "image": {

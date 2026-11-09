@@ -164,34 +164,53 @@ class SurfaceLift:
 class Overlay:
     """Shapes drawn on a straightened picture, in the calibrated area's mm.
 
-    ``rects``: (x, y, width, height). ``lines``: (x0, y0, x1, y1, label),
-    the label written at the lower end. ``markers``: (x, y), a red target.
-    ``dots``: (x, y), a blue dot.
+    ``areas``: (x, y, width, height, colour), an outline with a dot at its
+    origin (top left) and one at its centre, all in its colour.
+    ``lines``: (x0, y0, x1, y1, label), the label written at the lower
+    end. ``markers``: (x, y), a red target. ``spots``: (x, y, length,
+    width, angle), a soft red dot that size (mm), long along ``angle``
+    (degrees from X toward Y).
     """
 
-    rects: tuple[tuple[float, float, float, float], ...] = ()
+    areas: tuple[tuple[float, float, float, float, tuple[int, int, int]], ...] = ()
     lines: tuple[tuple[float, float, float, float, str], ...] = ()
     markers: tuple[tuple[float, float], ...] = ()
-    dots: tuple[tuple[float, float], ...] = ()
+    spots: tuple[tuple[float, float, float, float, float], ...] = ()
 
 
-OVERLAY_RECT_COLOR = (255, 214, 0)
 OVERLAY_LINE_COLOR = (0, 200, 255)
 OVERLAY_MARKER_COLOR = (255, 40, 40)
-OVERLAY_DOT_COLOR = (40, 120, 255)
+OVERLAY_SPOT_COLOR = (255, 30, 30)
 OVERLAY_LABEL_BACKGROUND = (0, 0, 0)
 
 
 def _draw_overlay(
     image: Any, overlay: Overlay, left_mm: float, top_mm: float, px_per_mm: float,
 ) -> None:
-    from PIL import ImageDraw, ImageFont  # Home Assistant ships Pillow
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont  # Home Assistant ships Pillow
 
     draw = ImageDraw.Draw(image)
     width = max(2, round(image.width / 500))
 
     def px(x_mm: float, y_mm: float) -> tuple[float, float]:
         return (x_mm - left_mm) * px_per_mm, (y_mm - top_mm) * px_per_mm
+
+    for x, y, length, breadth, angle in overlay.spots:
+        # A soft red dot: an ellipse, turned and blurred, painted on
+        cx, cy = px(x, y)
+        a = max(3.0, length * px_per_mm / 2)
+        b = max(3.0, breadth * px_per_mm / 2)
+        blur = max(1.0, min(a, b) / 2)
+        size = int(2 * (a + 3 * blur)) + 2
+        mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(mask).ellipse(
+            (size / 2 - a, size / 2 - b, size / 2 + a, size / 2 + b), fill=235,
+        )
+        # Pillow turns counterclockwise on screen; Y points down
+        mask = mask.rotate(-angle, resample=Image.Resampling.BICUBIC)
+        mask = mask.filter(ImageFilter.GaussianBlur(blur))
+        x0, y0 = round(cx - size / 2), round(cy - size / 2)
+        image.paste(OVERLAY_SPOT_COLOR, (x0, y0, x0 + size, y0 + size), mask)
 
     # Labels as large as the space between lines allows: white on black
     label_xs = sorted(px(x1, y1)[0] for _, _, x1, y1, label in overlay.lines if label)
@@ -215,22 +234,21 @@ def _draw_overlay(
             fill=OVERLAY_LABEL_BACKGROUND,
         )
         draw.text(at, label, fill=(255, 255, 255), font=font, anchor="md")
-    for x, y, w, h in overlay.rects:
+    dot = max(4.0, 1.2 * px_per_mm)
+    for x, y, w, h, color in overlay.areas:
         (a, b), (c, d) = px(x, y), px(x + w, y + h)
-        draw.rectangle((a, b, c, d), outline=OVERLAY_RECT_COLOR, width=width)
+        draw.rectangle((a, b, c, d), outline=color, width=width)
+        for cx, cy in ((a, b), ((a + c) / 2, (b + d) / 2)):
+            draw.ellipse(
+                (cx - dot, cy - dot, cx + dot, cy + dot), fill=color, outline=(0, 0, 0),
+                width=max(1, width // 2),
+            )
     for x, y in overlay.markers:
         cx, cy = px(x, y)
         r = max(6.0, 2.5 * px_per_mm)
         draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=OVERLAY_MARKER_COLOR, width=width)
         draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
         draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
-    for x, y in overlay.dots:
-        cx, cy = px(x, y)
-        r = max(5.0, 1.5 * px_per_mm)
-        draw.ellipse(
-            (cx - r, cy - r, cx + r, cy + r), fill=OVERLAY_DOT_COLOR, outline=(255, 255, 255),
-            width=max(1, width // 2),
-        )
 
 
 # A camera seen as a lens: rotation (3), translation (3), focal length,

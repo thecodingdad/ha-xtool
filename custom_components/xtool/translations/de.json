@@ -819,11 +819,56 @@
       "quick_measure_light": {
         "name": "Roter Punkt (schnell)"
       },
-      "laser_target": {
-        "name": "Laserziel"
+      "overlay_work_bed": {
+        "name": "Overlay Arbeitsbett"
       },
-      "slat_lines": {
-        "name": "Lamellenlinien"
+      "overlay_process_on_slats": {
+        "name": "Overlay auf Lamellen bearbeiten"
+      },
+      "overlay_honeycomb_panel": {
+        "name": "Overlay Wabenplatte"
+      },
+      "overlay_slats_removed": {
+        "name": "Overlay Lamellen entfernt"
+      },
+      "overlay_close_camera_uncropped": {
+        "name": "Overlay Nahkamera (unbeschnitten)"
+      },
+      "overlay_close_camera_studio": {
+        "name": "Overlay Nahkamera (Studio)"
+      },
+      "overlay_close_camera_custom": {
+        "name": "Overlay Nahkamera (benutzerdefiniert)"
+      },
+      "overlay_studio": {
+        "name": "Overlay Studio"
+      },
+      "overlay_custom": {
+        "name": "Overlay benutzerdefiniert"
+      },
+      "overlay_overview_work_bed": {
+        "name": "Overlay Übersicht (Arbeitsbett)"
+      },
+      "overlay_overview_process_on_slats": {
+        "name": "Overlay Übersicht (auf Lamellen bearbeiten)"
+      },
+      "overlay_overview_honeycomb_panel": {
+        "name": "Overlay Übersicht (Wabenplatte)"
+      },
+      "overlay_overview_slats_removed": {
+        "name": "Overlay Übersicht (Lamellen entfernt)"
+      },
+      "overlay_laser_target": {
+        "name": "Overlay Laserziel"
+      },
+      "overlay_slat_lines": {
+        "name": "Overlay Lamellenlinien"
+      },
+      "overlay_red_dot_close": {
+        "name": "Overlay roter Punkt (nah)"
+      },
+      "overlay_red_dot_quick": {
+        "name": "Overlay roter Punkt (schnell)"
       }
     },
     "number": {
@@ -1058,25 +1103,6 @@
           "studio": "Studio"
         }
       },
-      "overlay": {
-        "name": "Overlay",
-        "state": {
-          "none": "Keins",
-          "work_bed": "Arbeitsbett",
-          "process_on_slats": "Auf Lamellen bearbeiten",
-          "honeycomb_panel": "Wabenplatte",
-          "slats_removed": "Lamellen entfernt",
-          "custom": "Benutzerdefiniert",
-          "close_camera_uncropped": "Nahkamera (unbeschnitten)",
-          "close_camera_studio": "Nahkamera (Studio)",
-          "close_camera_custom": "Nahkamera (benutzerdefiniert)",
-          "studio": "Studio",
-          "overview_work_bed": "Übersicht (Arbeitsbett)",
-          "overview_process_on_slats": "Übersicht (auf Lamellen bearbeiten)",
-          "overview_honeycomb_panel": "Übersicht (Wabenplatte)",
-          "overview_slats_removed": "Übersicht (Lamellen entfernt)"
-        }
-      },
       "processing_mode": {
         "name": "Modus",
         "state": {
@@ -1172,6 +1198,9 @@
       },
       "autofocus": {
         "name": "Autofokus"
+      },
+      "measure_thickness_or_distance": {
+        "name": "Stärke oder Distanz messen"
       }
     },
     "image": {

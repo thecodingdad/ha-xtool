@@ -82,6 +82,7 @@ XTOOL_P2 = XtoolDeviceModel(
         ("overview", "global_calib.json", 4.0, (610.0, 305.0)),
         ("closeup", "local_calib.json", 20.0, (140.0, 100.0)),
     ),
+    camera_crop_from_origin=("overview",),
     firmware_content_id="xTool-p2-firmware",
     firmware_machine_type="MXP",
 )

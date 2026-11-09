@@ -98,9 +98,6 @@
       "crop_preset": {
         "default": "mdi:crop"
       },
-      "overlay": {
-        "default": "mdi:vector-rectangle"
-      },
       "processing_mode": {
         "default": "mdi:layers-outline"
       },
@@ -123,11 +120,56 @@
       }
     },
     "switch": {
-      "laser_target": {
+      "overlay_work_bed": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_process_on_slats": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_honeycomb_panel": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_slats_removed": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_close_camera_uncropped": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_close_camera_studio": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_close_camera_custom": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_studio": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_custom": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_overview_work_bed": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_overview_process_on_slats": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_overview_honeycomb_panel": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_overview_slats_removed": {
+        "default": "mdi:vector-rectangle"
+      },
+      "overlay_laser_target": {
         "default": "mdi:crosshairs"
       },
-      "slat_lines": {
+      "overlay_slat_lines": {
         "default": "mdi:view-parallel-outline"
+      },
+      "overlay_red_dot_close": {
+        "default": "mdi:target"
+      },
+      "overlay_red_dot_quick": {
+        "default": "mdi:laser-pointer"
       },
       "aimed_measure_light": {
         "default": "mdi:target"

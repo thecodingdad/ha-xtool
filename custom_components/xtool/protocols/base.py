@@ -164,6 +164,10 @@ class XtoolDeviceModel:
     camera_calibrations: tuple[
         tuple[str, str, float, tuple[float, float]], ...
     ] = ()
+    # Calibrated cameras whose crop centre is measured from the
+    # calibrated area's origin (the P2 overview's is the laser's home, so
+    # the centre is in the laser's coordinates) instead of its centre.
+    camera_crop_from_origin: tuple[str, ...] = ()
     # Cameras that look at the bed at an angle: ``(camera name,
     # perspective coefficients, photo size, result size)``. The eight
     # Pillow perspective coefficients map the result to the photo and
