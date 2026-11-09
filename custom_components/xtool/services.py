@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN
 from homeassistant.components.number import DOMAIN as NUMBER_DOMAIN
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.service import async_register_platform_entity_service
 import voluptuous as vol
 
@@ -23,6 +27,7 @@ ATTR_X = "x"
 ATTR_Y = "y"
 ATTR_STEP_X = "step_x"
 ATTR_STEP_Y = "step_y"
+ATTR_DEVICE_ID = "device_id"
 
 FOCUS_SCHEMA = {
     vol.Exclusive(ATTR_STEP, "move"): vol.Coerce(float),
@@ -32,6 +37,7 @@ FOCUS_SCHEMA = {
 
 _MM = vol.Coerce(float)
 MOVE_SCHEMA = {
+    vol.Required(ATTR_DEVICE_ID): cv.string,
     vol.Exclusive(ATTR_X, "x"): _MM,
     vol.Exclusive(ATTR_STEP_X, "x"): _MM,
     vol.Exclusive(ATTR_Y, "y"): _MM,
@@ -73,16 +79,31 @@ async def _async_focus(entity, call: ServiceCall) -> ServiceResponse:
 
 
 
-async def _async_move(entity, call: ServiceCall) -> ServiceResponse:
-    """Move the laser head to X and Y, or by signed steps (times ``steps``).
+def _laser_of_device(hass: HomeAssistant, device_id: str) -> Any:
+    """The coordinator of the xTool laser a device belongs to (None if none)."""
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        return None
+    for entry_id in device.config_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is not None and entry.domain == DOMAIN and entry.state is ConfigEntryState.LOADED:
+            return getattr(entry, "runtime_data", None)
+    return None
 
-    The response gives the position moved to. A move that stopped at a
-    limit is reported as an error that says so (the move was made).
+
+async def _async_move(call: ServiceCall) -> ServiceResponse:
+    """Move a P2's laser head to X and Y, or by signed steps (times ``steps``).
+
+    The laser is picked by its device. The response gives the position
+    moved to. A move that stopped at a limit is reported as an error that
+    says so (the move was made).
     """
-    move = getattr(entity, "async_move_laser_head", None)
-    if move is None:
+    from .protocols.rest.p2_entities import async_move_laser_head, p2_can_move
+
+    coordinator = _laser_of_device(call.hass, call.data[ATTR_DEVICE_ID])
+    if coordinator is None or not p2_can_move(coordinator):
         raise ServiceValidationError(
-            translation_domain=DOMAIN, translation_key="move_wrong_entity",
+            translation_domain=DOMAIN, translation_key="move_wrong_device",
         )
     data = call.data
     keys = (ATTR_X, ATTR_Y, ATTR_STEP_X, ATTR_STEP_Y)
@@ -90,7 +111,8 @@ async def _async_move(entity, call: ServiceCall) -> ServiceResponse:
         raise ServiceValidationError(
             translation_domain=DOMAIN, translation_key="move_needs_a_value",
         )
-    return await move(
+    return await async_move_laser_head(
+        coordinator,
         x=data.get(ATTR_X),
         y=data.get(ATTR_Y),
         step_x=data.get(ATTR_STEP_X),
@@ -130,13 +152,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
         func=_async_focus,
         supports_response=SupportsResponse.OPTIONAL,
     )
-    async_register_platform_entity_service(
-        hass,
+    # The head belongs to the laser, not to one entity: Move takes a device
+    hass.services.async_register(
         DOMAIN,
         "move",
-        entity_domain=NUMBER_DOMAIN,
-        schema=MOVE_SCHEMA,
-        func=_async_move,
+        _async_move,
+        schema=vol.Schema(MOVE_SCHEMA),
         supports_response=SupportsResponse.OPTIONAL,
     )
     async_register_platform_entity_service(

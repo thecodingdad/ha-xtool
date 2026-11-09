@@ -407,6 +407,7 @@
       "home_laser_head": { "name": "Home laser head" },
       "measure_distance": { "name": "Measure distance" },
       "measure_thickness_or_distance": { "name": "Measure thickness or distance" },
+      "move_laser": { "name": "Move laser" },
       "autofocus": { "name": "Autofocus" },
       "quit_lightburn": { "name": "Quit LightBurn mode" }
     },
@@ -521,6 +522,10 @@
       "name": "Move",
       "description": "Moves the P2's laser head as xTool Studio's move controls do: to an X and Y position, or by signed steps (repeated a number of times). An axis given neither stays where it is. Stops at 0-620 by 0-308 mm. Refused unless the laser is idle. Moves run one at a time, in the order asked.",
       "fields": {
+        "device_id": {
+          "name": "Laser",
+          "description": "The P2 whose laser head moves."
+        },
         "x": {
           "name": "X",
           "description": "Position to move to, in mm from home (0-620); X grows to the right."
@@ -579,8 +584,8 @@
     "camera_needs_a_value": {
       "message": "Give at least one crop value."
     },
-    "move_wrong_entity": {
-      "message": "This entity is not an xTool laser position."
+    "move_wrong_device": {
+      "message": "Pick an xTool P2: only its laser head can be moved."
     },
     "move_needs_a_value": {
       "message": "Give an X or Y position, or a step."

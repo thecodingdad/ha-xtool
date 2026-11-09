@@ -1004,6 +1004,14 @@ def _head_lock(coordinator: XtoolCoordinator) -> asyncio.Lock:
     return lock
 
 
+def _head_targets(coordinator: XtoolCoordinator) -> dict[str, float]:
+    """Laser position X and Y as set, waiting for Move laser."""
+    targets = getattr(coordinator, "_p2_head_targets", None)
+    if targets is None:
+        targets = coordinator._p2_head_targets = {}
+    return targets
+
+
 def _axis_limit_message(
     axis: str, target: float, wanted: float, highest: float,
     step: float | None, steps: int, current: float | None,
@@ -1074,6 +1082,8 @@ async def async_move_laser_head(
             axes.append((target, message))
         (target_x, message_x), (target_y, message_y) = axes
         await protocol.move_laser_head(target_x, target_y)
+        # Any move leaves no position waiting
+        _head_targets(coordinator).clear()
         if data is not None:
             data.position_x, data.position_y = target_x, target_y
             coordinator.async_set_updated_data(data)
@@ -1087,10 +1097,12 @@ async def async_move_laser_head(
 
 
 class P2LaserPosition(XtoolEntity, NumberEntity):
-    """Where the laser head is, in mm from home; setting it moves the head.
+    """Where the laser head is, in mm from home (X to the right, Y toward
+    the front).
 
-    X grows to the right and Y toward the front. The ``xtool.move``
-    action also moves the head in steps.
+    Setting it does not move the head: the value waits (and shows) until
+    Move laser moves there, so X and Y can both be set first. The
+    ``xtool.move`` action moves at once, also in steps.
     """
 
     # Not a distance number: the xtool.focus action targets those
@@ -1108,16 +1120,54 @@ class P2LaserPosition(XtoolEntity, NumberEntity):
         self._set_unique_id(f"laser_position_{axis}")
         self._attr_native_max_value = P2_HEAD_MAX_X if axis == "x" else P2_HEAD_MAX_Y
 
-    @property
-    def native_value(self) -> float | None:
+    def _position(self) -> float | None:
         d = self.coordinator.data
         return getattr(d, f"position_{self._axis}", None) if d else None
 
-    async def async_set_native_value(self, value: float) -> None:
-        await self.async_move_laser_head(**{self._axis: value})
+    @property
+    def native_value(self) -> float | None:
+        target = _head_targets(self.coordinator).get(self._axis)
+        return target if target is not None else self._position()
 
-    async def async_move_laser_head(self, **move: Any) -> dict[str, float]:
-        return await async_move_laser_head(self.coordinator, **move)
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """``waiting``: set, not moved there yet; ``position``: where the head is."""
+        return {
+            "waiting": self._axis in _head_targets(self.coordinator),
+            "position": self._position(),
+        }
+
+    async def async_set_native_value(self, value: float) -> None:
+        _head_targets(self.coordinator)[self._axis] = round(float(value), 2)
+        # Both axes show it (the other may wait too)
+        self.coordinator.async_update_listeners()
+
+
+class P2MoveLaser(XtoolEntity, ButtonEntity):
+    """Moves the head to Laser position X and Y as set (an axis not set
+    stays where it is)."""
+
+    _attr_translation_key = "move_laser"
+    _attr_icon = "mdi:axis-arrow"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("move_laser")
+
+    async def async_press(self) -> None:
+        targets = dict(_head_targets(self.coordinator))
+        if not targets:
+            raise HomeAssistantError(
+                "Laser head not moved: set Laser position X or Y first"
+            )
+        await async_move_laser_head(self.coordinator, x=targets.get("x"), y=targets.get("y"))
+
+
+def p2_can_move(coordinator: Any) -> bool:
+    """Whether a coordinator's laser is a P2 (its head can be moved)."""
+    from .p2 import P2Protocol
+
+    return isinstance(getattr(coordinator, "protocol", None), P2Protocol)
 
 
 class P2MeasureDistance(XtoolMeasureDistance):
@@ -1286,5 +1336,6 @@ def build_p2_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorE
 def build_p2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     return [
         XtoolHomeLaserHead(coordinator),
+        P2MoveLaser(coordinator),
         P2MeasureDistance(coordinator),
     ]

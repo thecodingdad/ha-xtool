@@ -1223,6 +1223,9 @@
       },
       "measure_thickness_or_distance": {
         "name": "Stärke oder Distanz messen"
+      },
+      "move_laser": {
+        "name": "Laser bewegen"
       }
     },
     "image": {
@@ -1400,6 +1403,10 @@
         "steps": {
           "name": "Schritte",
           "description": "Wie oft die Schritte angewendet werden."
+        },
+        "device_id": {
+          "name": "Laser",
+          "description": "Der P2, dessen Laserkopf sich bewegt."
         }
       }
     }
@@ -1417,11 +1424,11 @@
     "camera_needs_a_value": {
       "message": "Gib mindestens einen Wert für den Bildausschnitt an."
     },
-    "move_wrong_entity": {
-      "message": "Diese Entität ist keine xTool-Laserposition."
-    },
     "move_needs_a_value": {
       "message": "Gib eine X- oder Y-Position oder einen Schritt an."
+    },
+    "move_wrong_device": {
+      "message": "Wähle einen xTool P2: Nur sein Laserkopf kann bewegt werden."
     }
   }
 }

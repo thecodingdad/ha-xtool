@@ -1304,6 +1304,9 @@
       },
       "measure_thickness_or_distance": {
         "name": "Measure thickness or distance"
+      },
+      "move_laser": {
+        "name": "Move laser"
       }
     },
     "image": {
@@ -1481,6 +1484,10 @@
         "steps": {
           "name": "Steps",
           "description": "How many times to apply the steps."
+        },
+        "device_id": {
+          "name": "Laser",
+          "description": "The P2 whose laser head moves."
         }
       }
     }
@@ -1498,11 +1505,11 @@
     "camera_needs_a_value": {
       "message": "Give at least one crop value."
     },
-    "move_wrong_entity": {
-      "message": "This entity is not an xTool laser position."
-    },
     "move_needs_a_value": {
       "message": "Give an X or Y position, or a step."
+    },
+    "move_wrong_device": {
+      "message": "Pick an xTool P2: only its laser head can be moved."
     }
   }
 }

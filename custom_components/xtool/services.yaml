@@ -33,11 +33,14 @@ focus:
           unit_of_measurement: mm
           mode: box
 move:
-  target:
-    entity:
-      integration: xtool
-      domain: number
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - integration: xtool
+              model: xTool P2
     x:
       example: 100
       selector:
