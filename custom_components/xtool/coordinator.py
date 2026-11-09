@@ -46,8 +46,10 @@ from .protocols.base import (
 
 if TYPE_CHECKING:
     from homeassistant.components.binary_sensor import BinarySensorEntity
+    from homeassistant.components.image import ImageEntity
     from homeassistant.components.button import ButtonEntity
     from homeassistant.components.camera import Camera
+    from homeassistant.components.image import ImageEntity
     from homeassistant.components.event import EventEntity
     from homeassistant.components.fan import FanEntity
     from homeassistant.components.light import LightEntity
@@ -355,6 +357,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         return []
 
     def build_cameras(self) -> list["Camera"]:
+        return []
+
+    def build_images(self) -> list["ImageEntity"]:
         return []
 
     def build_fans(self) -> list["FanEntity"]:
