@@ -1136,6 +1136,30 @@ class WSV2Protocol(XtoolProtocol):
            ``PUT /v1/filetransfer/download`` + the ``function=
            file_stream`` WS + ``PUT /v1/filetransfer/finish``.
         """
+        # No photo while the laser is not connected: a request would only
+        # wait for its timeout, and requests would pile up behind it.
+        if not self._connected:
+            return None
+        # A request for a camera whose photo is already coming gets that
+        # photo, so requests never queue up: at most one photo per
+        # camera is waiting or being taken.
+        pending: dict[str, asyncio.Future[bytes | None]] = getattr(
+            self, "_camera_pending", None
+        ) or {}
+        self._camera_pending = pending
+        task = pending.get(camera_name)
+        if task is None:
+            task = asyncio.ensure_future(self._camera_snap_locked(camera_name))
+            pending[camera_name] = task
+            task.add_done_callback(
+                lambda done, name=camera_name: pending.pop(name, None)
+                if pending.get(name) is done else None
+            )
+        # Shielded: a viewer that goes away does not cancel the photo
+        # another request is waiting for.
+        return await asyncio.shield(task)
+
+    async def _camera_snap_locked(self, camera_name: str) -> bytes | None:
         # One photo at a time: each one opens its own file transfer,
         # and live views of both lenses would otherwise overlap them.
         lock = getattr(self, "_camera_lock", None)
