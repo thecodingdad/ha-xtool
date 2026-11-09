@@ -23,8 +23,9 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfLength, UnitOfTime
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
-from ...const import XtoolStatus
+from ...const import CONF_OVERLAY_COLORS, XtoolStatus
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringSensor
 from ..ws_v2.camera_correction import (
@@ -42,6 +43,7 @@ from ..ws_v2.entities import (
     _crop_from_origin,
     _crop_numbers,
     _crop_settings,
+    MIN_SNAPSHOT_INTERVAL,
     _thumbnail_registry,
     _WSV2Camera,
     _WSV2CameraThumbnailRefresh,
@@ -194,6 +196,16 @@ class P2Camera(_WSV2Camera):
             position = await self.coordinator.protocol.read_head_position()
             if position is not None:
                 data.position_x, data.position_y = position
+        if (
+            self._camera_name == "overview"
+            and _p2_view(self.coordinator)[_overlay_key("overview", CLOSE_CAMERA_IMAGE)]
+            and (self._last_snapshot is None
+                 or dt_util.utcnow() - self._last_snapshot_time >= max_age)
+        ):
+            # The close camera's picture, as new as this one
+            close = _thumbnail_registry(self.coordinator).cameras.get("closeup")
+            if close is not None:
+                await close._image(MIN_SNAPSHOT_INTERVAL)
         return await super()._image(max_age)
 
     def _correction(self) -> dict[str, Any]:
@@ -484,6 +496,7 @@ class P2Alarm(XtoolReadOnlyEntity, BinarySensorEntity):
 VIEW_CUSTOM = "custom"
 VIEW_UNCROPPED = "uncropped"
 VIEW_STUDIO = "studio"
+VIEW_SYNC_TO_MODE = "sync_to_mode"
 # The close camera's picture, seen by the overview camera
 CLOSE_CAMERA_PREFIX = "close_camera_"
 CLOSE_CAMERA_AREAS = tuple(
@@ -492,29 +505,23 @@ CLOSE_CAMERA_AREAS = tuple(
 # The overview's areas, drawn on the close camera's picture
 OVERVIEW_PREFIX = "overview_"
 P2_CROP_OPTIONS: dict[str, list[str]] = {
-    "overview": [VIEW_UNCROPPED, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, VIEW_CUSTOM],
+    "overview": [
+        VIEW_UNCROPPED, VIEW_SYNC_TO_MODE, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, VIEW_CUSTOM,
+    ],
     "closeup": [VIEW_UNCROPPED, VIEW_STUDIO, VIEW_CUSTOM],
 }
+# The close camera's picture itself, laid on the overview's
+CLOSE_CAMERA_IMAGE = "close_camera_image"
 # Drawn on top of the areas: where the laser fires, the slats, the red dots
 OVERLAY_MARKS = ("laser_target", "slat_lines", "red_dot_close", "red_dot_quick")
 # Each overlay is a switch; any number may be on
 P2_OVERLAYS: dict[str, list[str]] = {
-    "overview": [*p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, *OVERLAY_MARKS],
+    "overview": [*p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, CLOSE_CAMERA_IMAGE, *OVERLAY_MARKS],
     "closeup": [
         VIEW_STUDIO, VIEW_CUSTOM,
         *(f"{OVERVIEW_PREFIX}{area}" for area in p2_geometry.AREAS),
         *OVERLAY_MARKS,
     ],
-}
-# An area's colour, the same on both cameras (outline, origin and centre)
-AREA_COLORS: dict[str, tuple[int, int, int]] = {
-    "work_bed": (255, 214, 0),
-    "process_on_slats": (60, 220, 90),
-    "honeycomb_panel": (255, 140, 0),
-    "slats_removed": (200, 90, 255),
-    VIEW_UNCROPPED: (255, 105, 180),
-    VIEW_STUDIO: (255, 255, 255),
-    VIEW_CUSTOM: (120, 190, 255),
 }
 P2_MODE_OPTIONS = list(p2_geometry.MODES)
 # Settings changed while working: on the device page's Controls
@@ -634,6 +641,9 @@ def _preset_view(
         return CameraView(0, 0, 0, 0)
     if camera_name != "overview":
         return _close_view(coordinator, preset)
+    if preset == VIEW_SYNC_TO_MODE:
+        # The selected Mode's area
+        preset = _p2_view(coordinator)["processing_mode"]
     rect = _overview_area(coordinator, preset)
     if rect is None:
         return None
@@ -695,8 +705,23 @@ def _overlay_rect(
     return (rect[0] + left, rect[1] + top, rect[2], rect[3])
 
 
-def _area_color(name: str) -> tuple[int, int, int]:
-    return AREA_COLORS[name.removeprefix(OVERVIEW_PREFIX).removeprefix(CLOSE_CAMERA_PREFIX)]
+def _color(coordinator: XtoolCoordinator, key: str) -> tuple[int, int, int]:
+    """An overlay colour: the options' (Configure), or the default."""
+    entry = getattr(coordinator, "config_entry", None)
+    chosen = (getattr(entry, "options", None) or {}).get(CONF_OVERLAY_COLORS) or {}
+    value = chosen.get(key) if isinstance(chosen, dict) else None
+    if isinstance(value, (list, tuple)) and len(value) == 3:
+        try:
+            return tuple(min(max(int(c), 0), 255) for c in value)  # type: ignore[return-value]
+        except (TypeError, ValueError):
+            pass
+    return p2_geometry.OVERLAY_COLORS[key]
+
+
+def _area_color(coordinator: XtoolCoordinator, name: str) -> tuple[int, int, int]:
+    return _color(
+        coordinator, name.removeprefix(OVERVIEW_PREFIX).removeprefix(CLOSE_CAMERA_PREFIX),
+    )
 
 
 def p2_correction(
@@ -720,14 +745,26 @@ def p2_correction(
     # camera's calibrated area (the close camera's moves with the head)
     areas = []
     for name in P2_OVERLAYS[camera_name]:
-        if name not in OVERLAY_MARKS and on(name):
+        if name not in OVERLAY_MARKS and name != CLOSE_CAMERA_IMAGE and on(name):
             rect = _overlay_rect(coordinator, camera_name, name)
             if rect is not None:
-                areas.append((*rect, _area_color(name)))
+                areas.append((*rect, _area_color(coordinator, name)))
+    images = []
+    if camera_name == "overview" and on(CLOSE_CAMERA_IMAGE):
+        # The close camera's last picture, at its crop, where it was taken
+        close = _thumbnail_registry(coordinator).cameras.get("closeup")
+        picture = getattr(close, "_last_snapshot", None)
+        rect = _overlay_rect(coordinator, "closeup", VIEW_CUSTOM)
+        if picture and rect is not None:
+            images.append((*rect, picture))
     lines = ()
     if on("slat_lines"):
         _, top, _, height = p2_geometry.AREAS["work_bed"]
-        lines = tuple((x, top, x, top + height, label) for x, label in p2_geometry.slats())
+        # Every slat's line; the odd numbers written
+        lines = tuple(
+            (x, top, x, top + height, label if int(label) % 2 else "")
+            for x, label in p2_geometry.slats()
+        )
     head_x, head_y = _head(coordinator)
     markers = ((head_x, head_y),) if on("laser_target") else ()
     spots = []
@@ -740,13 +777,17 @@ def p2_correction(
             p2_geometry.quick_red_dot_angle(),
         ))
     overlay = None
-    if areas or lines or markers or spots:
+    if areas or lines or markers or spots or images:
         dx, dy = (0.0, 0.0) if camera_name == "overview" else _close_origin(coordinator)
         overlay = Overlay(
             areas=tuple((x - dx, y - dy, w, h, color) for x, y, w, h, color in areas),
             lines=tuple((x0 - dx, y0 - dy, x1 - dx, y1 - dy, t) for x0, y0, x1, y1, t in lines),
             markers=tuple((x - dx, y - dy) for x, y in markers),
             spots=tuple((x - dx, y - dy, *rest) for x, y, *rest in spots),
+            images=tuple((x - dx, y - dy, w, h, jpeg) for x, y, w, h, jpeg in images),
+            line_color=_color(coordinator, "slat_lines"),
+            marker_color=_color(coordinator, "laser_target"),
+            spot_color=_color(coordinator, "red_dots"),
         )
     if camera_name != "overview":
         return {"view": view, "overlay": overlay}
@@ -770,7 +811,7 @@ def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:
         # The close camera's picture moves with the head
         return any(on(name) for name in P2_OVERLAYS[camera_name])
     return settings["crop_preset"] in CLOSE_CAMERA_AREAS or any(
-        on(name) for name in CLOSE_CAMERA_AREAS
+        on(name) for name in (*CLOSE_CAMERA_AREAS, CLOSE_CAMERA_IMAGE)
     )
 
 
@@ -1092,27 +1133,38 @@ class P2MeasureDistance(XtoolMeasureDistance):
 
     async def async_press(self) -> None:
         protocol = self.coordinator.protocol
-        reading = await protocol.measure_material()
         data = self.coordinator.data
-        if reading is None or data is None:
+        if data is None:
             raise HomeAssistantError("The laser did not report a distance")
-        data.last_distance_mm = reading["distance"]
+        # The sensor reads only while the close red dot is on (otherwise
+        # the thickness is always 0); it is turned off again after
+        dot_was_on = bool(getattr(data, "ir_led_close", False))
+        if not dot_was_on:
+            await protocol.set_ir_led(1, True)
+        try:
+            reading = await protocol.measure_material()
+        finally:
+            if not dot_was_on:
+                await protocol.set_ir_led(1, False)
+        if reading is None:
+            raise HomeAssistantError("The laser did not report a distance")
+        # The P2 replies with the thickness (see measure_material)
+        thickness = round(reading["distance"], 2)
+        data.measured_thickness_mm = thickness
         offset = protocol.measure_offset(data)
         if offset:
-            data.measured_thickness_mm = round(offset["z"] - reading["distance"], 2)
-            if "coord_x" in reading and "coord_y" in reading:
-                data.measured_at = (
-                    round(reading["coord_x"] + offset["x"], 2),
-                    round(reading["coord_y"] + offset["y"], 2),
-                )
-            settings = _p2_view(self.coordinator)
-            mode = settings["processing_mode"]
-            low, high = p2_geometry.MODES[mode]
-            value = round(p2_geometry.mode_value(mode, data.measured_thickness_mm), 1)
-            settings["thickness_or_distance"] = min(max(value, low), high)
+            data.last_distance_mm = round(offset["z"] - thickness, 2)
+        dx, dy = (offset["x"], offset["y"]) if offset else p2_geometry.MEASURE_OFFSET
+        if "coord_x" in reading and "coord_y" in reading:
+            data.measured_at = (round(reading["coord_x"] + dx, 2), round(reading["coord_y"] + dy, 2))
+        # Thickness or distance takes it, as the Mode does (and can be changed after)
+        settings = _p2_view(self.coordinator)
+        mode = settings["processing_mode"]
+        low, high = p2_geometry.MODES[mode]
+        value = round(p2_geometry.mode_value(mode, thickness), 1)
+        settings["thickness_or_distance"] = min(max(value, low), high)
         self.coordinator.async_set_updated_data(data)
-        if offset:
-            await _refresh(self.coordinator, "overview")
+        await _refresh(self.coordinator, "overview")
 
 
 class P2Measured(XtoolRestoringSensor, SensorEntity):

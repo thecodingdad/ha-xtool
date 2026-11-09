@@ -168,19 +168,22 @@ class Overlay:
     origin (top left) and one at its centre, all in its colour.
     ``lines``: (x0, y0, x1, y1, label), the label written at the lower
     end. ``markers``: (x, y), a red target. ``spots``: (x, y, length,
-    width, angle), a soft red dot that size (mm), long along ``angle``
-    (degrees from X toward Y).
+    width, angle), a soft dot that size (mm), long along ``angle`` (degrees from X
+    toward Y). ``images``: (x, y, width, height, JPEG), a picture laid on
+    that area, under everything else. The colours are the lines', the
+    markers' and the spots'.
     """
 
     areas: tuple[tuple[float, float, float, float, tuple[int, int, int]], ...] = ()
     lines: tuple[tuple[float, float, float, float, str], ...] = ()
     markers: tuple[tuple[float, float], ...] = ()
     spots: tuple[tuple[float, float, float, float, float], ...] = ()
+    images: tuple[tuple[float, float, float, float, bytes], ...] = ()
+    line_color: tuple[int, int, int] = (0, 200, 255)
+    marker_color: tuple[int, int, int] = (255, 40, 40)
+    spot_color: tuple[int, int, int] = (255, 30, 30)
 
 
-OVERLAY_LINE_COLOR = (0, 200, 255)
-OVERLAY_MARKER_COLOR = (255, 40, 40)
-OVERLAY_SPOT_COLOR = (255, 30, 30)
 OVERLAY_LABEL_BACKGROUND = (0, 0, 0)
 
 
@@ -195,6 +198,18 @@ def _draw_overlay(
     def px(x_mm: float, y_mm: float) -> tuple[float, float]:
         return (x_mm - left_mm) * px_per_mm, (y_mm - top_mm) * px_per_mm
 
+    for x, y, w, h, jpeg in overlay.images:
+        (a, b), (c, d) = px(x, y), px(x + w, y + h)
+        size = (round(c - a), round(d - b))
+        if size[0] < 1 or size[1] < 1:
+            continue
+        try:
+            picture = Image.open(io.BytesIO(jpeg)).convert("RGB").resize(
+                size, Image.Resampling.BILINEAR,
+            )
+        except Exception:  # noqa: BLE001 - a bad picture is left out
+            continue
+        image.paste(picture, (round(a), round(b)))
     for x, y, length, breadth, angle in overlay.spots:
         # A soft red dot: an ellipse, turned and blurred, painted on
         cx, cy = px(x, y)
@@ -210,7 +225,7 @@ def _draw_overlay(
         mask = mask.rotate(-angle, resample=Image.Resampling.BICUBIC)
         mask = mask.filter(ImageFilter.GaussianBlur(blur))
         x0, y0 = round(cx - size / 2), round(cy - size / 2)
-        image.paste(OVERLAY_SPOT_COLOR, (x0, y0, x0 + size, y0 + size), mask)
+        image.paste(overlay.spot_color, (x0, y0, x0 + size, y0 + size), mask)
 
     # Labels as large as the space between lines allows: white on black
     label_xs = sorted(px(x1, y1)[0] for _, _, x1, y1, label in overlay.lines if label)
@@ -223,7 +238,7 @@ def _draw_overlay(
     labels = []
     for x0, y0, x1, y1, label in overlay.lines:
         start, end = px(x0, y0), px(x1, y1)
-        draw.line((start, end), fill=OVERLAY_LINE_COLOR, width=max(1, width // 2))
+        draw.line((start, end), fill=overlay.line_color, width=max(1, width // 2))
         if label and -size < end[0] < image.width + size:
             labels.append(((end[0], min(end[1], image.height) - 2), label))
     for at, label in labels:
@@ -233,7 +248,11 @@ def _draw_overlay(
             (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad),
             fill=OVERLAY_LABEL_BACKGROUND,
         )
-        draw.text(at, label, fill=(255, 255, 255), font=font, anchor="md")
+        # Bold: the letters drawn with an outline of their own colour
+        draw.text(
+            at, label, fill=(255, 255, 255), font=font, anchor="md",
+            stroke_width=max(1, size // 14), stroke_fill=(255, 255, 255),
+        )
     dot = max(4.0, 1.2 * px_per_mm)
     for x, y, w, h, color in overlay.areas:
         (a, b), (c, d) = px(x, y), px(x + w, y + h)
@@ -246,9 +265,9 @@ def _draw_overlay(
     for x, y in overlay.markers:
         cx, cy = px(x, y)
         r = max(6.0, 2.5 * px_per_mm)
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=OVERLAY_MARKER_COLOR, width=width)
-        draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
-        draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=overlay.marker_color, width=width)
+        draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=overlay.marker_color, width=max(1, width // 2))
+        draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=overlay.marker_color, width=max(1, width // 2))
 
 
 # A camera seen as a lens: rotation (3), translation (3), focal length,
@@ -452,19 +471,33 @@ class _SurfaceMap:
         return 0 <= x <= self.cal.src_w and 0 <= y <= self.cal.src_h
 
     def _reach(self, fixed: float, start: float, step: float, across: bool) -> float:
-        """How far (whole mm) from ``start`` the photo goes one way."""
-        distance = 0
-        while distance < 1000:
-            nxt = start + (distance + 1) * step
-            point = (nxt, fixed) if across else (fixed, nxt)
-            if not self._in_photo(*point):
-                break
-            distance += 1
-        return float(distance)
+        """How far (whole mm, up to 1000) from ``start`` the photo goes one
+        way: a binary search, as the photo has no holes along a line."""
+
+        def inside(distance: int) -> bool:
+            nxt = start + distance * step
+            return self._in_photo(*((nxt, fixed) if across else (fixed, nxt)))
+
+        low, high = 0, 1000  # inside(low) holds; past high is not searched
+        if inside(high):
+            return float(high)
+        while high - low > 1:
+            middle = (low + high) // 2
+            if inside(middle):
+                low = middle
+            else:
+                high = middle
+        return float(low)
 
     def photo_size_mm(self) -> tuple[float, float]:
         """The widest area, centred on the calibrated area, that the photo
         fills: across every grid row, and down every grid column."""
+        size = getattr(self, "_photo_size", None)
+        if size is None:
+            size = self._photo_size = self._measure_photo_size()
+        return size
+
+    def _measure_photo_size(self) -> tuple[float, float]:
         cx = self.width_mm / 2
         cy = self.height_mm / 2
         half_w = min(
@@ -508,13 +541,15 @@ def _surface_map(
     return _SurfaceMap(calibration, lens)
 
 
-def photo_size_mm(calibration: CameraCalibration) -> tuple[float, float]:
+def photo_size_mm(
+    calibration: CameraCalibration, lens: tuple[float, ...] | None = None,
+) -> tuple[float, float]:
     """The widest area the photo fills, in whole mm (a crop side of 0).
 
     Centred on the calibrated area, so no part of it is outside the
     photo across the calibrated rows (width) and columns (height).
     """
-    return _surface_map(calibration).photo_size_mm()
+    return _surface_map(calibration, lens).photo_size_mm()
 
 
 def correct_image(
@@ -539,7 +574,7 @@ def correct_image(
 
     view = view or CameraView()
     if view.width_mm <= 0 or view.height_mm <= 0:
-        photo_w, photo_h = photo_size_mm(calibration)
+        photo_w, photo_h = photo_size_mm(calibration, lens)
         view = CameraView(
             view.width_mm if view.width_mm > 0 else photo_w,
             view.height_mm if view.height_mm > 0 else photo_h,

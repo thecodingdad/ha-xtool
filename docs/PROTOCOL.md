@@ -2090,7 +2090,7 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
 | `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
 | `/peripheral/digital_lock` | POST `{action:"on/off"}` | Lock (`on`) or unlock the cover (P2) |
-| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR distance |
+| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (thickness 0). `/peripheral/quest/ir_measure_distance` gives the sensor's own distance (0 with the dot off). |
 | `/device/modeSwitch` | POST | Switch mode |
 | `/parts` | POST multipart, port **8080** | Upload accessory firmware |
 | `/partsProgress` | GET, port **8080** | Accessory firmware update progress |

@@ -141,6 +141,9 @@
       "overlay_close_camera_custom": {
         "default": "mdi:vector-rectangle"
       },
+      "overlay_close_camera_image": {
+        "default": "mdi:image-area"
+      },
       "overlay_studio": {
         "default": "mdi:vector-rectangle"
       },

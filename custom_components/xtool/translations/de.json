@@ -61,6 +61,24 @@
           "firmware_check_interval": "Wie oft die Integration die xTool Cloud nach neuen Firmware-Versionen prüft.",
           "stats_poll_interval": "Wie oft Lebensdauer-Statistiken (M2008) aktualisiert werden. Langsam veränderliche Werte, Standard 5 Minuten.",
           "dongle_poll_interval": "Wie oft die verbundenen Bluetooth-Zubehörteile (M9098) abgefragt werden."
+        },
+        "sections": {
+          "overlay_colors": {
+            "name": "Overlay-Farben",
+            "description": "Farben der Overlays der P2-Kameras.",
+            "data": {
+              "work_bed": "Arbeitsbett",
+              "process_on_slats": "Auf Lamellen bearbeiten",
+              "honeycomb_panel": "Wabenplatte",
+              "slats_removed": "Lamellen entfernt",
+              "uncropped": "Unbeschnitten (Nahkamera)",
+              "studio": "Studio (Nahkamera)",
+              "custom": "Benutzerdefiniert (Nahkamera)",
+              "laser_target": "Laserziel",
+              "slat_lines": "Lamellenlinien",
+              "red_dots": "Rote Punkte"
+            }
+          }
         }
       },
       "confirm_updates": {
@@ -869,6 +887,9 @@
       },
       "overlay_red_dot_quick": {
         "name": "Overlay roter Punkt (schnell)"
+      },
+      "overlay_close_camera_image": {
+        "name": "Overlay Nahkamera (Bild)"
       }
     },
     "number": {
@@ -1100,7 +1121,8 @@
           "close_camera_uncropped": "Nahkamera (unbeschnitten)",
           "close_camera_studio": "Nahkamera (Studio)",
           "close_camera_custom": "Nahkamera (benutzerdefiniert)",
-          "studio": "Studio"
+          "studio": "Studio",
+          "sync_to_mode": "Mit Modus abgleichen"
         }
       },
       "processing_mode": {

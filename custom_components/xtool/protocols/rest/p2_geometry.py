@@ -66,6 +66,21 @@ OVERVIEW_LENS: Final = (
     -0.0391064, 0.0953019, -0.0592302, 0.0143858,
 )
 
+# Overlay colours until changed in the integration's options: each area
+# (the same on both cameras), the laser target, the slat lines, the red dots
+OVERLAY_COLORS: Final[dict[str, tuple[int, int, int]]] = {
+    "work_bed": (255, 214, 0),
+    "process_on_slats": (60, 220, 90),
+    "honeycomb_panel": (255, 140, 0),
+    "slats_removed": (200, 90, 255),
+    "uncropped": (255, 105, 180),
+    "studio": (255, 255, 255),
+    "custom": (120, 190, 255),
+    "laser_target": (255, 40, 40),
+    "slat_lines": (0, 200, 255),
+    "red_dots": (255, 30, 30),
+}
+
 # Studio's distance (Honeycomb panel, Slats removed) is measured down
 # from this height above the slats
 DISTANCE_ZERO: Final = 25.0

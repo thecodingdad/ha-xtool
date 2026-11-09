@@ -15,7 +15,9 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    ColorRGBSelector,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
@@ -26,6 +28,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
+    CONF_OVERLAY_COLORS,
     CONF_FIRMWARE_CHECK_INTERVAL,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
@@ -420,6 +423,19 @@ class XtoolOptionsFlow(OptionsFlow):
                     unit_of_measurement="s",
                     mode=NumberSelectorMode.BOX,
                 )
+            )
+
+        # P2: the camera overlays' colours, in a section that opens
+        if "overview" in (getattr(model, "camera_names", ()) or ()):
+            from .protocols.rest.p2_geometry import OVERLAY_COLORS
+
+            chosen = current_options.get(CONF_OVERLAY_COLORS) or {}
+            schema_dict[vol.Required(CONF_OVERLAY_COLORS)] = section(
+                vol.Schema({
+                    vol.Optional(key, default=list(chosen.get(key, default))): ColorRGBSelector()
+                    for key, default in OVERLAY_COLORS.items()
+                }),
+                {"collapsed": True},
             )
 
         return self.async_show_form(

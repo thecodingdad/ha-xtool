@@ -61,6 +61,24 @@
           "firmware_check_interval": "How often the integration queries the xTool cloud for firmware updates.",
           "stats_poll_interval": "How often lifetime statistics are refreshed (M2008). Slow-changing values, default is 5 minutes.",
           "dongle_poll_interval": "How often connected Bluetooth accessories are queried (M9098)."
+        },
+        "sections": {
+          "overlay_colors": {
+            "name": "Overlay colors",
+            "description": "Colors of the P2 camera overlays.",
+            "data": {
+              "work_bed": "Work bed",
+              "process_on_slats": "Process on slats",
+              "honeycomb_panel": "Honeycomb panel",
+              "slats_removed": "Slats removed",
+              "uncropped": "Uncropped (close camera)",
+              "studio": "Studio (close camera)",
+              "custom": "Custom (close camera)",
+              "laser_target": "Laser target",
+              "slat_lines": "Slat lines",
+              "red_dots": "Red dots"
+            }
+          }
         }
       },
       "confirm_updates": {
@@ -950,6 +968,9 @@
       },
       "overlay_red_dot_quick": {
         "name": "Overlay red dot (quick)"
+      },
+      "overlay_close_camera_image": {
+        "name": "Overlay close camera (image)"
       }
     },
     "number": {
@@ -1181,7 +1202,8 @@
           "close_camera_uncropped": "Close camera (uncropped)",
           "close_camera_studio": "Close camera (studio)",
           "close_camera_custom": "Close camera (custom)",
-          "studio": "Studio"
+          "studio": "Studio",
+          "sync_to_mode": "Sync to Mode"
         }
       },
       "processing_mode": {

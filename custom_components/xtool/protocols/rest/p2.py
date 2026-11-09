@@ -226,8 +226,6 @@ class P2Protocol(RestProtocol):
         self._push_notify: Callable[[], None] | None = None
         self._http: aiohttp.ClientSession | None = None
         self._next_slow_read = 0.0
-        # After a move, the next poll reads where the head is
-        self._read_position = True
         self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
@@ -414,8 +412,9 @@ class P2Protocol(RestProtocol):
         # The P2 pushes no settings changes (Studio's included): read them
         # on every poll, so a change shows within one poll
         await self._read_config(state)
-        if self._read_position:
-            await self._read_head_position(state)
+        # Where the head is, on every poll: it moves while the P2 homes
+        # after power on, and with Studio's moves
+        await self._read_head_position(state)
         if started >= self._next_slow_read:
             await self._read_slow(state)
             if not self._is_offline():
@@ -531,7 +530,6 @@ class P2Protocol(RestProtocol):
         x, y = coord.get("x"), coord.get("y")
         if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (x, y)):
             return None
-        self._read_position = False
         return float(x), float(y)
 
     def measure_offset(self, state: XtoolDeviceState) -> dict[str, float]:
@@ -548,7 +546,14 @@ class P2Protocol(RestProtocol):
         return found if {"x", "y", "z"} <= found.keys() else {}
 
     async def measure_material(self) -> dict[str, float] | None:
-        """One IR reading: the distance and the head position it was taken at."""
+        """One IR reading and the head position it was taken at.
+
+        The reply's ``distance`` is the material's thickness: the reading at
+        thickness 0 (``laserMeasureOffset`` Z) minus what the sensor read
+        (``/peripheral/quest/ir_measure_distance`` gives the sensor's own
+        distance). The sensor reads only while the close red dot (``ir_led``
+        index 1) is on; otherwise the thickness is always 0.
+        """
         result = await self._post_json(
             REST_PATH_IR_DISTANCE,
             data={"action": PERIPHERAL_ACTION_GET_DISTANCE, "type": "single"},
@@ -564,7 +569,6 @@ class P2Protocol(RestProtocol):
 
     async def move_laser_head(self, x: float, y: float, wait: int = 0) -> None:
         """Move the head to (x, y) mm from home; Studio's speed and wait."""
-        self._read_position = True
         await self._post(
             REST_PATH_LASER_HEAD,
             data={"action": PERIPHERAL_ACTION_GO_TO, "x": x, "y": y,
@@ -597,7 +601,6 @@ class P2Protocol(RestProtocol):
                 state.standby_seconds = int(work["timeSystemWork"])
             except (KeyError, TypeError, ValueError):
                 pass
-        await self._read_head_position(state)
 
     async def _follow_studio_brightness(self, state: XtoolDeviceState, setting: Any) -> None:
         """When Studio's Fill light brightness changes, the right and left lights take it."""
