@@ -101,6 +101,8 @@ MIN_SNAPSHOT_INTERVAL = timedelta(seconds=2)
 # When a new photo fails, the last one is served only while it is
 # younger than this, so a stale picture is not shown as current.
 MAX_SNAPSHOT_AGE = timedelta(seconds=60)
+# A photo just taken answers picture requests for this long
+PICTURE_REUSE_SECONDS = 2.0
 # Time from the start of one live-view frame to the next. These
 # lasers have no live video: the firmware answers
 # ``/v1/platform/camera/live`` with "camera disabled", and Studio only
@@ -2021,6 +2023,9 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             None,
         )
 
+    # When the last photo finished (monotonic seconds)
+    _snapshot_done = float("-inf")
+
     @property
     def is_streaming(self) -> bool:
         return self._live_viewers > 0
@@ -2193,6 +2198,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         if image:
             self._last_photo = image
             image = await self._corrected(image)
+            self._snapshot_done = time.monotonic()
             # Age counts from when the photo was asked for, so a live
             # view's next frame (one interval later) takes a new photo
             # instead of reusing this one.
@@ -2208,6 +2214,15 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         width: int | None = None,
         height: int | None = None,
     ) -> bytes | None:
+        # The picture asked for right after a refresh is the photo that
+        # refresh just took, even when taking it took longer than
+        # MIN_SNAPSHOT_INTERVAL (its age counts from when it was asked
+        # for); otherwise the thumbnail goes black while a new one is taken.
+        if (
+            self._last_snapshot is not None
+            and time.monotonic() - self._snapshot_done < PICTURE_REUSE_SECONDS
+        ):
+            return self._last_snapshot
         return await self._image(MIN_SNAPSHOT_INTERVAL)
 
     async def handle_async_mjpeg_stream(
@@ -2825,7 +2840,7 @@ def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
     # ("camera_main", "camera_deep") so HA shows them distinctly.
     is_single = len(names) == 1
     cameras: list[Camera] = []
-    icons = ("mdi:camera", "mdi:camera-burst")
+    icons = ("mdi:camera-document", "mdi:cctv")
     for idx, name in enumerate(names):
         suffix = "" if is_single else f"_{name}"
         key = f"camera{suffix}"

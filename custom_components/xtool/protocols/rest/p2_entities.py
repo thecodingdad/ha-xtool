@@ -27,7 +27,13 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from ...const import XtoolStatus
 from ...coordinator import XtoolCoordinator
 from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringSensor
-from ..ws_v2.camera_correction import CameraCalibration, CameraView, Overlay, SurfaceLift
+from ..ws_v2.camera_correction import (
+    CameraCalibration,
+    CameraView,
+    Overlay,
+    SurfaceLift,
+    photo_size_mm,
+)
 from ..ws_v2.entities import (
     _camera_view,
     _camera_view_values,
@@ -167,11 +173,19 @@ class P2Camera(_WSV2Camera):
     sleeping P2, so while it sleeps the last photo is shown.
     """
 
+    # The last photo is drawn again (while the P2 sleeps) after a change
+    _redraw = True
+
+    async def refresh_picture(self) -> None:
+        self._redraw = True
+        await super().refresh_picture()
+
     async def _image(self, max_age: Any) -> bytes | None:
         data = self.coordinator.data
         if data is not None and data.status == XtoolStatus.SLEEPING:
             # No new photo, but the last one shows the settings of now
-            if self._last_photo is not None and self._calibration is not None:
+            if self._redraw and self._last_photo is not None and self._calibration is not None:
+                self._redraw = False
                 self._last_snapshot = await self._corrected(self._last_photo)
             return self._last_snapshot
         if data is not None and p2_view_needs_head(self.coordinator, self._camera_name):
@@ -219,7 +233,7 @@ def _p2_camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
 
 
 def build_p2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
-    icons = {"overview": "mdi:camera", "closeup": "mdi:camera-burst"}
+    icons = {"overview": "mdi:cctv", "closeup": "mdi:camera-document"}
     return [
         P2Camera(coordinator, key, name, icons.get(name), key)
         for key, name in _p2_camera_keys(coordinator)
@@ -468,10 +482,35 @@ class P2Alarm(XtoolReadOnlyEntity, BinarySensorEntity):
 
 VIEW_NONE = "none"
 VIEW_CUSTOM = "custom"
-VIEW_CLOSE_CAMERA = "close_camera"
-P2_CROP_OPTIONS = [VIEW_CUSTOM, *p2_geometry.AREAS, VIEW_CLOSE_CAMERA]
-P2_OVERLAY_OPTIONS = [VIEW_NONE, *p2_geometry.AREAS, VIEW_CLOSE_CAMERA, VIEW_CUSTOM]
+VIEW_UNCROPPED = "uncropped"
+VIEW_STUDIO = "studio"
+# The close camera's picture, seen by the overview camera
+CLOSE_CAMERA_PREFIX = "close_camera_"
+CLOSE_CAMERA_AREAS = tuple(
+    f"{CLOSE_CAMERA_PREFIX}{kind}" for kind in (VIEW_UNCROPPED, VIEW_STUDIO, VIEW_CUSTOM)
+)
+# The overview's areas, drawn on the close camera's picture
+OVERVIEW_PREFIX = "overview_"
+P2_CROP_OPTIONS: dict[str, list[str]] = {
+    "overview": [VIEW_UNCROPPED, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, VIEW_CUSTOM],
+    "closeup": [VIEW_UNCROPPED, VIEW_STUDIO, VIEW_CUSTOM],
+}
+P2_OVERLAY_OPTIONS: dict[str, list[str]] = {
+    "overview": [VIEW_NONE, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS],
+    "closeup": [
+        VIEW_NONE, VIEW_STUDIO, VIEW_CUSTOM,
+        *(f"{OVERVIEW_PREFIX}{area}" for area in p2_geometry.AREAS),
+    ],
+}
 P2_MODE_OPTIONS = list(p2_geometry.MODES)
+# Settings changed while working: on the device page's Controls
+P2_CONTROL_SETTINGS = ("crop_preset", "processing_mode", "thickness_or_distance")
+P2_VIEW_CAMERAS = ("overview", "closeup")
+
+
+def _key(camera_name: str, name: str) -> str:
+    """A view setting's key: the overview's own name, the others suffixed."""
+    return name if camera_name == "overview" else f"{name}_{camera_name}"
 
 
 def _p2_view(coordinator: XtoolCoordinator) -> dict[str, Any]:
@@ -479,13 +518,14 @@ def _p2_view(coordinator: XtoolCoordinator) -> dict[str, Any]:
     view = getattr(coordinator, "_p2_view", None)
     if view is None:
         view = {
-            "crop_preset": VIEW_CUSTOM,
-            "overlay": VIEW_NONE,
             "processing_mode": "process_on_slats",
             "thickness_or_distance": p2_geometry.MODE_DEFAULT,
-            "slat_overlay": False,
-            "overlay_closeup": False,
         }
+        for camera_name in P2_VIEW_CAMERAS:
+            view[_key(camera_name, "crop_preset")] = VIEW_CUSTOM
+            view[_key(camera_name, "overlay")] = VIEW_NONE
+            view[_key(camera_name, "laser_target")] = False
+            view[_key(camera_name, "slat_lines")] = False
         coordinator._p2_view = view
     return view
 
@@ -495,58 +535,98 @@ def _head(coordinator: XtoolCoordinator) -> tuple[float, float]:
     return (getattr(d, "position_x", 0.0) or 0.0, getattr(d, "position_y", 0.0) or 0.0)
 
 
-def _measure_spot(coordinator: XtoolCoordinator) -> tuple[float, float]:
-    """Where Measure distance reads, for the head's position now."""
-    offset = {}
-    if coordinator.data is not None:
-        try:
-            offset = coordinator.protocol.measure_offset(coordinator.data)
-        except AttributeError:
-            offset = {}
-    dx, dy = (
-        (offset["x"], offset["y"]) if isinstance(offset, dict) and offset
-        else p2_geometry.MEASURE_OFFSET
-    )
-    x, y = _head(coordinator)
-    return x + dx, y + dy
+def _calibration_of(coordinator: XtoolCoordinator, camera_name: str) -> CameraCalibration | None:
+    camera = _thumbnail_registry(coordinator).cameras.get(camera_name)
+    return getattr(camera, "_calibration", None)
 
 
-def _area(coordinator: XtoolCoordinator, name: str) -> tuple[float, float, float, float] | None:
-    if name == VIEW_CLOSE_CAMERA:
-        return p2_geometry.close_camera_area(*_head(coordinator))
-    return p2_geometry.AREAS.get(name)
-
-
-def _custom_rect(
-    coordinator: XtoolCoordinator, calibration: CameraCalibration,
+def _view_rect(
+    view: CameraView, area: tuple[float, float], photo: tuple[float, float] | None,
 ) -> tuple[float, float, float, float] | None:
-    """The overview's crop numbers as a rectangle (none for a side of 0)."""
-    v = _camera_view(coordinator, "overview")
-    if v.width_mm <= 0 or v.height_mm <= 0:
+    """The area a crop shows, in its camera's calibrated mm.
+
+    A side of 0 is the whole photo that way; ``photo`` is that size
+    (unknown before the camera's calibration is read).
+    """
+    width = view.width_mm if view.width_mm > 0 else (photo[0] if photo else 0)
+    height = view.height_mm if view.height_mm > 0 else (photo[1] if photo else 0)
+    if width <= 0 or height <= 0:
         return None
     return (
-        calibration.area_mm / 2 + v.center_x_mm - v.width_mm / 2,
-        calibration.area_h_mm / 2 + v.center_y_mm - v.height_mm / 2,
-        v.width_mm,
-        v.height_mm,
+        area[0] / 2 + view.center_x_mm - width / 2,
+        area[1] / 2 + view.center_y_mm - height / 2,
+        width, height,
     )
+
+
+def _close_origin(coordinator: XtoolCoordinator) -> tuple[float, float]:
+    """Where the close camera's calibrated area starts, for the head now."""
+    left, top, _, _ = p2_geometry.close_camera_area(*_head(coordinator))
+    return left, top
+
+
+def _close_view(coordinator: XtoolCoordinator, kind: str) -> CameraView:
+    """The close camera's crop for Uncropped, Studio or Custom."""
+    if kind == VIEW_UNCROPPED:
+        return CameraView(0, 0, 0, 0)
+    if kind == VIEW_STUDIO:
+        return CameraView(*p2_geometry.CLOSE_CAMERA_SIZE, 0, 0)
+    return _camera_view(coordinator, "closeup")
+
+
+def _close_rect(
+    coordinator: XtoolCoordinator, kind: str,
+) -> tuple[float, float, float, float] | None:
+    """What the close camera shows (Uncropped, Studio or Custom), in its mm."""
+    calibration = _calibration_of(coordinator, "closeup")
+    if calibration is None:
+        area, photo = p2_geometry.CLOSE_CAMERA_SIZE, None
+    else:
+        area = (calibration.area_mm, calibration.area_h_mm)
+        photo = photo_size_mm(calibration)
+    return _view_rect(_close_view(coordinator, kind), area, photo)
+
+
+def _overview_area(
+    coordinator: XtoolCoordinator, name: str,
+) -> tuple[float, float, float, float] | None:
+    """A bed area, or what the close camera shows, in the laser's mm."""
+    if name in p2_geometry.AREAS:
+        return p2_geometry.AREAS[name]
+    if name in CLOSE_CAMERA_AREAS:
+        rect = _close_rect(coordinator, name.removeprefix(CLOSE_CAMERA_PREFIX))
+        if rect is None:
+            return None
+        left, top = _close_origin(coordinator)
+        return (rect[0] + left, rect[1] + top, rect[2], rect[3])
+    return None
 
 
 def _preset_view(
-    coordinator: XtoolCoordinator, preset: str, calibration: CameraCalibration,
-) -> CameraView:
-    """The overview crop that shows a preset's area."""
-    x, y, w, h = _area(coordinator, preset)
+    coordinator: XtoolCoordinator, camera_name: str, preset: str,
+    calibration: CameraCalibration,
+) -> CameraView | None:
+    """The crop that shows a preset (None: Custom, or not known yet)."""
+    if preset == VIEW_CUSTOM:
+        return None
+    if preset == VIEW_UNCROPPED:
+        return CameraView(0, 0, 0, 0)
+    if camera_name != "overview":
+        return _close_view(coordinator, preset)
+    rect = _overview_area(coordinator, preset)
+    if rect is None:
+        return None
+    x, y, w, h = rect
     return CameraView(
         w, h, x + w / 2 - calibration.area_mm / 2, y + h / 2 - calibration.area_h_mm / 2,
     )
 
 
-def _show_crop(coordinator: XtoolCoordinator, view: CameraView) -> None:
-    """Write a preset's crop into the overview's crop numbers."""
-    stored = _camera_view_values(coordinator, "overview")
-    numbers = _crop_numbers(coordinator, "overview")
-    settings = _crop_settings(coordinator, "overview")
+def _show_crop(coordinator: XtoolCoordinator, camera_name: str, view: CameraView) -> None:
+    """Write a preset's crop into the camera's crop numbers."""
+    stored = _camera_view_values(coordinator, camera_name)
+    numbers = _crop_numbers(coordinator, camera_name)
+    settings = _crop_settings(coordinator, camera_name)
     for setting, value in (
         ("width", view.width_mm), ("height", view.height_mm),
         ("center_x", view.center_x_mm), ("center_y", view.center_y_mm),
@@ -569,81 +649,91 @@ def _thickness_or_distance(coordinator: XtoolCoordinator) -> tuple[str, float]:
     return mode, min(max(float(settings["thickness_or_distance"]), low), high)
 
 
+def _overlay_rect(
+    coordinator: XtoolCoordinator, camera_name: str, name: str,
+) -> tuple[float, float, float, float] | None:
+    """The Overlay choice's outline, in the laser's mm."""
+    if camera_name == "overview":
+        return _overview_area(coordinator, name)
+    if name.startswith(OVERVIEW_PREFIX):
+        return p2_geometry.AREAS.get(name.removeprefix(OVERVIEW_PREFIX))
+    rect = _close_rect(coordinator, name)
+    if rect is None:
+        return None
+    left, top = _close_origin(coordinator)
+    return (rect[0] + left, rect[1] + top, rect[2], rect[3])
+
+
 def p2_correction(
     coordinator: XtoolCoordinator, camera_name: str, calibration: CameraCalibration,
     view: CameraView,
 ) -> dict[str, Any]:
     """``correct_image`` arguments for a P2 camera's next photo."""
     settings = _p2_view(coordinator)
+    preset = _preset_view(
+        coordinator, camera_name, settings[_key(camera_name, "crop_preset")], calibration,
+    )
+    if preset is not None:
+        # The crop numbers show the preset (a close camera area follows the head)
+        view = preset
+        _show_crop(coordinator, camera_name, view)
+    # Overlays are worked out in the laser's mm, then moved to the
+    # camera's calibrated area (the close camera's moves with the head)
+    rects = []
+    overlay_name = settings[_key(camera_name, "overlay")]
+    if overlay_name != VIEW_NONE:
+        rect = _overlay_rect(coordinator, camera_name, overlay_name)
+        if rect is not None:
+            rects.append(rect)
+    lines = ()
+    if settings[_key(camera_name, "slat_lines")]:
+        _, top, _, height = p2_geometry.AREAS["work_bed"]
+        lines = tuple((x, top, x, top + height, label) for x, label in p2_geometry.slats())
+    markers = (_head(coordinator),) if settings[_key(camera_name, "laser_target")] else ()
+    overlay = None
+    if rects or lines or markers:
+        dx, dy = (0.0, 0.0) if camera_name == "overview" else _close_origin(coordinator)
+        overlay = Overlay(
+            rects=tuple((x - dx, y - dy, w, h) for x, y, w, h in rects),
+            lines=tuple((x0 - dx, y0 - dy, x1 - dx, y1 - dy, t) for x0, y0, x1, y1, t in lines),
+            markers=tuple((x - dx, y - dy) for x, y in markers),
+            # Home (X 0, Y 0): where the laser points with the head there
+            dots=((-dx, -dy),),
+        )
     if camera_name != "overview":
-        if not settings.get(f"overlay_{camera_name}"):
-            return {"view": view}
-        # The close camera's picture moves with the head
-        left, top, _, _ = p2_geometry.close_camera_area(*_head(coordinator))
-        spot_x, spot_y = _measure_spot(coordinator)
-        width, height = p2_geometry.CLOSE_CAMERA_SIZE
-        return {
-            "view": view,
-            "overlay": Overlay(
-                lines=tuple(
-                    (x - left, 0.0, x - left, height, label)
-                    for x, label in p2_geometry.slats()
-                    if 0 <= x - left <= width
-                ),
-                markers=((spot_x - left, spot_y - top),),
-            ),
-        }
-    crop = settings["crop_preset"]
-    if crop != VIEW_CUSTOM:
-        # The crop numbers show the preset (the close camera's follows the head)
-        view = _preset_view(coordinator, crop, calibration)
-        _show_crop(coordinator, view)
+        return {"view": view, "overlay": overlay}
     mode, value = _thickness_or_distance(coordinator)
     surface = p2_geometry.surface_height(mode, value) - calibration.plane_mm
     camera_x, camera_y, camera_height = p2_geometry.OVERVIEW_CAMERA
     lift = SurfaceLift(camera_x, camera_y, camera_height, surface) if surface else None
-    rects = []
-    overlay_name = settings["overlay"]
-    if overlay_name == VIEW_CUSTOM:
-        rect = _custom_rect(coordinator, calibration)
-        if rect is not None:
-            rects.append(rect)
-    elif overlay_name != VIEW_NONE:
-        rects.append(_area(coordinator, overlay_name))
-    lines = ()
-    if settings["slat_overlay"]:
-        _, top, _, height = p2_geometry.AREAS["work_bed"]
-        lines = tuple((x, top, x, top + height, label) for x, label in p2_geometry.slats())
-    overlay = None
-    if rects or lines:
-        overlay = Overlay(rects=tuple(rects), lines=lines, markers=(_measure_spot(coordinator),))
     return {"view": view, "lift": lift, "overlay": overlay, "lens": p2_geometry.OVERVIEW_LENS}
 
 
 def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:
     """Whether the next picture depends on where the head is."""
     settings = _p2_view(coordinator)
+    if settings[_key(camera_name, "laser_target")]:
+        return True
+    overlay = settings[_key(camera_name, "overlay")]
     if camera_name != "overview":
-        return bool(settings.get(f"overlay_{camera_name}"))
-    return (
-        settings["crop_preset"] == VIEW_CLOSE_CAMERA
-        or settings["overlay"] != VIEW_NONE
-        or settings["slat_overlay"]
-    )
+        # The close camera's picture moves with the head
+        return overlay != VIEW_NONE or settings[_key(camera_name, "slat_lines")]
+    return settings["crop_preset"] in CLOSE_CAMERA_AREAS or overlay in CLOSE_CAMERA_AREAS
 
 
 class _P2ViewSetting(_CameraDeviceEntity):
     """A P2 camera view setting, kept by Home Assistant (not the laser)."""
 
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(self, coordinator: XtoolCoordinator, camera_name: str, key: str) -> None:
+    def __init__(self, coordinator: XtoolCoordinator, camera_name: str, name: str) -> None:
         super().__init__(coordinator)
         self._camera_name = camera_name
-        self._key = key
-        self._set_unique_id(f"camera_{camera_name}_{key}")
+        self._key = _key(camera_name, name)
+        self._set_unique_id(f"camera_{camera_name}_{self._key}")
         self._use_camera_device(camera_name)
-        self._attr_translation_key = key.removesuffix(f"_{camera_name}")
+        self._attr_translation_key = name
+        self._attr_entity_category = (
+            None if name in P2_CONTROL_SETTINGS else EntityCategory.CONFIG
+        )
 
     @property
     def available(self) -> bool:
@@ -662,12 +752,12 @@ class _P2ViewSetting(_CameraDeviceEntity):
 
 
 class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
-    """Crop preset, overlay, or processing mode of the overview camera."""
+    """A camera's crop preset or overlay, or the processing mode."""
 
     def __init__(
-        self, coordinator: XtoolCoordinator, camera_name: str, key: str, options: list[str],
+        self, coordinator: XtoolCoordinator, camera_name: str, name: str, options: list[str],
     ) -> None:
-        super().__init__(coordinator, camera_name, key)
+        super().__init__(coordinator, camera_name, name)
         self._attr_options = options
 
     @property
@@ -676,11 +766,13 @@ class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
 
     async def async_select_option(self, option: str) -> None:
         settings = _p2_view(self.coordinator)
-        if self._key == "crop_preset" and option != VIEW_CUSTOM:
-            camera = _thumbnail_registry(self.coordinator).cameras.get(self._camera_name)
-            calibration = getattr(camera, "_calibration", None)
-            if calibration is not None:
-                _show_crop(self.coordinator, _preset_view(self.coordinator, option, calibration))
+        if self._key == _key(self._camera_name, "crop_preset"):
+            calibration = _calibration_of(self.coordinator, self._camera_name)
+            preset = None if calibration is None else _preset_view(
+                self.coordinator, self._camera_name, option, calibration,
+            )
+            if preset is not None:
+                _show_crop(self.coordinator, self._camera_name, preset)
         if self._key == "processing_mode":
             # Thickness or distance takes the new mode's range, and the
             # measured value its meaning
@@ -697,7 +789,7 @@ class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
 
 
 class P2ViewSwitch(_P2ViewSetting, SwitchEntity, RestoreEntity):
-    """Draw the slats (and the measuring spot) on a camera's picture."""
+    """Draw the laser target or the slats on a camera's picture."""
 
     @property
     def is_on(self) -> bool:
@@ -756,35 +848,42 @@ class P2ThicknessOrDistance(_P2ViewSetting, RestoreNumber):
 
 
 class P2CropNumber(_WSV2CameraViewNumber):
-    """An overview crop number: a preset fills it in, and editing it
+    """A P2 camera's crop number: a preset fills it in, and editing it
     switches Crop to Custom (keeping the other numbers)."""
+
+    _attr_entity_category = None
 
     async def async_set_native_value(self, value: float) -> None:
         settings = _p2_view(self.coordinator)
-        if settings["crop_preset"] != VIEW_CUSTOM:
-            settings["crop_preset"] = VIEW_CUSTOM
+        key = _key(self._camera_name, "crop_preset")
+        if settings[key] != VIEW_CUSTOM:
+            settings[key] = VIEW_CUSTOM
             self.coordinator.async_update_listeners()
         await super().async_set_native_value(value)
 
 
+def _view_cameras(coordinator: XtoolCoordinator) -> list[str]:
+    return [name for name in P2_VIEW_CAMERAS if name in coordinator.model.camera_names]
+
+
 def build_p2_view_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
-    if "overview" not in coordinator.model.camera_names:
-        return []
-    return [
-        P2ViewSelect(coordinator, "overview", "crop_preset", P2_CROP_OPTIONS),
-        P2ViewSelect(coordinator, "overview", "overlay", P2_OVERLAY_OPTIONS),
-        P2ViewSelect(coordinator, "overview", "processing_mode", P2_MODE_OPTIONS),
-    ]
+    entities: list[SelectEntity] = []
+    for name in _view_cameras(coordinator):
+        entities.append(P2ViewSelect(coordinator, name, "crop_preset", P2_CROP_OPTIONS[name]))
+        entities.append(P2ViewSelect(coordinator, name, "overlay", P2_OVERLAY_OPTIONS[name]))
+        if name == "overview":
+            entities.append(
+                P2ViewSelect(coordinator, name, "processing_mode", P2_MODE_OPTIONS),
+            )
+    return entities
 
 
 def build_p2_view_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
-    names = coordinator.model.camera_names
-    entities: list[SwitchEntity] = []
-    if "overview" in names:
-        entities.append(P2ViewSwitch(coordinator, "overview", "slat_overlay"))
-    if "closeup" in names:
-        entities.append(P2ViewSwitch(coordinator, "closeup", "overlay_closeup"))
-    return entities
+    return [
+        P2ViewSwitch(coordinator, name, setting)
+        for name in _view_cameras(coordinator)
+        for setting in ("laser_target", "slat_lines")
+    ]
 
 
 def build_p2_view_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
@@ -958,7 +1057,8 @@ class P2Measured(XtoolRestoringSensor, SensorEntity):
     home) and the distance the sensor read.
     """
 
-    _attr_device_class = SensorDeviceClass.DISTANCE
+    # No distance device class: Home Assistant would show it in inches
+    # with US units, and Studio's settings are in mm
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_suggested_display_precision = 1
     _restored_thickness: float | None = None
@@ -1028,9 +1128,7 @@ def build_p2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         *(P2CameraExposure(coordinator, name) for _, name in cameras),
         *(_WSV2CameraThumbnailRefresh(coordinator, key, name) for key, name in cameras),
         *(
-            (P2CropNumber if name == "overview" else _WSV2CameraViewNumber)(
-                coordinator, *setting, camera_name=name,
-            )
+            P2CropNumber(coordinator, *setting, camera_name=name)
             for _, name in cameras
             for setting in _crop_settings(coordinator, name)
         ),

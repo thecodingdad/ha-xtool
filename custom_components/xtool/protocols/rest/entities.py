@@ -233,7 +233,7 @@ class XtoolMeasureDistance(XtoolEntity, ButtonEntity):
     """Trigger an IR distance measurement (P2/P2S)."""
 
     _attr_translation_key = "measure_distance"
-    _attr_icon = "mdi:signal-distance-variant"
+    _attr_icon = "mdi:arrow-collapse-down"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)

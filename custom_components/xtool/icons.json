@@ -123,14 +123,14 @@
       }
     },
     "switch": {
-      "slat_overlay": {
+      "laser_target": {
+        "default": "mdi:crosshairs"
+      },
+      "slat_lines": {
         "default": "mdi:view-parallel-outline"
       },
-      "overlay": {
-        "default": "mdi:vector-rectangle"
-      },
       "aimed_measure_light": {
-        "default": "mdi:spotlight-beam"
+        "default": "mdi:target"
       },
       "quick_measure_light": {
         "default": "mdi:laser-pointer"

@@ -165,18 +165,21 @@ class Overlay:
     """Shapes drawn on a straightened picture, in the calibrated area's mm.
 
     ``rects``: (x, y, width, height). ``lines``: (x0, y0, x1, y1, label),
-    the label written at the lower end. ``markers``: (x, y), a ring with
-    a cross.
+    the label written at the lower end. ``markers``: (x, y), a red target.
+    ``dots``: (x, y), a blue dot.
     """
 
     rects: tuple[tuple[float, float, float, float], ...] = ()
     lines: tuple[tuple[float, float, float, float, str], ...] = ()
     markers: tuple[tuple[float, float], ...] = ()
+    dots: tuple[tuple[float, float], ...] = ()
 
 
 OVERLAY_RECT_COLOR = (255, 214, 0)
 OVERLAY_LINE_COLOR = (0, 200, 255)
 OVERLAY_MARKER_COLOR = (255, 40, 40)
+OVERLAY_DOT_COLOR = (40, 120, 255)
+OVERLAY_LABEL_BACKGROUND = (0, 0, 0)
 
 
 def _draw_overlay(
@@ -190,19 +193,28 @@ def _draw_overlay(
     def px(x_mm: float, y_mm: float) -> tuple[float, float]:
         return (x_mm - left_mm) * px_per_mm, (y_mm - top_mm) * px_per_mm
 
+    # Labels as large as the space between lines allows: white on black
+    label_xs = sorted(px(x1, y1)[0] for _, _, x1, y1, label in overlay.lines if label)
+    spacing = min((b - a for a, b in zip(label_xs, label_xs[1:]) if b > a), default=image.width)
+    size = round(min(max(12.0, min(image.height / 25, spacing * 0.8)), 64.0))
     try:
-        font = ImageFont.load_default(size=max(10, round(4 * px_per_mm)))
+        font = ImageFont.load_default(size=size)
     except TypeError:  # Pillow before 10.1
         font = ImageFont.load_default()
+    labels = []
     for x0, y0, x1, y1, label in overlay.lines:
         start, end = px(x0, y0), px(x1, y1)
         draw.line((start, end), fill=OVERLAY_LINE_COLOR, width=max(1, width // 2))
-        if label:
-            draw.text(
-                (end[0], min(end[1], image.height - 2)), label,
-                fill=OVERLAY_LINE_COLOR, font=font, anchor="md",
-                stroke_width=1, stroke_fill=(0, 0, 0),
-            )
+        if label and -size < end[0] < image.width + size:
+            labels.append(((end[0], min(end[1], image.height) - 2), label))
+    for at, label in labels:
+        box = draw.textbbox(at, label, font=font, anchor="md")
+        pad = max(2, size // 8)
+        draw.rectangle(
+            (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad),
+            fill=OVERLAY_LABEL_BACKGROUND,
+        )
+        draw.text(at, label, fill=(255, 255, 255), font=font, anchor="md")
     for x, y, w, h in overlay.rects:
         (a, b), (c, d) = px(x, y), px(x + w, y + h)
         draw.rectangle((a, b, c, d), outline=OVERLAY_RECT_COLOR, width=width)
@@ -212,6 +224,13 @@ def _draw_overlay(
         draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=OVERLAY_MARKER_COLOR, width=width)
         draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
         draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=OVERLAY_MARKER_COLOR, width=max(1, width // 2))
+    for x, y in overlay.dots:
+        cx, cy = px(x, y)
+        r = max(5.0, 1.5 * px_per_mm)
+        draw.ellipse(
+            (cx - r, cy - r, cx + r, cy + r), fill=OVERLAY_DOT_COLOR, outline=(255, 255, 255),
+            width=max(1, width // 2),
+        )
 
 
 # A camera seen as a lens: rotation (3), translation (3), focal length,
