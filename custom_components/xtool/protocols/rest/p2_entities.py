@@ -582,7 +582,7 @@ def p2_correction(
     overlay = None
     if rects or lines:
         overlay = Overlay(rects=tuple(rects), lines=lines, markers=(_measure_spot(coordinator),))
-    return {"view": view, "lift": lift, "overlay": overlay}
+    return {"view": view, "lift": lift, "overlay": overlay, "lens": p2_geometry.OVERVIEW_LENS}
 
 
 def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:

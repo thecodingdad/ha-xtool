@@ -49,6 +49,14 @@ SLATS_RIGHT: Final = 23
 # calibrated plane, fitted to the P2's calibration grid
 OVERVIEW_CAMERA: Final = (307.4, -41.4, 174.0)
 
+# The overview camera's lens, fitted to a P2's calibration grid (see
+# camera_correction._fit_lens); each P2's own grid refines it
+OVERVIEW_LENS: Final = (
+    3.78293, -0.0036276, -0.00216825, -307.617, 72.4371, -162.671,
+    -1826.99, -0.996363, 2227.47, 1744.78,
+    -0.0391064, 0.0953019, -0.0592302, 0.0143858,
+)
+
 # Studio's distance (Honeycomb panel, Slats removed) is measured down
 # from this height above the slats
 DISTANCE_ZERO: Final = 25.0
