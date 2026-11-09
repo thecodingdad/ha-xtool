@@ -30,7 +30,10 @@ from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringSensor
 from ..ws_v2.camera_correction import CameraCalibration, CameraView, Overlay, SurfaceLift
 from ..ws_v2.entities import (
     _camera_view,
+    _camera_view_values,
     _CameraDeviceEntity,
+    _clamp_crop,
+    _crop_numbers,
     _crop_settings,
     _thumbnail_registry,
     _WSV2Camera,
@@ -479,11 +482,10 @@ def _p2_view(coordinator: XtoolCoordinator) -> dict[str, Any]:
             "crop_preset": VIEW_CUSTOM,
             "overlay": VIEW_NONE,
             "processing_mode": "process_on_slats",
+            "thickness_or_distance": p2_geometry.MODE_DEFAULT,
             "slat_overlay": False,
             "overlay_closeup": False,
         }
-        for key, _minimum, _maximum, default in p2_geometry.MODES.values():
-            view[key] = default
         coordinator._p2_view = view
     return view
 
@@ -530,6 +532,43 @@ def _custom_rect(
     )
 
 
+def _preset_view(
+    coordinator: XtoolCoordinator, preset: str, calibration: CameraCalibration,
+) -> CameraView:
+    """The overview crop that shows a preset's area."""
+    x, y, w, h = _area(coordinator, preset)
+    return CameraView(
+        w, h, x + w / 2 - calibration.area_mm / 2, y + h / 2 - calibration.area_h_mm / 2,
+    )
+
+
+def _show_crop(coordinator: XtoolCoordinator, view: CameraView) -> None:
+    """Write a preset's crop into the overview's crop numbers."""
+    stored = _camera_view_values(coordinator, "overview")
+    numbers = _crop_numbers(coordinator, "overview")
+    settings = _crop_settings(coordinator, "overview")
+    for setting, value in (
+        ("width", view.width_mm), ("height", view.height_mm),
+        ("center_x", view.center_x_mm), ("center_y", view.center_y_mm),
+    ):
+        value = _clamp_crop(setting, round(value, 1), settings)
+        if stored.get(setting) == value:
+            continue
+        number = numbers.get(setting)
+        if number is not None:
+            number.set_crop(value)
+        else:
+            stored[setting] = value
+
+
+def _thickness_or_distance(coordinator: XtoolCoordinator) -> tuple[str, float]:
+    """The selected Mode and its setting, within the mode's range."""
+    settings = _p2_view(coordinator)
+    mode = settings["processing_mode"]
+    low, high = p2_geometry.MODES[mode]
+    return mode, min(max(float(settings["thickness_or_distance"]), low), high)
+
+
 def p2_correction(
     coordinator: XtoolCoordinator, camera_name: str, calibration: CameraCalibration,
     view: CameraView,
@@ -556,15 +595,11 @@ def p2_correction(
         }
     crop = settings["crop_preset"]
     if crop != VIEW_CUSTOM:
-        x, y, w, h = _area(coordinator, crop)
-        view = CameraView(
-            w, h,
-            x + w / 2 - calibration.area_mm / 2,
-            y + h / 2 - calibration.area_h_mm / 2,
-        )
-    mode = settings["processing_mode"]
-    key = p2_geometry.MODES[mode][0]
-    surface = p2_geometry.surface_height(mode, settings[key]) - calibration.plane_mm
+        # The crop numbers show the preset (the close camera's follows the head)
+        view = _preset_view(coordinator, crop, calibration)
+        _show_crop(coordinator, view)
+    mode, value = _thickness_or_distance(coordinator)
+    surface = p2_geometry.surface_height(mode, value) - calibration.plane_mm
     camera_x, camera_y, camera_height = p2_geometry.OVERVIEW_CAMERA
     lift = SurfaceLift(camera_x, camera_y, camera_height, surface) if surface else None
     rects = []
@@ -640,6 +675,18 @@ class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
         return self._value
 
     async def async_select_option(self, option: str) -> None:
+        settings = _p2_view(self.coordinator)
+        if self._key == "crop_preset" and option != VIEW_CUSTOM:
+            camera = _thumbnail_registry(self.coordinator).cameras.get(self._camera_name)
+            calibration = getattr(camera, "_calibration", None)
+            if calibration is not None:
+                _show_crop(self.coordinator, _preset_view(self.coordinator, option, calibration))
+        if self._key == "processing_mode":
+            # Thickness or distance takes the new mode's range, and the
+            # measured value its meaning
+            settings[self._key] = option
+            settings["thickness_or_distance"] = _thickness_or_distance(self.coordinator)[1]
+            self.coordinator.async_update_listeners()
         await self._store(option)
 
     async def async_added_to_hass(self) -> None:
@@ -669,38 +716,55 @@ class P2ViewSwitch(_P2ViewSetting, SwitchEntity, RestoreEntity):
             _p2_view(self.coordinator)[self._key] = last.state == "on"
 
 
-class P2MaterialNumber(_P2ViewSetting, RestoreNumber):
-    """A processing mode's material setting, as Studio enters it.
+class P2ThicknessOrDistance(_P2ViewSetting, RestoreNumber):
+    """The material setting Studio asks for in the selected Mode.
 
     Process on slats: the material's thickness. Honeycomb panel and Slats
     removed: Studio's distance (25 mm above the slats minus the material's
-    top). The overview picture shows the material's top to scale.
+    top). The range is the mode's; the overview picture shows the
+    material's top to scale.
     """
 
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_native_step = 0.1
     _attr_mode = NumberMode.BOX
 
-    def __init__(self, coordinator: XtoolCoordinator, mode: str) -> None:
-        key, minimum, maximum, _default = p2_geometry.MODES[mode]
-        super().__init__(coordinator, "overview", key)
-        self._attr_native_min_value = minimum
-        self._attr_native_max_value = maximum
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "overview", "thickness_or_distance")
+
+    @property
+    def native_min_value(self) -> float:
+        return p2_geometry.MODES[_p2_view(self.coordinator)["processing_mode"]][0]
+
+    @property
+    def native_max_value(self) -> float:
+        return p2_geometry.MODES[_p2_view(self.coordinator)["processing_mode"]][1]
 
     @property
     def native_value(self) -> float:
-        return self._value
+        return _thickness_or_distance(self.coordinator)[1]
 
     async def async_set_native_value(self, value: float) -> None:
-        await self._store(float(value))
+        await self._store(min(max(float(value), self.native_min_value), self.native_max_value))
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         last = await self.async_get_last_number_data()
         if last is not None and last.native_value is not None:
-            value = min(max(float(last.native_value), self._attr_native_min_value),
-                        self._attr_native_max_value)
-            _p2_view(self.coordinator)[self._key] = value
+            # Kept as it was: the Mode may be restored after this number
+            _p2_view(self.coordinator)[self._key] = float(last.native_value)
+
+
+class P2CropNumber(_WSV2CameraViewNumber):
+    """An overview crop number: a preset fills it in, and editing it
+    switches Crop to Custom (keeping the other numbers)."""
+
+    async def async_set_native_value(self, value: float) -> None:
+        settings = _p2_view(self.coordinator)
+        if settings["crop_preset"] != VIEW_CUSTOM:
+            settings["crop_preset"] = VIEW_CUSTOM
+            self.coordinator.async_update_listeners()
+        await super().async_set_native_value(value)
 
 
 def build_p2_view_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
@@ -726,16 +790,13 @@ def build_p2_view_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
 def build_p2_view_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     if "overview" not in coordinator.model.camera_names:
         return []
-    return [P2MaterialNumber(coordinator, mode) for mode in p2_geometry.MODES]
+    return [P2ThicknessOrDistance(coordinator)]
 
 
 # --- Laser head ------------------------------------------------------------
 
 # The head moves only while the P2 waits for work, as in Studio
 P2_HEAD_MOVE_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED)
-# Studio's distance in the modes without slats (Honeycomb panel, Slats
-# removed) is measured down from this height above the slats
-P2_DISTANCE_ZERO_MM = 25.0
 
 
 def _head_lock(coordinator: XtoolCoordinator) -> asyncio.Lock:
@@ -888,46 +949,59 @@ class P2MeasureDistance(XtoolMeasureDistance):
 
 
 class P2Measured(XtoolRestoringSensor, SensorEntity):
-    """The last Measure distance, as Studio enters it for each mode.
+    """The last Measure distance, as Studio enters it in the selected Mode.
 
-    Thickness (Process on slats): the material's height above the slats.
-    Distance (Honeycomb panel and Slats removed): how far the material's
-    top is below 25 mm above the slats. Attributes: where on the bed it
-    was measured (the IR sensor's position, mm from home) and the distance
-    the sensor read.
+    Process on slats: the material's thickness (its top above the
+    slats). Honeycomb panel and Slats removed: Studio's distance (how far
+    the top is below 25 mm above the slats). Attributes: the thickness,
+    where on the bed it was measured (the IR sensor's position, mm from
+    home) and the distance the sensor read.
     """
 
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_suggested_display_precision = 1
+    _restored_thickness: float | None = None
 
-    def __init__(self, coordinator: XtoolCoordinator, key: str) -> None:
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
-        self._key = key
-        self._attr_translation_key = key
-        self._set_unique_id(key)
+        self._attr_translation_key = "measured_thickness_or_distance"
+        self._set_unique_id("measured_thickness_or_distance")
 
-    def _live(self) -> float | None:
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        thickness = last.attributes.get("thickness") if last is not None else None
+        if isinstance(thickness, (int, float)):
+            self._restored_thickness = float(thickness)
+
+    def _has_restored_value(self) -> bool:
+        return self._restored_thickness is not None
+
+    def _thickness(self) -> float | None:
         d = self.coordinator.data
-        thickness = d.measured_thickness_mm if d else None
-        if thickness is None:
-            return None
-        if self._key == "measured_distance":
-            return round(P2_DISTANCE_ZERO_MM - thickness, 2)
-        return thickness
+        live = d.measured_thickness_mm if d is not None else None
+        return live if live is not None else self._restored_thickness
 
     @property
     def native_value(self) -> float | None:
-        return self._value_or_restored(self._live())
+        thickness = self._thickness()
+        if thickness is None:
+            return None
+        mode = _p2_view(self.coordinator)["processing_mode"]
+        return round(p2_geometry.mode_value(mode, thickness), 2)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        d = self.coordinator.data
-        if d is None or d.measured_thickness_mm is None:
+        thickness = self._thickness()
+        if thickness is None:
             return None
-        attributes: dict[str, Any] = {"sensor_distance": d.last_distance_mm}
-        if d.measured_at is not None:
-            attributes["x"], attributes["y"] = d.measured_at
+        attributes: dict[str, Any] = {"thickness": thickness}
+        d = self.coordinator.data
+        if d is not None and d.measured_thickness_mm is not None:
+            attributes["sensor_distance"] = d.last_distance_mm
+            if d.measured_at is not None:
+                attributes["x"], attributes["y"] = d.measured_at
         return attributes
 
 
@@ -954,7 +1028,9 @@ def build_p2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
         *(P2CameraExposure(coordinator, name) for _, name in cameras),
         *(_WSV2CameraThumbnailRefresh(coordinator, key, name) for key, name in cameras),
         *(
-            _WSV2CameraViewNumber(coordinator, *setting, camera_name=name)
+            (P2CropNumber if name == "overview" else _WSV2CameraViewNumber)(
+                coordinator, *setting, camera_name=name,
+            )
             for _, name in cameras
             for setting in _crop_settings(coordinator, name)
         ),

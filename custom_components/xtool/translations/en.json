@@ -634,11 +634,8 @@
       "uv_lamp_runtime": {
         "name": "UV lamp runtime"
       },
-      "measured_thickness": {
-        "name": "Measured thickness"
-      },
-      "measured_distance": {
-        "name": "Measured distance"
+      "measured_thickness_or_distance": {
+        "name": "Measured thickness or distance"
       }
     },
     "binary_sensor": {
@@ -1049,14 +1046,8 @@
       "laser_position_y": {
         "name": "Laser position Y"
       },
-      "thickness_on_slats": {
-        "name": "Thickness on slats"
-      },
-      "distance_honeycomb_panel": {
-        "name": "Distance with honeycomb panel"
-      },
-      "distance_slats_removed": {
-        "name": "Distance with slats removed"
+      "thickness_or_distance": {
+        "name": "Thickness or distance"
       }
     },
     "select": {

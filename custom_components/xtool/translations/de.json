@@ -568,11 +568,8 @@
       "uv_lamp_runtime": {
         "name": "Laufzeit UV-Lampe"
       },
-      "measured_thickness": {
-        "name": "Gemessene Materialstärke"
-      },
-      "measured_distance": {
-        "name": "Gemessene Distanz"
+      "measured_thickness_or_distance": {
+        "name": "Gemessene Stärke oder Distanz"
       }
     },
     "binary_sensor": {
@@ -968,14 +965,8 @@
       "laser_position_y": {
         "name": "Laserposition Y"
       },
-      "thickness_on_slats": {
-        "name": "Stärke auf Lamellen"
-      },
-      "distance_honeycomb_panel": {
-        "name": "Distanz mit Wabenplatte"
-      },
-      "distance_slats_removed": {
-        "name": "Distanz ohne Lamellen"
+      "thickness_or_distance": {
+        "name": "Stärke oder Distanz"
       }
     },
     "select": {

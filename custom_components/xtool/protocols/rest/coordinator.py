@@ -432,8 +432,7 @@ class P2Coordinator(RestCoordinator):
         return [
             *build_p2_sensors(self),
             P2Connection(self),
-            P2Measured(self, "measured_thickness"),
-            P2Measured(self, "measured_distance"),
+            P2Measured(self),
         ]
 
     def build_switches(self) -> list["SwitchEntity"]:

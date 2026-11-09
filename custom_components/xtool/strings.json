@@ -139,8 +139,7 @@
       "origin_offset_y": { "name": "Origin offset Y" },
       "last_job_time": { "name": "Last job time" },
       "working_mode": { "name": "Working mode" },
-      "measured_thickness": { "name": "Measured thickness" },
-      "measured_distance": { "name": "Measured distance" },
+      "measured_thickness_or_distance": { "name": "Measured thickness or distance" },
       "last_distance": { "name": "Last distance" },
       "purifier_speed": { "name": "Purifier speed" },
       "filter_pre": { "name": "Pre-filter remaining" },
@@ -249,14 +248,8 @@
       "md_mode": { "name": "Auto mode (access control)" }
     },
     "number": {
-      "thickness_on_slats": {
-        "name": "Thickness on slats"
-      },
-      "distance_honeycomb_panel": {
-        "name": "Distance with honeycomb panel"
-      },
-      "distance_slats_removed": {
-        "name": "Distance with slats removed"
+      "thickness_or_distance": {
+        "name": "Thickness or distance"
       },
       "auto_power_off": { "name": "Auto power-off" },
       "laser_position_x": { "name": "Laser position X" },

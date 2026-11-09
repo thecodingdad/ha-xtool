@@ -81,14 +81,8 @@
       }
     },
     "number": {
-      "thickness_on_slats": {
+      "thickness_or_distance": {
         "default": "mdi:format-line-weight"
-      },
-      "distance_honeycomb_panel": {
-        "default": "mdi:arrow-expand-down"
-      },
-      "distance_slats_removed": {
-        "default": "mdi:arrow-expand-down"
       },
       "auto_power_off": {
         "default": "mdi:timer-off-outline"
@@ -120,11 +114,8 @@
       }
     },
     "sensor": {
-      "measured_thickness": {
+      "measured_thickness_or_distance": {
         "default": "mdi:format-line-weight"
-      },
-      "measured_distance": {
-        "default": "mdi:arrow-expand-down"
       },
       "connection": {
         "default": "mdi:ethernet",

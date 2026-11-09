@@ -61,13 +61,15 @@ OVERVIEW_LENS: Final = (
 # from this height above the slats
 DISTANCE_ZERO: Final = 25.0
 
-# Processing modes: the setting each uses and its range (Studio's)
-MODES: Final[dict[str, tuple[str, float, float, float]]] = {
-    # mode: (number key, minimum, maximum, Studio's default)
-    "process_on_slats": ("thickness_on_slats", 0.0, 25.0, 3.0),
-    "honeycomb_panel": ("distance_honeycomb_panel", 0.0, 28.0, 3.0),
-    "slats_removed": ("distance_slats_removed", 0.0, 75.0, 3.0),
+# Processing modes and Studio's range for each one's setting: the
+# material's thickness (Process on slats) or its distance (the others)
+MODES: Final[dict[str, tuple[float, float]]] = {
+    "process_on_slats": (0.0, 25.0),
+    "honeycomb_panel": (0.0, 28.0),
+    "slats_removed": (0.0, 75.0),
 }
+# Studio's setting until it is changed, in every mode
+MODE_DEFAULT: Final = 3.0
 
 
 def slats() -> list[tuple[float, str]]:
@@ -93,3 +95,8 @@ def surface_height(mode: str, value: float) -> float:
     if mode == "process_on_slats":
         return value
     return DISTANCE_ZERO - value
+
+
+def mode_value(mode: str, height: float) -> float:
+    """A mode's setting for a material whose top is this high above the slats."""
+    return surface_height(mode, height)  # the same sum both ways
