@@ -167,6 +167,9 @@ class P2Camera(_WSV2Camera):
     async def _image(self, max_age: Any) -> bytes | None:
         data = self.coordinator.data
         if data is not None and data.status == XtoolStatus.SLEEPING:
+            # No new photo, but the last one shows the settings of now
+            if self._last_photo is not None and self._calibration is not None:
+                self._last_snapshot = await self._corrected(self._last_photo)
             return self._last_snapshot
         if data is not None and p2_view_needs_head(self.coordinator, self._camera_name):
             # Overlays and the close camera preset follow the head

@@ -1137,27 +1137,27 @@
         "name": "Crop",
         "state": {
           "custom": "Custom",
-          "work_bed": "Actual work bed",
+          "work_bed": "Work bed",
           "process_on_slats": "Process on slats",
           "honeycomb_panel": "Honeycomb panel",
           "slats_removed": "Slats removed",
-          "close_camera": "Close camera image"
+          "close_camera": "Close camera"
         }
       },
       "overlay": {
         "name": "Overlay",
         "state": {
           "none": "None",
-          "work_bed": "Actual work bed",
+          "work_bed": "Work bed",
           "process_on_slats": "Process on slats",
           "honeycomb_panel": "Honeycomb panel",
           "slats_removed": "Slats removed",
-          "close_camera": "Close camera image",
+          "close_camera": "Close camera",
           "custom": "Custom"
         }
       },
       "processing_mode": {
-        "name": "Processing mode",
+        "name": "Mode",
         "state": {
           "process_on_slats": "Process on slats",
           "honeycomb_panel": "Honeycomb panel",

@@ -1990,6 +1990,8 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         if icon is not None:
             self._attr_icon = icon
         self._last_snapshot: bytes | None = None
+        # The last photo as the laser took it, before straightening
+        self._last_photo: bytes | None = None
         self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
         self._live_viewers = 0
         # Straighten photos with the laser's calibration grid (cameras
@@ -2189,6 +2191,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
             image = None
         if image:
+            self._last_photo = image
             image = await self._corrected(image)
             # Age counts from when the photo was asked for, so a live
             # view's next frame (one interval later) takes a new photo

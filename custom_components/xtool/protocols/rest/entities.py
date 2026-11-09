@@ -219,7 +219,7 @@ class XtoolHomeLaserHead(XtoolEntity, ButtonEntity):
     """Move REST laser head back to (0, 0)."""
 
     _attr_translation_key = "home_laser_head"
-    _attr_icon = "mdi:arrow-collapse-all"
+    _attr_icon = "mdi:home"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -233,7 +233,7 @@ class XtoolMeasureDistance(XtoolEntity, ButtonEntity):
     """Trigger an IR distance measurement (P2/P2S)."""
 
     _attr_translation_key = "measure_distance"
-    _attr_icon = "mdi:tape-measure"
+    _attr_icon = "mdi:signal-distance-variant"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -382,7 +382,7 @@ class XtoolLastDistance(XtoolRestoringSensor, SensorEntity):
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_suggested_display_precision = 1
     _attr_translation_key = "last_distance"
-    _attr_icon = "mdi:tape-measure"
+    _attr_icon = "mdi:signal-distance-variant"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)

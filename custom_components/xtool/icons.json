@@ -139,12 +139,10 @@
         "default": "mdi:vector-rectangle"
       },
       "aimed_measure_light": {
-        "default": "mdi:led-on",
-        "state": { "off": "mdi:led-off" }
+        "default": "mdi:spotlight-beam"
       },
       "quick_measure_light": {
-        "default": "mdi:led-on",
-        "state": { "off": "mdi:led-off" }
+        "default": "mdi:laser-pointer"
       },
       "accessory_ductfan_buzzer": {
         "default": "mdi:bell-ring",

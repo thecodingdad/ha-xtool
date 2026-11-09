@@ -1056,27 +1056,27 @@
         "name": "Zuschnitt",
         "state": {
           "custom": "Benutzerdefiniert",
-          "work_bed": "Gesamte Arbeitsfläche",
+          "work_bed": "Arbeitsbett",
           "process_on_slats": "Auf Lamellen bearbeiten",
           "honeycomb_panel": "Wabenplatte",
           "slats_removed": "Lamellen entfernt",
-          "close_camera": "Nahkamerabild"
+          "close_camera": "Nahkamera"
         }
       },
       "overlay": {
         "name": "Overlay",
         "state": {
           "none": "Keins",
-          "work_bed": "Gesamte Arbeitsfläche",
+          "work_bed": "Arbeitsbett",
           "process_on_slats": "Auf Lamellen bearbeiten",
           "honeycomb_panel": "Wabenplatte",
           "slats_removed": "Lamellen entfernt",
-          "close_camera": "Nahkamerabild",
+          "close_camera": "Nahkamera",
           "custom": "Benutzerdefiniert"
         }
       },
       "processing_mode": {
-        "name": "Bearbeitungsmodus",
+        "name": "Modus",
         "state": {
           "process_on_slats": "Auf Lamellen bearbeiten",
           "honeycomb_panel": "Wabenplatte",
