@@ -1285,7 +1285,7 @@
         "name": "Home Z"
       },
       "home_laser_head": {
-        "name": "Home laser head"
+        "name": "Home laser"
       },
       "measure_distance": {
         "name": "Measure distance"

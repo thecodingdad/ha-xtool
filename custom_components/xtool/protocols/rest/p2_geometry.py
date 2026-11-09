@@ -38,10 +38,12 @@ CLOSE_CAMERA_SIZE: Final = (140.0, 100.0)
 MEASURE_OFFSET: Final = (64.3, 0.9)
 
 # The red dots, measured on a P2 on the mat on the slats. Close (the
-# IR sensor's spot): beside the head, a round dot. Quick: fixed in the
-# machine, lit from the back right corner, so long that way.
-CLOSE_RED_DOT_OFFSET: Final = (64.4, -0.8)
-CLOSE_RED_DOT_SIZE: Final = (2.0, 2.0)
+# IR sensor's spot): beside the head, a round dot about 0.9 mm across
+# (measured in the close camera's picture, Laser position 300/225).
+# Quick: fixed in the machine, lit from the back right corner, so long
+# that way.
+CLOSE_RED_DOT_OFFSET: Final = (64.8, 0.7)
+CLOSE_RED_DOT_DIAMETER: Final = 0.9
 QUICK_RED_DOT: Final = (343.2, 81.9)
 QUICK_RED_DOT_SIZE: Final = (5.0, 2.0)
 QUICK_RED_DOT_FROM: Final = (BED_LEFT + 684.0, BED_TOP)

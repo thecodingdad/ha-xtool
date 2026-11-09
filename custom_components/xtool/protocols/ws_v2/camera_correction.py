@@ -169,9 +169,11 @@ class Overlay:
     ``lines``: (x0, y0, x1, y1, label), the label written at the lower
     end. ``markers``: (x, y), a red target. ``spots``: (x, y, length,
     width, angle), a soft dot that size (mm), long along ``angle`` (degrees from X
-    toward Y). ``images``: (x, y, width, height, JPEG), a picture laid on
+    toward Y). ``rings``: (x, y, diameter), a circle whose inside is that
+    diameter (mm), drawn 3 px wide outward, so a dot that size sits just
+    inside it. ``images``: (x, y, width, height, JPEG), a picture laid on
     that area, under everything else. The colours are the lines', the
-    markers' and the spots'.
+    markers' and the spots' (also the rings').
     """
 
     areas: tuple[tuple[float, float, float, float, tuple[int, int, int]], ...] = ()
@@ -179,12 +181,14 @@ class Overlay:
     markers: tuple[tuple[float, float], ...] = ()
     spots: tuple[tuple[float, float, float, float, float], ...] = ()
     images: tuple[tuple[float, float, float, float, bytes], ...] = ()
+    rings: tuple[tuple[float, float, float], ...] = ()
     line_color: tuple[int, int, int] = (0, 200, 255)
     marker_color: tuple[int, int, int] = (255, 40, 40)
     spot_color: tuple[int, int, int] = (255, 30, 30)
 
 
 OVERLAY_LABEL_BACKGROUND = (0, 0, 0)
+OVERLAY_RING_WIDTH = 3
 
 
 def _draw_overlay(
@@ -226,6 +230,15 @@ def _draw_overlay(
         mask = mask.filter(ImageFilter.GaussianBlur(blur))
         x0, y0 = round(cx - size / 2), round(cy - size / 2)
         image.paste(overlay.spot_color, (x0, y0, x0 + size, y0 + size), mask)
+    for x, y, diameter in overlay.rings:
+        # Pillow draws an outline inward from the box: the box is the
+        # outside, 3 px beyond the inside diameter
+        cx, cy = px(x, y)
+        r = diameter * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        draw.ellipse(
+            (cx - r, cy - r, cx + r, cy + r),
+            outline=overlay.spot_color, width=OVERLAY_RING_WIDTH,
+        )
 
     # Labels as large as the space between lines allows: white on black
     label_xs = sorted(px(x1, y1)[0] for _, _, x1, y1, label in overlay.lines if label)

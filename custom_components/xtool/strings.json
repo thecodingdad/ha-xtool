@@ -404,7 +404,7 @@
       "home_all": { "name": "Home all axes" },
       "home_xy": { "name": "Home XY" },
       "home_z": { "name": "Home Z" },
-      "home_laser_head": { "name": "Home laser head" },
+      "home_laser_head": { "name": "Home laser" },
       "measure_distance": { "name": "Measure distance" },
       "measure_thickness_or_distance": { "name": "Measure thickness or distance" },
       "move_laser": { "name": "Move laser" },

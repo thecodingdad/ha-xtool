@@ -2090,7 +2090,7 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
 | `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
 | `/peripheral/digital_lock` | POST `{action:"on/off"}` | Lock (`on`) or unlock the cover (P2) |
-| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (thickness 0). `/peripheral/quest/ir_measure_distance` gives the sensor's own distance (0 with the dot off). |
+| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (the sensor read nothing), and so is the first reply in about 0.2 s after the dot turns on. `/peripheral/quest/ir_measure_distance` gives the sensor's own distance (0 with the dot off). |
 | `/device/modeSwitch` | POST | Switch mode |
 | `/parts` | POST multipart, port **8080** | Upload accessory firmware |
 | `/partsProgress` | GET, port **8080** | Accessory firmware update progress |
@@ -2347,10 +2347,17 @@ the left and 1-23 to the right, each slat 1 half a pitch from the 0
 reference. The overview picture showed a mat's centre line at X 327.4,
 the close camera's picture started at the head plus (54.9, -31.5), and
 the close red dot (`ir_led` index 1, on the head) landed at the head plus
-(64.4, -0.8). The quick red dot (index 2) is fixed in the machine, at
+(64.8, 0.7), about 0.9 mm across, in the close camera's picture. The quick red dot (index 2) is fixed in the machine, at
 (343.2, 81.9). The overview calibration's plane is `thick0` (3 mm) above
 the slats; Studio's distance with the honeycomb panel or the slats removed
 is measured down from 25 mm above the slats.
+
+**Head and sleep** (seen on a P2 with firmware 40.21.025): the P2 sleeps
+600 s after it wakes; head moves and measurements do not restart that
+time. About 60 s before it sleeps it turns off the close red dot and
+moves the head home, and it homes again when it wakes. It moves the head
+while it sleeps (`go_to` answers and `get_coord` reports the new
+position).
 
 **Peripherals** (checked on a P2 with firmware 40.21.025):
 

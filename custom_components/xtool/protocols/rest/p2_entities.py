@@ -768,22 +768,25 @@ def p2_correction(
     head_x, head_y = _head(coordinator)
     markers = ((head_x, head_y),) if on("laser_target") else ()
     spots = []
+    rings = []
     if on("red_dot_close"):
+        # A ring the dot sits just inside, so the dot itself stays visible
         dx, dy = p2_geometry.CLOSE_RED_DOT_OFFSET
-        spots.append((head_x + dx, head_y + dy, *p2_geometry.CLOSE_RED_DOT_SIZE, 0.0))
+        rings.append((head_x + dx, head_y + dy, p2_geometry.CLOSE_RED_DOT_DIAMETER))
     if on("red_dot_quick"):
         spots.append((
             *p2_geometry.QUICK_RED_DOT, *p2_geometry.QUICK_RED_DOT_SIZE,
             p2_geometry.quick_red_dot_angle(),
         ))
     overlay = None
-    if areas or lines or markers or spots or images:
+    if areas or lines or markers or spots or rings or images:
         dx, dy = (0.0, 0.0) if camera_name == "overview" else _close_origin(coordinator)
         overlay = Overlay(
             areas=tuple((x - dx, y - dy, w, h, color) for x, y, w, h, color in areas),
             lines=tuple((x0 - dx, y0 - dy, x1 - dx, y1 - dy, t) for x0, y0, x1, y1, t in lines),
             markers=tuple((x - dx, y - dy) for x, y in markers),
             spots=tuple((x - dx, y - dy, *rest) for x, y, *rest in spots),
+            rings=tuple((x - dx, y - dy, d) for x, y, d in rings),
             images=tuple((x - dx, y - dy, w, h, jpeg) for x, y, w, h, jpeg in images),
             line_color=_color(coordinator, "slat_lines"),
             marker_color=_color(coordinator, "laser_target"),
@@ -993,7 +996,11 @@ def build_p2_view_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
 # --- Laser head ------------------------------------------------------------
 
 # The head moves only while the P2 waits for work, as in Studio
-P2_HEAD_MOVE_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED)
+# The P2 moves the head while it sleeps too (it homes when it wakes)
+P2_HEAD_MOVE_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED, XtoolStatus.SLEEPING)
+# Just after the close red dot turns on, the sensor has not read yet
+P2_MEASURE_TRIES = 20
+P2_MEASURE_RETRY_SECONDS = 0.1
 
 
 def _head_lock(coordinator: XtoolCoordinator) -> asyncio.Lock:
@@ -1052,7 +1059,8 @@ async def async_move_laser_head(
         status = getattr(data, "status", None)
         if status not in P2_HEAD_MOVE_STATUSES:
             raise HomeAssistantError(
-                f"Laser head not moved: the laser is {status or 'not connected'}, not idle"
+                f"Laser head not moved: the laser is {status or 'not connected'}, "
+                "not idle or sleeping"
             )
         current: tuple[float, float] | None = None
         if x is None or y is None:
@@ -1189,19 +1197,17 @@ class P2MeasureDistance(XtoolMeasureDistance):
         # The sensor reads only while the close red dot is on (otherwise
         # the thickness is always 0); it is turned off again after
         dot_was_on = bool(getattr(data, "ir_led_close", False))
+        offset = protocol.measure_offset(data)
         if not dot_was_on:
             await protocol.set_ir_led(1, True)
         try:
-            reading = await protocol.measure_material()
+            reading = await self._read(offset.get("z") if offset else None)
         finally:
             if not dot_was_on:
                 await protocol.set_ir_led(1, False)
-        if reading is None:
-            raise HomeAssistantError("The laser did not report a distance")
         # The P2 replies with the thickness (see measure_material)
         thickness = round(reading["distance"], 2)
         data.measured_thickness_mm = thickness
-        offset = protocol.measure_offset(data)
         if offset:
             data.last_distance_mm = round(offset["z"] - thickness, 2)
         dx, dy = (offset["x"], offset["y"]) if offset else p2_geometry.MEASURE_OFFSET
@@ -1215,6 +1221,25 @@ class P2MeasureDistance(XtoolMeasureDistance):
         settings["thickness_or_distance"] = min(max(value, low), high)
         self.coordinator.async_set_updated_data(data)
         await _refresh(self.coordinator, "overview")
+
+
+    async def _read(self, zero: float | None) -> dict[str, float]:
+        """A reading the sensor made.
+
+        For about 0.2 s after the red dot turns on, the reply is the
+        reading at thickness 0 (``zero``, Z): the sensor has not read yet.
+        Such a reply is asked again.
+        """
+        for _ in range(P2_MEASURE_TRIES):
+            reading = await self.coordinator.protocol.measure_material()
+            if reading is None:
+                raise HomeAssistantError("The laser did not report a distance")
+            if zero is None or abs(reading["distance"] - zero) > 0.05:
+                return reading
+            await asyncio.sleep(P2_MEASURE_RETRY_SECONDS)
+        raise HomeAssistantError(
+            "The IR sensor did not read: is the material under the close red dot?"
+        )
 
 
 class P2Measured(XtoolRestoringSensor, SensorEntity):

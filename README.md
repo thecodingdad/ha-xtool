@@ -301,7 +301,7 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Home all axes | Move laser head to home position (all axes) |
 | Home XY | Move laser head to XY home |
 | Home Z | Move laser head to Z home |
-| Home laser head | Move laser head back to (0, 0) |
+| Home laser | Move the laser head back to (0, 0) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
 | Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |
