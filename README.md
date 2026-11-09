@@ -291,6 +291,43 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Flame record | Snapshot of the most recent flame-detection event |
 | Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
 
+### P2: cameras, crop presets and overlays
+
+The P2's Overview camera and Close camera are straightened with the P2's own camera calibration (the files Studio reads; the integration only reads them). Positions are in the laser's coordinates, as on Studio's canvas: millimetres from home (0, 0), X to the right and Y toward the front. Home is the top left corner of the Process on slats area, 20.5 mm from the bed's left wall and 40.5 mm from its back wall. "Laser position X/Y" is where the laser fires.
+
+**Overview camera Crop presets.** A preset fills in the four crop numbers; changing a number selects Custom. A width or height of 0 shows as far as the photo reaches.
+
+| Crop preset | Area origin (X, Y) | Size (W × H, mm) | Crop center X, Y written |
+|---|---|---|---|
+| Uncropped | (whole photo) | about 824 × 500 | 305, 152.5 (width and height 0) |
+| Sync to Mode | the selected Mode's area (below) | | |
+| Work bed | −20.5, −40.5 | 684 × 376 | 321.5, 147.5 |
+| Process on slats | 0, 0 | 600 × 305 | 300, 152.5 |
+| Honeycomb panel | 0, 0 | 600 × 305 | 300, 152.5 |
+| Slats removed | 50, 0 | 500 × 250 | 300, 125 |
+| Close camera (uncropped) | follows the laser | about 182 × 138 | Laser position X/Y + (125, 20) |
+| Close camera (Studio) | Laser position X/Y + (55, −30) | 140 × 100 | Laser position X/Y + (125, 20) |
+| Close camera (custom) | the Close camera's own crop | | |
+| Custom | the numbers as set | | |
+
+Ranges: Crop width 0–915, Crop height 0–458, Crop center X 0–610, Crop center Y 0–305 (Studio's straightened overview picture is 610 × 305 mm; the calibration grid itself reaches Y 310).
+
+**Close camera Crop presets.** The center is relative to the center of Studio's close picture, which is at Laser position X/Y + (125, 20).
+
+| Crop preset | Size (W × H, mm) | Crop center X, Y |
+|---|---|---|
+| Uncropped | about 182 × 138 (width and height 0) | 0, 0 |
+| Studio | 140 × 100 | 0, 0 |
+| Custom | the numbers as set | |
+
+Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop center Y −50 to 50.
+
+**Overlays.** Each overlay is a switch on the camera's device; any number can be on. An area overlay draws its outline with a dot at its origin and one at its center, all in the area's color. Others: Laser target (where the laser fires), Slat lines (every slat, odd numbers labeled), Red dot (close) (a ring the dot sits just inside), Red dot (quick), and on the Overview camera the Close camera's areas and its last photo. Overlay colors are set in the integration's options.
+
+**Mode and Thickness or distance.** Mode (Process on slats, Honeycomb panel, Slats removed) and one Thickness or distance number, read as Studio reads it in that Mode: the material's thickness on the slats, otherwise the distance down from 25 mm above the slats. The overview picture is straightened for that height. **Measure thickness or distance** reads the IR sensor under the close red dot (turning the dot on for the reading if needed) and fills in Thickness or distance; it can be changed after.
+
+**Moving the laser.** Set Laser position X and Y (the numbers show the values set, with the attribute `waiting` until the laser moves), then press **Move laser**. The `xtool.move` action takes the P2 device and moves to X and Y, or by signed steps. The P2 moves the laser while it sleeps too; it moves the laser home a minute before it sleeps and when it wakes.
+
 ### Button
 
 | Entity | Description |

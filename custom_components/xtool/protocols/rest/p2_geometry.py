@@ -9,8 +9,9 @@ the corner of the Process on slats area.
 Measured on a P2 (firmware 40.21.025): the overview picture's mat centre
 line at X 327.4 (the bed's 0 reference for the slats, 348 mm from the
 left wall), the close camera's picture at the head plus (54.9, -31.5),
-and the close red dot at the head plus (64.4, -0.8). Studio uses (55,
--30) and the P2's own IR sensor offset (64.3, 0.9).
+and the close red dot at the head plus (64.8, 0.7) in the close camera's
+picture. Studio uses (55, -30) and the P2's own IR sensor offset (64.3,
+0.9).
 """
 
 from __future__ import annotations
