@@ -91,7 +91,9 @@ async def async_setup_entry(
     """Set up xTool sensor entities."""
     coordinator = entry.runtime_data
     coordinator.register_platform_add("sensor", async_add_entities)
-    entities: list[SensorEntity] = [XtoolStatusSensor(coordinator)]
+    entities: list[SensorEntity] = []
+    if (coordinator.model.model_id, coordinator.model.protocol_version) != ("JS001", "V2"):
+        entities.append(XtoolStatusSensor(coordinator))
     entities.extend(coordinator.build_sensors())
     entities.extend(coordinator.initial_accessory_entities("sensor"))
     async_add_entities(entities)

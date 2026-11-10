@@ -19,11 +19,13 @@ from __future__ import annotations
 from ..base import XtoolDeviceModel
 
 from .coordinator import WSV2Coordinator
+from .coordinator_x1 import X1DiscoveryCoordinator
 from .protocol import WSV2Protocol
 from .protocol_dt001 import DT001WSV2Protocol
 from .protocol_dt002 import DT002WSV2Protocol
 from .protocol_m2 import M2WSV2Protocol
 from .protocol_p2s import P2SWSV2Protocol
+from .protocol_x1 import X1DiscoveryProtocol
 
 
 XTOOL_F1_WSV2 = XtoolDeviceModel(
@@ -580,7 +582,20 @@ XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
 )
 
 
+XTOOL_X1_DISCOVERY = XtoolDeviceModel(
+    model_id="JS001",
+    name="xTool X1 (experimental read-only)",
+    protocol_class=X1DiscoveryProtocol,
+    coordinator_class=X1DiscoveryCoordinator,
+    is_read_only=True,
+    has_bt_accessories=False,
+    protocol_version="V2",
+    discovery_match=("xTool_X1_", "xTool X1", "JS001"),
+)
+
+
 WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
+    XTOOL_X1_DISCOVERY,
     XTOOL_F1_WSV2,
     XTOOL_F1_ULTRA_WSV2,
     XTOOL_F1_ULTRA_V2_WSV2,

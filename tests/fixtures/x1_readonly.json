@@ -1,0 +1,20 @@
+{
+  "provenance": "Sanitized observed X1 read-only response shapes. Firmware text is synthetic. No image, digest, filename, token, serial, client UUID or accessory address is recorded here.",
+  "camera_list": [
+    {"format":"nv12","fps":10,"height":1200,"id":2,"name":"side","version":"1.0.0","width":1600},
+    {"format":"jpeg","fps":30,"height":3120,"id":1,"name":"near","version":"1.0.0","width":4208},
+    {"format":"jpeg","fps":600,"height":32,"id":3,"name":"ldm","version":"1.0.0","width":640},
+    {"format":"nv12","fps":10,"height":2160,"id":0,"name":"far","version":"1.0.0","width":3840}
+  ],
+  "accessory_slots": [
+    {"bootloader_status":false,"common_status":"","dev_id":71,"name":"","status":true,"version":{"app_version":"synthetic-dongle-firmware","boot_version":"synthetic-boot-firmware","hard_version":""}},
+    {"bootloader_status":false,"common_status":"","dev_id":82,"name":"","status":false,"version":{"app_version":"","boot_version":"","hard_version":""}},
+    {"bootloader_status":false,"common_status":"","dev_id":69,"name":"","status":false,"version":{"app_version":"","boot_version":"","hard_version":""}},
+    {"bootloader_status":false,"common_status":"","dev_id":70,"name":"","status":false,"version":{"app_version":"","boot_version":"","hard_version":""}},
+    {"bootloader_status":false,"common_status":"","dev_id":78,"name":"","status":false,"version":{"app_version":"","boot_version":"","hard_version":""}},
+    {"bootloader_status":false,"common_status":"","dev_id":76,"name":"","status":false,"version":{"app_version":"","boot_version":"","hard_version":""}}
+  ],
+  "connected_response": {"result":"M9098 none"},
+  "sync_response": {},
+  "state_report": {"type":"request","method":"REPORT","data":{"/v1/platform/device/state":{"mode":"Idle","moveState":"idle","gohomeState":"finish","processInfo":null}}}
+}

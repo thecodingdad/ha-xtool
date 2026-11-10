@@ -48,6 +48,8 @@ V1/V2 selection is automatic. UDP discovery tags each device as V1 or V2 (legacy
 
 O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check. Job control, settings and the Pixel-Scan image are not exposed yet.
 
+X1 (JS001, platform 2.0) has experimental read-only support: reported state, onboard accessory diagnostics, connected Bluetooth inventory and far/near/side JPEG snapshots. It requires an existing owner-authorized grant; pairing, controls, live video and AP2 telemetry are not supported. See [X1 setup and limitations](docs/X1.md).
+
 ## Installation
 
 ### HACS (Recommended)
