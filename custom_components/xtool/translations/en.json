@@ -45,7 +45,17 @@
   },
   "options": {
     "step": {
+      "x1_grant": {
+        "title": "Import X1 grant",
+        "description": "Paste the integration-owned bound grant supplied by your controller. This does not pair the device or change its certificate trust. The grant is stored privately, not in integration options.",
+        "data": {"grant": "Grant"}
+      },
+      "x1_options": {
+        "title": "X1 polling",
+        "data": {"scan_interval": "Polling interval"}
+      },
       "init": {
+        "menu_options": {"x1_grant": "Grant", "x1_options": "Polling"},
         "data": {
           "power_switch_entity_id": "Power switch",
           "enable_firmware_updates": "Enable firmware updates",
@@ -71,6 +81,10 @@
           "cancel_updates": "Cancel"
         }
       }
+    },
+    "error": {
+      "invalid_x1_grant": "Invalid grant or device binding. Preserve the controller's original values.",
+      "x1_grant_storage_failed": "The private grant could not be saved and verified. Import was not completed."
     }
   },
   "entity": {

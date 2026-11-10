@@ -94,6 +94,8 @@ class DiscoveredDevice:
     # Populated by V2 (`deviceSn`); empty for V1 since the legacy reply
     # carries no serial.
     serial_number: str = ""
+    device_code: str = ""
+    platform_version: str = ""
 
 
 # --- V2 crypto helpers --------------------------------------------------
@@ -164,6 +166,8 @@ def _v2_parse_response(
         version=data.get("firmwareVersion") or data.get("version") or "",
         protocol_version="V2",
         serial_number=data.get("deviceSn") or "",
+        device_code=data.get("deviceCode") or "",
+        platform_version=data.get("platformVersion") or "",
     )
 
 
@@ -347,7 +351,7 @@ def _make_rx_socket(group: str, port: int) -> socket.socket | None:
 
 
 async def _probe_v2(
-    target: str, timeout: float, broadcast: bool,
+    target: str, timeout: float, broadcast: bool, *, log_identifiers: bool = True,
 ) -> list[DiscoveredDevice]:
     """Encrypted V2 discovery — multicast (broadcast) or unicast.
 
@@ -377,17 +381,19 @@ async def _probe_v2(
     def _on_message(data: bytes, addr: tuple[str, int]) -> None:
         decoded = _v2_decrypt(data, V2_COMMON_KEY)
         if decoded is None:
-            _LOGGER.debug("V2 RX from %s undecodable (%d bytes)", addr, len(data))
+            if log_identifiers:
+                _LOGGER.debug("V2 RX from %s undecodable (%d bytes)", addr, len(data))
             return
         device = _v2_parse_response(decoded, request_id, addr[0])
         if device is None or device.ip in seen:
             return
         seen.add(device.ip)
         devices.append(device)
-        _LOGGER.debug(
-            "V2 discovered %s at %s (sn=%s, fw=%s)",
-            device.name, device.ip, device.serial_number, device.version,
-        )
+        if log_identifiers:
+            _LOGGER.debug(
+                "V2 discovered %s at %s (sn=%s, fw=%s)",
+                device.name, device.ip, device.serial_number, device.version,
+            )
 
     class _Protocol(asyncio.DatagramProtocol):
         def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
@@ -401,10 +407,11 @@ async def _probe_v2(
             )
             transports.append(transport)
         tx_transport = transports[0]
-        _LOGGER.debug(
-            "V2 probe target=%s broadcast=%s rx_sockets=%d request_id=%s",
-            target, broadcast, len(rx_socks), request_id,
-        )
+        if log_identifiers:
+            _LOGGER.debug(
+                "V2 probe target=%s broadcast=%s rx_sockets=%d request_id=%s",
+                target, broadcast, len(rx_socks), request_id,
+            )
         def _send_once() -> None:
             if broadcast:
                 for group, port, ttl in V2_MULTICAST_TARGETS:
@@ -422,9 +429,10 @@ async def _probe_v2(
                     try:
                         tx_transport.sendto(blob, (target, port))
                     except OSError as err:
-                        _LOGGER.debug(
-                            "V2 send to %s:%d failed: %s", target, port, err,
-                        )
+                        if log_identifiers:
+                            _LOGGER.debug(
+                                "V2 send to %s:%d failed: %s", target, port, err,
+                            )
 
         deadline = loop.time() + timeout
         for attempt in range(V2_RETRY_COUNT):
@@ -439,7 +447,10 @@ async def _probe_v2(
         if remaining > 0:
             await asyncio.sleep(remaining)
     except OSError as err:
-        _LOGGER.debug("V2 probe to %s failed: %s", target, err)
+        if log_identifiers:
+            _LOGGER.debug("V2 probe to %s failed: %s", target, err)
+        else:
+            _LOGGER.debug("V2 discovery transport failed (%s)", type(err).__name__)
     finally:
         for transport in transports:
             try:

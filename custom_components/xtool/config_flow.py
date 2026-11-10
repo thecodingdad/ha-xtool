@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -21,6 +22,9 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 
 from .const import (
@@ -318,6 +322,10 @@ class XtoolOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Handle the options form. Schema is model-aware — only options
         relevant to the connected device's protocol family are shown."""
+        if self._config_entry.data.get("model_key") == "JS001_V2":
+            return self.async_show_menu(
+                step_id="init", menu_options=["x1_grant", "x1_options"],
+            )
         current_options = self._config_entry.options
         currently_enabled = current_options.get(CONF_ENABLE_UPDATES, False)
 
@@ -411,6 +419,72 @@ class XtoolOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema_dict),
+        )
+
+    async def async_step_x1_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(
+                data={**self._config_entry.options, **user_input}
+            )
+        return self.async_show_form(
+            step_id="x1_options",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_SCAN_INTERVAL,
+                        default=self._config_entry.options.get(CONF_SCAN_INTERVAL, 60),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=60, max=3600)),
+                }
+            ),
+        )
+
+    async def async_step_x1_grant(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        from .protocols.ws_v2.x1_auth import (
+            GRANT_CONFIGURED,
+            MAX_GRANT_JSON,
+            X1AuthError,
+            X1Grant,
+            save_grant,
+        )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                if len(user_input["grant"]) > MAX_GRANT_JSON:
+                    raise X1AuthError("X1 grant exceeds import limit")
+                value = json.loads(user_input["grant"])
+                grant = X1Grant.parse(
+                    value,
+                    host=self._config_entry.data[CONF_HOST],
+                    serial=self._config_entry.data["serial_number"],
+                )
+            except (json.JSONDecodeError, X1AuthError):
+                errors["base"] = "invalid_x1_grant"
+            else:
+                from homeassistant.exceptions import HomeAssistantError
+
+                try:
+                    await save_grant(self.hass, self._config_entry.entry_id, grant)
+                except (X1AuthError, HomeAssistantError, OSError):
+                    errors["base"] = "x1_grant_storage_failed"
+                else:
+                    return self.async_create_entry(
+                        data={**self._config_entry.options, GRANT_CONFIGURED: True}
+                    )
+        return self.async_show_form(
+            step_id="x1_grant",
+            errors=errors,
+            data_schema=vol.Schema(
+                {
+                    vol.Required("grant"): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
         )
 
     async def async_step_confirm_updates(

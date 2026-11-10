@@ -1,0 +1,20 @@
+{
+  "provenance": "X1 discovery response shape with synthetic identifiers and firmware.",
+  "discovery_response": {
+    "data": {
+      "deviceCode": "JS001",
+      "deviceId": "EXAMPLE-DEVICE-ID",
+      "deviceIp": "192.0.2.12",
+      "deviceName": "xTool_X1_example",
+      "deviceSn": "EXAMPLE-X1-NOT-REAL",
+      "firmwareVersion": "example-firmware",
+      "netType": 2,
+      "platformVersion": "2.0",
+      "requestId": 12345,
+      "version": "1.0",
+      "wifiSignal": -27
+    },
+    "method": "response",
+    "type": "deviceFind"
+  }
+}

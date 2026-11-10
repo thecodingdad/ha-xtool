@@ -8,7 +8,7 @@ import re
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -152,12 +152,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         CONF_DONGLE_POLL_INTERVAL, DEFAULT_DONGLE_POLL_INTERVAL
     )
 
-    # Each model entry already names its concrete protocol_class, so no
-    # V1/V2 switching is needed at runtime — the right entry was picked
-    # at config-flow validation time.
-    protocol = model.protocol_class(host)
+    # X1 uses discovery-only monitoring until its bound grant is configured.
+    if canonical_key == "JS001_V2" and entry.options.get("x1_grant_configured"):
+        from .protocols.ws_v2.coordinator_x1 import X1ReadOnlyCoordinator
+        from .protocols.ws_v2.x1_auth import X1AuthError, load_grant
+        from .protocols.ws_v2.x1_transport import X1ReadOnlyProtocol
 
-    coordinator = model.coordinator_class(
+        try:
+            grant = await load_grant(
+                hass, entry.entry_id, host=host, serial=serial_number
+            )
+        except (X1AuthError, HomeAssistantError, OSError, ValueError):
+            raise ConfigEntryAuthFailed("X1 bound grant unavailable or invalid") from None
+        protocol = X1ReadOnlyProtocol(grant)
+        coordinator_class = X1ReadOnlyCoordinator
+    else:
+        protocol = model.protocol_class(host)
+        coordinator_class = model.coordinator_class
+
+    coordinator = coordinator_class(
         hass,
         protocol=protocol,
         device_name=device_name,

@@ -45,7 +45,17 @@
   },
   "options": {
     "step": {
+      "x1_grant": {
+        "title": "X1-Berechtigung importieren",
+        "description": "Füge die gebundene Berechtigung für diese Integration vom Controller ein. Das Gerät wird nicht neu gekoppelt und das Zertifikat bleibt unverändert. Die Daten werden privat gespeichert, nicht in den Integrationsoptionen.",
+        "data": {"grant": "Berechtigung"}
+      },
+      "x1_options": {
+        "title": "X1-Abfrage",
+        "data": {"scan_interval": "Abfrageintervall"}
+      },
       "init": {
+        "menu_options": {"x1_grant": "Berechtigung", "x1_options": "Abfrage"},
         "data": {
           "power_switch_entity_id": "Steckdose",
           "enable_firmware_updates": "Firmware-Updates aktivieren",
@@ -71,6 +81,10 @@
           "cancel_updates": "Abbrechen"
         }
       }
+    },
+    "error": {
+      "invalid_x1_grant": "Ungültige Berechtigung oder Gerätebindung. Behalte die Originalwerte des Controllers bei.",
+      "x1_grant_storage_failed": "Die private Berechtigung konnte nicht gespeichert und geprüft werden. Der Import wurde nicht abgeschlossen."
     }
   },
   "entity": {
