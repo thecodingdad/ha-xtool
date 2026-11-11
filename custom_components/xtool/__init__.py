@@ -17,6 +17,7 @@ from .const import (
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
     CONF_FIRMWARE_CHECK_INTERVAL,
+    CONF_PAIRING_TOKEN,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
     CONF_STATS_POLL_INTERVAL,
@@ -34,6 +35,7 @@ from .const import (
 # before coordinator.py has defined it, and the first import of the package
 # fails (Home Assistant then retries it inside the event loop).
 from .protocols import DEVICE_MODELS, LaserInfo, detect_model  # isort: skip
+from .protocols.ws_v2 import WSV2Protocol  # isort: skip
 from .coordinator import XtoolCoordinator  # isort: skip
 
 PLATFORMS = [
@@ -156,6 +158,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     # V1/V2 switching is needed at runtime — the right entry was picked
     # at config-flow validation time.
     protocol = model.protocol_class(host)
+    if isinstance(protocol, WSV2Protocol):
+        protocol.set_pairing_token(entry.data.get(CONF_PAIRING_TOKEN, ""))
 
     coordinator = model.coordinator_class(
         hass,

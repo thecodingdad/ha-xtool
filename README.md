@@ -77,6 +77,30 @@ Or add manually:
 4. Select a discovered device from the list, or choose **Enter IP address manually**
 5. Confirm to add the device
 
+### Pairing tokens on newer WS-V2 firmware
+
+Some newer firmware, including O1 Omni `40.101.014.01.ht11`, requires
+device authentication. If prompted during setup, paste the device's permanent
+**pairing token** from xTool Studio. Older firmware continues to connect without
+a token. The integration does not perform interactive button pairing.
+
+To find an existing token in xTool Studio:
+
+1. Connect the device in Studio.
+2. Press **Cmd+Shift+I** on macOS or **Ctrl+Shift+I** on Windows to open Studio's Process Manager.
+3. Select the main/editor renderer and click **DevTools**.
+4. Open **Application > IndexedDB > parity-cache > tokens**.
+5. Match the record's `sn` to your device's serial number and copy `token`, **not** `sessionToken`.
+
+The pairing token is a credential: do not include it in issues or debug-log
+attachments. Home Assistant stores it in the device's config entry. The
+integration obtains a fresh session token on every connection and keeps that
+temporary token in memory only; no cloud access or developer mode is needed.
+
+For an existing WS-V2 entry, use its three-dot menu > **Reconfigure** to replace
+the pairing token. If authentication is rejected after reconnecting, Home
+Assistant also prompts for reauthentication.
+
 ### Options
 
 After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool Laser** > **Configure**:

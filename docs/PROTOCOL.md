@@ -1063,18 +1063,33 @@ Right after `ws.open` and before any other request, Studio's
   "data": {
     "userID": "<userUuid e.g. mk-guest>",
     "userKey": "bWFrZWJsb2NrLXh0b29s",
-    "timezone": "<IANA timezone>"
+    "timezone": "<IANA timezone>",
+    "token": "<permanent pairing token, or an empty string>"
   },
   "timestamp": <ms>,
   "transactionId": <auto-incrementing number>
 }
 ```
 
-If the response carries `code !== 0` or fails, Studio closes with
-`CloseCode.FirstMessageError` and does not retry until reconnect. The
-old "raw text frame `bWFrZWJsb2NrLXh0b29s` after connect" claim from
-older docs was a misread — the token still exists, but it lives inside
-the parity request body.
+The `userKey` is a public connection identifier, not the device's pairing
+credential. Newer firmware, verified on O1 `40.101.014.01.ht11` with Studio
+1.10.15, requires `data.token`: the permanent per-device credential stored in
+Studio's IndexedDB database `parity-cache`, object store `tokens`, keyed by
+printer serial. Include the field even when the credential is empty.
+
+Successful cached-token authentication returns `code: 0`,
+`data.authState: "TOKEN_AUTHORIZED"` and `data.sessionToken`. Attach that
+**session token at the root** of every subsequent instruction request,
+including heartbeats. Never substitute the permanent token there. Session
+tokens belong to one connection; discard them on disconnect and authenticate
+again after reconnecting. Older firmware may acknowledge parity without
+returning a session token and continues to use tokenless requests.
+
+Studio can handle `code: 406` by polling `/v1/user/auth-status` while waiting
+for a button confirmation. This integration instead prompts for an existing
+permanent token and does not implement that interactive flow. The old "raw
+text frame `bWFrZWJsb2NrLXh0b29s` after connect" claim was a misread: the
+public identifier belongs in the framed parity request.
 
 **Step 3 — Request/response envelope:**
 
@@ -1088,7 +1103,8 @@ Every API call sent on `function=instruction` carries:
   "params": { ... },
   "data": { ... },
   "timestamp": <Date.now()>,
-  "transactionId": <number, auto-incrementing, wraps below 65500>
+  "transactionId": <number, auto-incrementing, wraps below 65500>,
+  "sessionToken": "<session token, omitted on older tokenless firmware>"
 }
 ```
 
@@ -1121,7 +1137,8 @@ Every `heartbeatInterval` (3 s) Studio sends a fixed-id ping:
   "params": {},
   "data": {},
   "timestamp": <Date.now()>,
-  "transactionId": 65510
+  "transactionId": 65510,
+  "sessionToken": "<session token, omitted on older tokenless firmware>"
 }
 ```
 
