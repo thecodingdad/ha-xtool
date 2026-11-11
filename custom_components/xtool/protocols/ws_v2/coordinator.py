@@ -6,8 +6,11 @@ import logging
 from dataclasses import replace as dataclass_replace
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
+
 from ...coordinator import XtoolCoordinator
 from ..base import XtoolDeviceState
+from .protocol import WSV2AuthenticationError
 
 if TYPE_CHECKING:
     from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -145,6 +148,11 @@ class WSV2Coordinator(XtoolCoordinator):
 
             await self._poll_accessories(state)
 
+        except WSV2AuthenticationError as err:
+            await self.protocol.disconnect()
+            raise ConfigEntryAuthFailed(
+                "Update the device's xTool Studio pairing token"
+            ) from err
         except Exception as err:
             _LOGGER.debug("WS-V2 poll failed: %s", err)
             state.available = False

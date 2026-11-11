@@ -21,12 +21,16 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 
 from .const import (
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
     CONF_FIRMWARE_CHECK_INTERVAL,
+    CONF_PAIRING_TOKEN,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
     CONF_STATS_POLL_INTERVAL,
@@ -40,6 +44,7 @@ from .const import (
 from .discovery import DiscoveredDevice, discover_devices
 from .protocols import (
     ConnectionInfo,
+    VALIDATION_ERROR_AUTH_REQUIRED,
     VALIDATION_ERROR_UDP_NO_REPLY,
     VALIDATION_ERROR_UNKNOWN_MODEL,
     detect_models,
@@ -77,6 +82,10 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         # picker can render the discovered name + firmware verbatim
         # (helps the user file a complete bug report).
         self._fallback_discovered: DiscoveredDevice | None = None
+        self._fallback_model_key: str | None = None
+        self._pairing_token = ""
+        self._auth_entry: ConfigEntry | None = None
+        self._auth_abort_reason = "reauth_successful"
 
     @staticmethod
     @callback
@@ -105,6 +114,9 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Discovery: %s (%s)", name or "unknown", host)
 
         conn_info = await validate_connection(host)
+        if conn_info == VALIDATION_ERROR_AUTH_REQUIRED:
+            self._fallback_host = host
+            return await self.async_step_auth()
         if not isinstance(conn_info, ConnectionInfo):
             # Discovery flow has no form to surface ``errors`` on, so the
             # granular reason rides through the abort dialog instead.
@@ -199,9 +211,13 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             return await self.async_step_manual()
 
-        conn_info = await validate_connection(host)
+        conn_info = await validate_connection(host, pairing_token=self._pairing_token)
         if not isinstance(conn_info, ConnectionInfo):
             reason = conn_info or "cannot_connect"
+            if reason == VALIDATION_ERROR_AUTH_REQUIRED:
+                self._fallback_host = host
+                self._fallback_model_key = None
+                return await self.async_step_auth()
             # Discovery couldn't identify the device — fall back to the
             # manual model picker so the user can pick the right model
             # (e.g. multicast blocked, firewall, custom firmware name).
@@ -237,21 +253,98 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
             return self.async_abort(reason=reason)
 
+        return await self._async_create_device_entry(conn_info)
+
+    async def _async_create_device_entry(
+        self, conn_info: ConnectionInfo,
+    ) -> ConfigFlowResult:
+        """Create an entry or replace an existing entry's pairing credential."""
+        if self._auth_entry is not None:
+            expected_serial = self._auth_entry.data.get("serial_number")
+            if expected_serial and conn_info.serial_number != expected_serial:
+                return self.async_abort(reason="wrong_device")
+            return self.async_update_reload_and_abort(
+                self._auth_entry,
+                data_updates={CONF_PAIRING_TOKEN: self._pairing_token},
+                reason=self._auth_abort_reason,
+            )
+
         if conn_info.serial_number:
             await self.async_set_unique_id(conn_info.serial_number)
             self._abort_if_unique_id_configured()
 
+        data = {
+            CONF_HOST: conn_info.host,
+            "serial_number": conn_info.serial_number,
+            "device_name": conn_info.name,
+            "firmware_version": conn_info.firmware_version,
+            "laser_power_watts": conn_info.laser_power_watts,
+            "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
+        }
+        if self._pairing_token:
+            data[CONF_PAIRING_TOKEN] = self._pairing_token
         return self.async_create_entry(
             title=conn_info.name,
-            data={
-                CONF_HOST: host,
-                "serial_number": conn_info.serial_number,
-                "device_name": conn_info.name,
-                "firmware_version": conn_info.firmware_version,
-                "laser_power_watts": conn_info.laser_power_watts,
-                "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
-            },
+            data=data,
         )
+
+    async def async_step_auth(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Authenticate with the permanent pairing token from xTool Studio."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._pairing_token = user_input[CONF_PAIRING_TOKEN].strip()
+            if not self._pairing_token:
+                errors["base"] = VALIDATION_ERROR_AUTH_REQUIRED
+            else:
+                host = self._fallback_host or ""
+                if self._fallback_model_key:
+                    model_id, _, version = self._fallback_model_key.rpartition("_")
+                    conn_info = await validate_with_model(
+                        host, model_id, version, pairing_token=self._pairing_token,
+                    )
+                else:
+                    conn_info = await validate_connection(
+                        host, pairing_token=self._pairing_token,
+                    )
+                if isinstance(conn_info, ConnectionInfo):
+                    return await self._async_create_device_entry(conn_info)
+                errors["base"] = conn_info or "cannot_connect"
+
+        return self.async_show_form(
+            step_id="auth",
+            data_schema=vol.Schema({
+                vol.Required(CONF_PAIRING_TOKEN): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any],
+    ) -> ConfigFlowResult:
+        """Replace a rejected credential without recreating the device."""
+        self._auth_entry = self._get_reauth_entry()
+        self._fallback_host = entry_data[CONF_HOST]
+        self._fallback_model_key = entry_data.get("model_key")
+        return await self.async_step_auth()
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Allow replacing a WS-V2 pairing token from the device entry menu."""
+        from .protocols import DEVICE_MODELS
+
+        self._auth_entry = self._get_reconfigure_entry()
+        self._fallback_model_key = self._auth_entry.data.get("model_key")
+        model = DEVICE_MODELS.get(self._fallback_model_key)
+        if model is None or model.protocol_version != "V2":
+            return self.async_abort(reason="token_not_supported")
+        self._auth_abort_reason = "reconfigure_successful"
+        self._fallback_host = self._auth_entry.data[CONF_HOST]
+        return await self.async_step_auth(user_input)
 
     async def async_step_pick_model(
         self, user_input: dict[str, Any] | None = None,
@@ -268,22 +361,15 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST].strip()
             composite_key = user_input["model"]
             model_id, _, proto_ver = composite_key.rpartition("_")
-            conn_info = await validate_with_model(host, model_id, proto_ver)
+            conn_info = await validate_with_model(
+                host, model_id, proto_ver, pairing_token=self._pairing_token,
+            )
             if isinstance(conn_info, ConnectionInfo):
-                if conn_info.serial_number:
-                    await self.async_set_unique_id(conn_info.serial_number)
-                    self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=conn_info.name,
-                    data={
-                        CONF_HOST: host,
-                        "serial_number": conn_info.serial_number,
-                        "device_name": conn_info.name,
-                        "firmware_version": conn_info.firmware_version,
-                        "laser_power_watts": conn_info.laser_power_watts,
-                        "model_key": f"{conn_info.model_id}_{conn_info.protocol_version}",
-                    },
-                )
+                return await self._async_create_device_entry(conn_info)
+            if conn_info == VALIDATION_ERROR_AUTH_REQUIRED:
+                self._fallback_host = host
+                self._fallback_model_key = composite_key
+                return await self.async_step_auth()
             errors["base"] = conn_info or "cannot_connect"
             self._fallback_host = host
 

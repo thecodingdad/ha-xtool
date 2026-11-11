@@ -64,7 +64,7 @@ from typing import Any
 
 from ...const import XtoolStatus
 from ..base import DeviceInfo, XtoolDeviceState
-from .protocol import WSV2Protocol
+from .protocol import WSV2AuthenticationError, WSV2Protocol
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -233,6 +233,8 @@ class DT002WSV2Protocol(WSV2Protocol):
         info = DeviceInfo()
         try:
             data = await self.request(DT002_PATH_MACHINE_INFO, "GET")
+        except WSV2AuthenticationError:
+            raise
         except Exception as err:
             _LOGGER.debug("DT002 %s failed: %s", DT002_PATH_MACHINE_INFO, err)
             data = {}
@@ -251,6 +253,8 @@ class DT002WSV2Protocol(WSV2Protocol):
                                 info.hardware_version = str(hard)
         try:
             wifi = await self.request(DT002_PATH_WIFI_INFO, "GET")
+        except WSV2AuthenticationError:
+            raise
         except Exception as err:
             _LOGGER.debug("DT002 %s failed: %s", DT002_PATH_WIFI_INFO, err)
             wifi = {}
@@ -291,6 +295,8 @@ class DT002WSV2Protocol(WSV2Protocol):
             return None
         try:
             return await self.request(url, "GET")
+        except WSV2AuthenticationError:
+            raise
         except RuntimeError as err:
             if "code 404" in str(err):
                 self._unsupported_endpoints.add(url)

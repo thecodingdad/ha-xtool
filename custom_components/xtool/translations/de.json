@@ -19,6 +19,13 @@
         "title": "xTool Laser entdeckt",
         "description": "Ein xTool Laser **{name}** wurde in deinem Netzwerk gefunden. Möchtest du ihn einrichten?"
       },
+      "auth": {
+        "title": "Bei xTool authentifizieren",
+        "description": "Diese Firmware benötigt das dauerhafte Kopplungstoken aus xTool Studio. Gib das Token für dieses Gerät aus IndexedDB ein: parity-cache > tokens. Verwende token, nicht sessionToken. Eine Anleitung findest du in der README der Integration.",
+        "data": {
+          "pairing_token": "Kopplungstoken"
+        }
+      },
       "pick_model": {
         "title": "xTool-Modell manuell auswählen",
         "description": "Auto-Discovery konnte das Gerät nicht identifizieren — erkannter Name `{name}`, Firmware `{firmware}`.\n\nWähle Modell und Firmware-Linie aus der Liste — V2-Eintrag wenn deine Firmware aktuell ist (40.x-Bereich mit neuem Communication-Framework), sonst V1.\n\nWenn dein Modell nicht in der Liste steht, [erstelle bitte ein Issue]({issue_url}) und füge den erkannten Namen und die Firmware bei, damit das Modell hinzugefügt werden kann.",
@@ -29,6 +36,7 @@
       }
     },
     "error": {
+      "auth_required": "Die Authentifizierung wurde abgelehnt. Gib das dauerhafte Kopplungstoken dieses Geräts aus xTool Studio ein, nicht das temporäre sessionToken.",
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen. Bitte prüfe die IP-Adresse und stelle sicher, dass das Gerät eingeschaltet und mit dem WLAN verbunden ist.",
       "udp_no_reply": "Keine UDP-Discovery-Antwort des Geräts auf Port 20000. IP prüfen, sicherstellen dass das Gerät eingeschaltet ist und sich im selben Subnetz befindet, und dass keine Firewall UDP-Broadcasts blockiert.",
       "unknown_model": "Das Gerät hat auf die Discovery geantwortet, aber sein Modellname wird von dieser Integration nicht erkannt. Bitte ein Issue mit dem gemeldeten Namen erstellen.",
@@ -36,6 +44,10 @@
       "already_configured": "Dieses Gerät ist bereits konfiguriert."
     },
     "abort": {
+      "reauth_successful": "Kopplungstoken erfolgreich aktualisiert.",
+      "reconfigure_successful": "Kopplungstoken erfolgreich aktualisiert.",
+      "wrong_device": "Die Seriennummer des verbundenen Geräts stimmt nicht mit diesem Eintrag überein.",
+      "token_not_supported": "Kopplungstoken können nur für WS-V2-Geräte konfiguriert werden.",
       "cannot_connect": "Verbindung zum Gerät fehlgeschlagen.",
       "udp_no_reply": "Keine UDP-Discovery-Antwort auf Port 20000 — prüfe ob das Gerät online ist und im selben Subnetz hängt.",
       "unknown_model": "Das gefundene Gerätemodell wird von dieser Integration nicht erkannt.",

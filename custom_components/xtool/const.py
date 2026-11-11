@@ -17,6 +17,7 @@ DEFAULT_DEVICE_NAME = "xTool Device"
 # Config / Options keys
 CONF_POWER_SWITCH = "power_switch_entity_id"
 CONF_ENABLE_UPDATES = "enable_firmware_updates"
+CONF_PAIRING_TOKEN = "pairing_token"
 
 # --- Polling intervals (overridable in the options flow) --------------------
 CONF_SCAN_INTERVAL = "scan_interval"  # main poll cadence (seconds)

@@ -44,6 +44,7 @@ from .ws_v2 import (
     WSV2Protocol,
     probe_v2,
 )
+from .ws_v2.protocol import WSV2AuthenticationError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,9 +115,12 @@ def detect_model(device_name: str) -> XtoolDeviceModel:
 VALIDATION_ERROR_UDP_NO_REPLY = "udp_no_reply"
 VALIDATION_ERROR_UNKNOWN_MODEL = "unknown_model"
 VALIDATION_ERROR_PROTOCOL_FAILED = "protocol_failed"
+VALIDATION_ERROR_AUTH_REQUIRED = "auth_required"
 
 
-async def validate_connection(host: str) -> ConnectionInfo | str:
+async def validate_connection(
+    host: str, *, pairing_token: str = "",
+) -> ConnectionInfo | str:
     """Identify a device by UDP probe, then validate via its protocol.
 
     Selection algorithm:
@@ -179,6 +183,8 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
         return VALIDATION_ERROR_UNKNOWN_MODEL
 
     protocol = chosen.protocol_class(host)
+    if isinstance(protocol, WSV2Protocol):
+        protocol.set_pairing_token(pairing_token)
     try:
         await protocol.connect()
         info = await protocol.get_device_info()
@@ -213,6 +219,8 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
             protocol_version=chosen.protocol_version,
             model_id=chosen.model_id,
         )
+    except WSV2AuthenticationError:
+        return VALIDATION_ERROR_AUTH_REQUIRED
     except Exception as err:
         _LOGGER.debug("Validation against %s as %s failed: %s",
                       host, chosen.model_id, err)
@@ -222,7 +230,7 @@ async def validate_connection(host: str) -> ConnectionInfo | str:
 
 
 async def validate_with_model(
-    host: str, model_id: str, protocol_version: str,
+    host: str, model_id: str, protocol_version: str, *, pairing_token: str = "",
 ) -> ConnectionInfo | str:
     """Validate against an explicit model — bypasses UDP discovery.
 
@@ -240,6 +248,8 @@ async def validate_with_model(
         return VALIDATION_ERROR_UNKNOWN_MODEL
 
     protocol = chosen.protocol_class(host)
+    if isinstance(protocol, WSV2Protocol):
+        protocol.set_pairing_token(pairing_token)
     try:
         await protocol.connect()
         info = await protocol.get_device_info()
@@ -272,6 +282,8 @@ async def validate_with_model(
             protocol_version=chosen.protocol_version,
             model_id=chosen.model_id,
         )
+    except WSV2AuthenticationError:
+        return VALIDATION_ERROR_AUTH_REQUIRED
     except Exception as err:
         _LOGGER.debug(
             "Manual validation against %s as %s/%s failed: %s",
