@@ -2142,6 +2142,19 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
     def supports_crop(self) -> bool:
         return self._uses_calibration
 
+    @property
+    def crop_limits(self) -> dict[str, tuple[float, float]]:
+        """The allowed (minimum, maximum) of each crop setting, in mm.
+
+        These are the limits of this camera's own crop numbers.
+        """
+        return {
+            key: (minimum, maximum)
+            for key, _default, minimum, maximum, _icon in _crop_settings(
+                self.coordinator, self._camera_name,
+            )
+        }
+
     async def async_set_crop(
         self,
         width: float | None = None,

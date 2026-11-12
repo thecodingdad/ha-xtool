@@ -581,6 +581,9 @@
     "camera_wrong_entity": {
       "message": "This camera cannot be cropped. Choose an xTool main camera that the laser calibrates."
     },
+    "camera_value_out_of_range": {
+      "message": "{field} is {value} mm, but this camera allows {minimum} to {maximum} mm."
+    },
     "camera_needs_a_value": {
       "message": "Give at least one crop value."
     },

@@ -97,7 +97,7 @@ camera:
       selector:
         number:
           min: 0
-          max: 460
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box
@@ -106,7 +106,7 @@ camera:
       selector:
         number:
           min: 0
-          max: 460
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box
@@ -114,8 +114,8 @@ camera:
       example: 0
       selector:
         number:
-          min: -200
-          max: 200
+          min: -700
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box
@@ -123,8 +123,8 @@ camera:
       example: 0
       selector:
         number:
-          min: -200
-          max: 200
+          min: -700
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box

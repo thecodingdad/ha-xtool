@@ -45,13 +45,20 @@ MOVE_SCHEMA = {
     vol.Optional(ATTR_STEPS, default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
 }
 
-_CROP_SIDE = vol.All(vol.Coerce(float), vol.Range(min=0, max=460))
-_CROP_CENTER = vol.All(vol.Coerce(float), vol.Range(min=-200, max=200))
+# The limits depend on the camera (its own crop numbers), so the schema only
+# converts the values; _async_camera checks them against that camera.
+_CROP_VALUE = vol.Coerce(float)
 CAMERA_SCHEMA = {
-    vol.Optional(ATTR_CROP_WIDTH): _CROP_SIDE,
-    vol.Optional(ATTR_CROP_HEIGHT): _CROP_SIDE,
-    vol.Optional(ATTR_CROP_CENTER_X): _CROP_CENTER,
-    vol.Optional(ATTR_CROP_CENTER_Y): _CROP_CENTER,
+    vol.Optional(ATTR_CROP_WIDTH): _CROP_VALUE,
+    vol.Optional(ATTR_CROP_HEIGHT): _CROP_VALUE,
+    vol.Optional(ATTR_CROP_CENTER_X): _CROP_VALUE,
+    vol.Optional(ATTR_CROP_CENTER_Y): _CROP_VALUE,
+}
+_CROP_SETTINGS = {
+    ATTR_CROP_WIDTH: "width",
+    ATTR_CROP_HEIGHT: "height",
+    ATTR_CROP_CENTER_X: "center_x",
+    ATTR_CROP_CENTER_Y: "center_y",
 }
 
 
@@ -133,6 +140,22 @@ async def _async_camera(entity, call: ServiceCall) -> None:
         raise ServiceValidationError(
             translation_domain=DOMAIN, translation_key="camera_needs_a_value",
         )
+    limits = entity.crop_limits
+    for key, setting in _CROP_SETTINGS.items():
+        if key not in data:
+            continue
+        minimum, maximum = limits[setting]
+        if not minimum <= data[key] <= maximum:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="camera_value_out_of_range",
+                translation_placeholders={
+                    "field": key,
+                    "value": f"{data[key]:g}",
+                    "minimum": f"{minimum:g}",
+                    "maximum": f"{maximum:g}",
+                },
+            )
     await entity.async_set_crop(
         width=data.get(ATTR_CROP_WIDTH),
         height=data.get(ATTR_CROP_HEIGHT),

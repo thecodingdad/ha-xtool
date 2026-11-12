@@ -1421,6 +1421,9 @@
     "camera_wrong_entity": {
       "message": "Diese Kamera kann nicht zugeschnitten werden. Wähle eine xTool-Hauptkamera, die der Laser kalibriert."
     },
+    "camera_value_out_of_range": {
+      "message": "{field} ist {value} mm, aber diese Kamera erlaubt {minimum} bis {maximum} mm."
+    },
     "camera_needs_a_value": {
       "message": "Gib mindestens einen Wert für den Bildausschnitt an."
     },
