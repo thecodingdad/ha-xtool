@@ -54,7 +54,7 @@ class XtoolSensor(XtoolRestoringSensor, SensorEntity):
 
 
 class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):
-    """Status sensor that shows 'off' when device is unreachable."""
+    """Status sensor that shows 'off' when device is unreachable (always available)."""
 
     _attr_translation_key = "status"
     _attr_icon = "mdi:list-status"

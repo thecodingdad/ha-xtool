@@ -85,7 +85,7 @@ The available options are gated by the device's protocol family — only relevan
 
 | Option | Description |
 |--------|-------------|
-| Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off the status sensor reports "Off" and **control entities** (buttons, switches, numbers, cameras) become unavailable. Read-only sensors keep their last-known value so dashboards stay populated. After the switch turns on, the status sensor reports "Initializing" until the laser answers (at most 3 minutes), instead of "Off". |
+| Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off the status sensor reports "Off" and **control entities** (buttons, switches, numbers, cameras) become unavailable. Sensors and binary sensors become unavailable too, like whenever the laser cannot be reached; only the lifetime totals (Working time, Operating times, Standby time, Tool runtime) keep their last value. After the switch turns on, the status sensor reports "Initializing" until the laser answers (at most 3 minutes), instead of "Off". |
 | Polling interval | Main coordinator polling cadence in seconds (default 5). Lower = more responsive, higher network usage. |
 | Enable firmware updates | _(only when the model has a known firmware ID)._ Off by default — the firmware update entity only reports whether an update is available. Enabling this option arms the install action. |
 | Firmware-update check interval | _(only when firmware updates are supported.)_ How often the cloud is polled for new firmware (default 6 h). |
