@@ -1803,8 +1803,8 @@ CROP_MIN_SIDE = 20.0
 CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float, str], ...] = (
     ("width", CALIBRATED_AREA_MM, 0, 460, "mdi:arrow-expand-horizontal"),
     ("height", CALIBRATED_AREA_MM, 0, 460, "mdi:arrow-expand-vertical"),
-    ("center_x", 0, -200, 200, "mdi:arrow-left-right"),
-    ("center_y", 0, -200, 200, "mdi:arrow-up-down"),
+    ("center_x", 0, -200, 200, "mdi:format-horizontal-align-center"),
+    ("center_y", 0, -200, 200, "mdi:format-vertical-align-center"),
 )
 
 
@@ -1847,14 +1847,14 @@ def _crop_settings(
         return (
             ("width", width, 0, round(width * 1.5), "mdi:arrow-expand-horizontal"),
             ("height", height, 0, round(height * 1.5), "mdi:arrow-expand-vertical"),
-            ("center_x", width / 2, 0, width, "mdi:arrow-left-right"),
-            ("center_y", height / 2, 0, height, "mdi:arrow-up-down"),
+            ("center_x", width / 2, 0, width, "mdi:format-horizontal-align-center"),
+            ("center_y", height / 2, 0, height, "mdi:format-vertical-align-center"),
         )
     return (
         ("width", width, 0, round(width * 1.5), "mdi:arrow-expand-horizontal"),
         ("height", height, 0, round(height * 1.5), "mdi:arrow-expand-vertical"),
-        ("center_x", 0, -round(width / 2), round(width / 2), "mdi:arrow-left-right"),
-        ("center_y", 0, -round(height / 2), round(height / 2), "mdi:arrow-up-down"),
+        ("center_x", 0, -round(width / 2), round(width / 2), "mdi:format-horizontal-align-center"),
+        ("center_y", 0, -round(height / 2), round(height / 2), "mdi:format-vertical-align-center"),
     )
 
 

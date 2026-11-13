@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
@@ -94,7 +95,6 @@ class P2FillLight(_CameraDeviceEntity, LightEntity):
     camera's device.
     """
 
-    _attr_icon = "mdi:track-light"
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
 
@@ -103,8 +103,8 @@ class P2FillLight(_CameraDeviceEntity, LightEntity):
         self._index = index
         self._set_unique_id(f"fill_light_{index}")
         self._attr_translation_key = f"fill_light_{index}"
-        if index == 1 and self._use_camera_device("closeup"):
-            self._attr_translation_key = "fill_light"
+        if index == 1:
+            self._use_camera_device("closeup")
 
     def _level(self) -> int | None:
         data = self.coordinator.data
@@ -232,6 +232,9 @@ class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure):
             self._attr_translation_key = "exposure"
 
     async def async_set_native_value(self, value: float) -> None:
+        if not math.isfinite(value):
+            # The slider sends no number while the exposure is unknown
+            raise HomeAssistantError(f"Exposure {value} is not a number")
         await super().async_set_native_value(value)
         camera = _thumbnail_registry(self.coordinator).cameras.get(self._stream_name)
         if camera is not None:
@@ -502,26 +505,28 @@ CLOSE_CAMERA_PREFIX = "close_camera_"
 CLOSE_CAMERA_AREAS = tuple(
     f"{CLOSE_CAMERA_PREFIX}{kind}" for kind in (VIEW_UNCROPPED, VIEW_STUDIO, VIEW_CUSTOM)
 )
-# The overview's areas, drawn on the close camera's picture
-OVERVIEW_PREFIX = "overview_"
 P2_CROP_OPTIONS: dict[str, list[str]] = {
     "overview": [
         VIEW_UNCROPPED, VIEW_SYNC_TO_MODE, *p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, VIEW_CUSTOM,
     ],
     "closeup": [VIEW_UNCROPPED, VIEW_STUDIO, VIEW_CUSTOM],
 }
-# The close camera's picture itself, laid on the overview's
-CLOSE_CAMERA_IMAGE = "close_camera_image"
+# The close camera's picture, as that camera shows it, laid on the overview's
+CLOSE_CAMERA_IMAGE = "close_camera"
+# A processing mode's area (the Mode select's options)
+MODE_PREFIX = "mode_"
 # Drawn on top of the areas: where the laser fires, the slats, the red dots
 OVERLAY_MARKS = ("laser_target", "slat_lines", "red_dot_close", "red_dot_quick")
 # Each overlay is a switch; any number may be on
 P2_OVERLAYS: dict[str, list[str]] = {
-    "overview": [*p2_geometry.AREAS, *CLOSE_CAMERA_AREAS, CLOSE_CAMERA_IMAGE, *OVERLAY_MARKS],
-    "closeup": [
-        VIEW_STUDIO, VIEW_CUSTOM,
-        *(f"{OVERVIEW_PREFIX}{area}" for area in p2_geometry.AREAS),
-        *OVERLAY_MARKS,
+    "overview": [
+        *(
+            f"{MODE_PREFIX}{area}" if area in p2_geometry.MODES else area
+            for area in p2_geometry.AREAS
+        ),
+        CLOSE_CAMERA_IMAGE, *OVERLAY_MARKS,
     ],
+    "closeup": [VIEW_STUDIO, VIEW_CUSTOM, *OVERLAY_MARKS],
 }
 P2_MODE_OPTIONS = list(p2_geometry.MODES)
 # Settings changed while working: on the device page's Controls
@@ -695,9 +700,7 @@ def _overlay_rect(
 ) -> tuple[float, float, float, float] | None:
     """An area overlay's outline, in the laser's mm."""
     if camera_name == "overview":
-        return _overview_area(coordinator, name)
-    if name.startswith(OVERVIEW_PREFIX):
-        return p2_geometry.AREAS.get(name.removeprefix(OVERVIEW_PREFIX))
+        return _overview_area(coordinator, name.removeprefix(MODE_PREFIX))
     rect = _close_rect(coordinator, name)
     if rect is None:
         return None
@@ -719,9 +722,7 @@ def _color(coordinator: XtoolCoordinator, key: str) -> tuple[int, int, int]:
 
 
 def _area_color(coordinator: XtoolCoordinator, name: str) -> tuple[int, int, int]:
-    return _color(
-        coordinator, name.removeprefix(OVERVIEW_PREFIX).removeprefix(CLOSE_CAMERA_PREFIX),
-    )
+    return _color(coordinator, name.removeprefix(MODE_PREFIX))
 
 
 def p2_correction(
@@ -751,7 +752,8 @@ def p2_correction(
                 areas.append((*rect, _area_color(coordinator, name)))
     images = []
     if camera_name == "overview" and on(CLOSE_CAMERA_IMAGE):
-        # The close camera's last picture, at its crop, where it was taken
+        # The close camera's last picture as it shows it (its crop and
+        # overlays), where it was taken
         close = _thumbnail_registry(coordinator).cameras.get("closeup")
         picture = getattr(close, "_last_snapshot", None)
         rect = _overlay_rect(coordinator, "closeup", VIEW_CUSTOM)
@@ -813,9 +815,7 @@ def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:
     if camera_name != "overview":
         # The close camera's picture moves with the head
         return any(on(name) for name in P2_OVERLAYS[camera_name])
-    return settings["crop_preset"] in CLOSE_CAMERA_AREAS or any(
-        on(name) for name in (*CLOSE_CAMERA_AREAS, CLOSE_CAMERA_IMAGE)
-    )
+    return settings["crop_preset"] in CLOSE_CAMERA_AREAS or on(CLOSE_CAMERA_IMAGE)
 
 
 async def _refresh(coordinator: XtoolCoordinator, camera_name: str) -> None:
@@ -1156,7 +1156,6 @@ class P2MoveLaser(XtoolEntity, ButtonEntity):
     stays where it is)."""
 
     _attr_translation_key = "move_laser"
-    _attr_icon = "mdi:axis-arrow"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -1358,9 +1357,32 @@ def build_p2_binary_sensors(coordinator: XtoolCoordinator) -> list[BinarySensorE
     ]
 
 
+class P2Wake(XtoolEntity, ButtonEntity):
+    """Wakes a sleeping P2, so its cameras take photos again.
+
+    The P2 has no wake command; a photo wakes it (Home Assistant takes
+    none while it sleeps, so as not to keep it awake).
+    """
+
+    _attr_translation_key = "wake"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("wake")
+
+    async def async_press(self) -> None:
+        camera_name = self.coordinator.model.camera_names[0]
+        try:
+            await self.coordinator.protocol.camera_snap(camera_name)
+        except Exception as err:  # noqa: BLE001
+            raise HomeAssistantError(f"The P2 did not answer: {err}") from err
+        await self.coordinator.async_request_refresh()
+
+
 def build_p2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     return [
         XtoolHomeLaserHead(coordinator),
+        P2Wake(coordinator),
         P2MoveLaser(coordinator),
         P2MeasureDistance(coordinator),
     ]

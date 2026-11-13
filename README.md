@@ -322,7 +322,7 @@ Ranges: Crop width 0–915, Crop height 0–458, Crop center X 0–610, Crop cen
 
 Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop center Y −50 to 50.
 
-**Overlays.** Each overlay is a switch on the camera's device; any number can be on. An area overlay draws its outline with a dot at its origin and one at its center, all in the area's color. Others: Laser target (where the laser fires), Slat lines (every slat, odd numbers labeled), Red dot (close) (a ring the dot sits just inside), Red dot (quick), and on the Overview camera the Close camera's areas and its last photo. Overlay colors are set in the integration's options.
+**Overlays.** Each overlay is a switch on the camera's device; any number can be on, and all start off. An area overlay draws its outline with a dot at its origin and one at its center, all in the area's color. The Overview camera has Work bed and the three Mode areas (Overlay mode process on slats, honeycomb panel, slats removed); the Close camera has Studio and Custom. Both have Laser target (where the laser fires), Slat lines (every slat, odd numbers labeled), Red dot (close) (a ring the dot sits just inside) and Red dot (quick). **Overlay close camera** lays the Close camera's last picture, as that camera shows it (its crop and its own overlays), on the Overview camera where it was taken. Overlay colors are set in the integration's options.
 
 **Mode and Thickness or distance.** Mode (Process on slats, Honeycomb panel, Slats removed) and one Thickness or distance number, read as Studio reads it in that Mode: the material's thickness on the slats, otherwise the distance down from 25 mm above the slats. The overview picture is straightened for that height. **Measure thickness or distance** reads the IR sensor under the close red dot (turning the dot on for the reading if needed) and fills in Thickness or distance; it can be changed after.
 
@@ -339,6 +339,7 @@ Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop
 | Home XY | Move laser head to XY home |
 | Home Z | Move laser head to Z home |
 | Home laser | Move the laser head back to (0, 0) |
+| Wake | P2: wake a sleeping P2 so its cameras take photos again (the P2 has no wake command; a photo wakes it, and Home Assistant takes none while it sleeps) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
 | Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |

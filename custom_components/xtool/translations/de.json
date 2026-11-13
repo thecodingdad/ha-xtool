@@ -71,7 +71,6 @@
               "process_on_slats": "Auf Lamellen bearbeiten",
               "honeycomb_panel": "Wabenplatte",
               "slats_removed": "Lamellen entfernt",
-              "uncropped": "Unbeschnitten (Nahkamera)",
               "studio": "Studio (Nahkamera)",
               "custom": "Benutzerdefiniert (Nahkamera)",
               "laser_target": "Laserziel",
@@ -840,41 +839,23 @@
       "overlay_work_bed": {
         "name": "Overlay Arbeitsbett"
       },
-      "overlay_process_on_slats": {
-        "name": "Overlay auf Lamellen bearbeiten"
+      "overlay_mode_process_on_slats": {
+        "name": "Overlay Modus auf Lamellen bearbeiten"
       },
-      "overlay_honeycomb_panel": {
-        "name": "Overlay Wabenplatte"
+      "overlay_mode_honeycomb_panel": {
+        "name": "Overlay Modus Wabenplatte"
       },
-      "overlay_slats_removed": {
-        "name": "Overlay Lamellen entfernt"
+      "overlay_mode_slats_removed": {
+        "name": "Overlay Modus Lamellen entfernt"
       },
-      "overlay_close_camera_uncropped": {
-        "name": "Overlay Nahkamera (unbeschnitten)"
-      },
-      "overlay_close_camera_studio": {
-        "name": "Overlay Nahkamera (Studio)"
-      },
-      "overlay_close_camera_custom": {
-        "name": "Overlay Nahkamera (benutzerdefiniert)"
+      "overlay_close_camera": {
+        "name": "Overlay Nahkamera"
       },
       "overlay_studio": {
         "name": "Overlay Studio"
       },
       "overlay_custom": {
         "name": "Overlay benutzerdefiniert"
-      },
-      "overlay_overview_work_bed": {
-        "name": "Overlay Übersicht (Arbeitsbett)"
-      },
-      "overlay_overview_process_on_slats": {
-        "name": "Overlay Übersicht (auf Lamellen bearbeiten)"
-      },
-      "overlay_overview_honeycomb_panel": {
-        "name": "Overlay Übersicht (Wabenplatte)"
-      },
-      "overlay_overview_slats_removed": {
-        "name": "Overlay Übersicht (Lamellen entfernt)"
       },
       "overlay_laser_target": {
         "name": "Overlay Laserziel"
@@ -887,9 +868,6 @@
       },
       "overlay_red_dot_quick": {
         "name": "Overlay roter Punkt (schnell)"
-      },
-      "overlay_close_camera_image": {
-        "name": "Overlay Nahkamera (Bild)"
       }
     },
     "number": {
@@ -1205,6 +1183,9 @@
       },
       "home_laser_head": {
         "name": "Laser homen"
+      },
+      "wake": {
+        "name": "Aufwecken"
       },
       "measure_distance": {
         "name": "Distanz messen"

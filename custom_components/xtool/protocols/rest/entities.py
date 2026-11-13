@@ -219,7 +219,6 @@ class XtoolHomeLaserHead(XtoolEntity, ButtonEntity):
     """Move REST laser head back to (0, 0)."""
 
     _attr_translation_key = "home_laser_head"
-    _attr_icon = "mdi:home"
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)

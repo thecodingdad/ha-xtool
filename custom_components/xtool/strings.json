@@ -59,7 +59,6 @@
               "process_on_slats": "Process on slats",
               "honeycomb_panel": "Honeycomb panel",
               "slats_removed": "Slats removed",
-              "uncropped": "Uncropped (close camera)",
               "studio": "Studio (close camera)",
               "custom": "Custom (close camera)",
               "laser_target": "Laser target",
@@ -240,44 +239,23 @@
       "overlay_work_bed": {
         "name": "Overlay work bed"
       },
-      "overlay_process_on_slats": {
-        "name": "Overlay process on slats"
+      "overlay_mode_process_on_slats": {
+        "name": "Overlay mode process on slats"
       },
-      "overlay_honeycomb_panel": {
-        "name": "Overlay honeycomb panel"
+      "overlay_mode_honeycomb_panel": {
+        "name": "Overlay mode honeycomb panel"
       },
-      "overlay_slats_removed": {
-        "name": "Overlay slats removed"
+      "overlay_mode_slats_removed": {
+        "name": "Overlay mode slats removed"
       },
-      "overlay_close_camera_uncropped": {
-        "name": "Overlay close camera (uncropped)"
-      },
-      "overlay_close_camera_studio": {
-        "name": "Overlay close camera (studio)"
-      },
-      "overlay_close_camera_custom": {
-        "name": "Overlay close camera (custom)"
-      },
-      "overlay_close_camera_image": {
-        "name": "Overlay close camera (image)"
+      "overlay_close_camera": {
+        "name": "Overlay close camera"
       },
       "overlay_studio": {
         "name": "Overlay studio"
       },
       "overlay_custom": {
         "name": "Overlay custom"
-      },
-      "overlay_overview_work_bed": {
-        "name": "Overlay overview (work bed)"
-      },
-      "overlay_overview_process_on_slats": {
-        "name": "Overlay overview (process on slats)"
-      },
-      "overlay_overview_honeycomb_panel": {
-        "name": "Overlay overview (honeycomb panel)"
-      },
-      "overlay_overview_slats_removed": {
-        "name": "Overlay overview (slats removed)"
       },
       "overlay_laser_target": {
         "name": "Overlay laser target"
@@ -405,6 +383,7 @@
       "home_xy": { "name": "Home XY" },
       "home_z": { "name": "Home Z" },
       "home_laser_head": { "name": "Home laser" },
+      "wake": { "name": "Wake" },
       "measure_distance": { "name": "Measure distance" },
       "measure_thickness_or_distance": { "name": "Measure thickness or distance" },
       "move_laser": { "name": "Move laser" },

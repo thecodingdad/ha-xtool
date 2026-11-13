@@ -41,8 +41,8 @@
         "default": "mdi:weather-windy"
       },
       "alarm": {
-        "default": "mdi:alarm-light",
-        "state": { "off": "mdi:alarm-light-off" }
+        "default": "mdi:bell",
+        "state": { "off": "mdi:bell-off" }
       },
       "cooling_fan_running": {
         "default": "mdi:fan",
@@ -78,6 +78,30 @@
       "xcs_compatibility_mode": {
         "default": "mdi:laptop",
         "state": { "off": "mdi:laptop-off" }
+      }
+    },
+    "button": {
+      "home_laser_head": {
+        "default": "mdi:home-import-outline"
+      },
+      "move_laser": {
+        "default": "mdi:arrow-all"
+      },
+      "wake": {
+        "default": "mdi:sleep-off"
+      }
+    },
+    "light": {
+      "fill_light_1": {
+        "default": "mdi:light-recessed"
+      },
+      "fill_light_2": {
+        "default": "mdi:track-light",
+        "state": { "off": "mdi:track-light-off" }
+      },
+      "fill_light_3": {
+        "default": "mdi:track-light",
+        "state": { "off": "mdi:track-light-off" }
       }
     },
     "number": {
@@ -121,46 +145,25 @@
     },
     "switch": {
       "overlay_work_bed": {
-        "default": "mdi:vector-rectangle"
+        "default": "mdi:grid"
       },
-      "overlay_process_on_slats": {
-        "default": "mdi:vector-rectangle"
+      "overlay_mode_process_on_slats": {
+        "default": "mdi:alpha-p-box-outline"
       },
-      "overlay_honeycomb_panel": {
-        "default": "mdi:vector-rectangle"
+      "overlay_mode_honeycomb_panel": {
+        "default": "mdi:alpha-h-box-outline"
       },
-      "overlay_slats_removed": {
-        "default": "mdi:vector-rectangle"
+      "overlay_mode_slats_removed": {
+        "default": "mdi:alpha-s-box-outline"
       },
-      "overlay_close_camera_uncropped": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_close_camera_studio": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_close_camera_custom": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_close_camera_image": {
-        "default": "mdi:image-area"
+      "overlay_close_camera": {
+        "default": "mdi:picture-in-picture-bottom-right"
       },
       "overlay_studio": {
-        "default": "mdi:vector-rectangle"
+        "default": "mdi:monitor-screenshot"
       },
       "overlay_custom": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_overview_work_bed": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_overview_process_on_slats": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_overview_honeycomb_panel": {
-        "default": "mdi:vector-rectangle"
-      },
-      "overlay_overview_slats_removed": {
-        "default": "mdi:vector-rectangle"
+        "default": "mdi:crop-free"
       },
       "overlay_laser_target": {
         "default": "mdi:crosshairs"
@@ -169,13 +172,13 @@
         "default": "mdi:view-parallel-outline"
       },
       "overlay_red_dot_close": {
-        "default": "mdi:target"
+        "default": "mdi:pan-down"
       },
       "overlay_red_dot_quick": {
         "default": "mdi:laser-pointer"
       },
       "aimed_measure_light": {
-        "default": "mdi:target"
+        "default": "mdi:pan-down"
       },
       "quick_measure_light": {
         "default": "mdi:laser-pointer"

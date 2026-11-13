@@ -76,7 +76,6 @@ OVERLAY_COLORS: Final[dict[str, tuple[int, int, int]]] = {
     "process_on_slats": (60, 220, 90),
     "honeycomb_panel": (255, 140, 0),
     "slats_removed": (200, 90, 255),
-    "uncropped": (255, 105, 180),
     "studio": (255, 255, 255),
     "custom": (120, 190, 255),
     "laser_target": (255, 40, 40),

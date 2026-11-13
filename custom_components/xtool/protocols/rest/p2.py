@@ -578,6 +578,15 @@ class P2Protocol(RestProtocol):
 
     async def _read_slow(self, state: XtoolDeviceState) -> None:
         """Values that change rarely."""
+        if state.status != XtoolStatus.SLEEPING:
+            # The cameras' port is left alone while the P2 sleeps (a photo wakes it)
+            for camera_name, attr in (
+                ("overview", "camera_exposure_overview"),
+                ("closeup", "camera_exposure_closeup"),
+            ):
+                value = await self.read_camera_exposure(camera_name)
+                if value is not None:
+                    setattr(state, attr, value)
         for path, attr in (
             ("/peripheral/cooling_fan?action=get", "cooling_fan_running"),
             ("/peripheral/smoking_fan?action=get", "smoking_fan_running"),
@@ -725,6 +734,29 @@ class P2Protocol(RestProtocol):
             if resp.status != 200:
                 raise ConnectionError(f"P2 {camera_name} photo: HTTP {resp.status}")
             return await resp.read()
+
+    async def read_camera_exposure(self, camera_name: str) -> int | None:
+        """A camera's exposure (``GET /camera/exposure`` on port 8329)."""
+        stream = self.CAMERA_STREAMS[camera_name]
+        url = f"http://{self.host}:{REST_CAMERA_PORT}/camera/exposure?stream={stream}"
+        try:
+            async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                text = await resp.text()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.debug("P2 %s exposure read failed: %s", camera_name, err)
+            return None
+        _LOGGER.debug("P2 GET %s -> %r", url, text[:200])
+        try:
+            reply = json.loads(text)
+        except ValueError:
+            return None
+        if isinstance(reply, dict) and isinstance(reply.get("data"), dict):
+            reply = reply["data"]
+        value = reply.get("value") if isinstance(reply, dict) else None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
 
     async def camera_calibration_file(self, file_name: str) -> bytes | None:
         """A camera's calibration, as Studio downloads it (``/file?action=download``)."""
