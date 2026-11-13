@@ -802,13 +802,13 @@
         "name": "Fill light back"
       },
       "fill_light_1": {
-        "name": "Fill light (close)"
+        "name": "Fill light close"
       },
       "fill_light_2": {
-        "name": "Fill light (right)"
+        "name": "Fill light right"
       },
       "fill_light_3": {
-        "name": "Fill light (left)"
+        "name": "Fill light left"
       }
     },
     "fan": {

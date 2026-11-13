@@ -724,13 +724,13 @@
         "name": "Arbeitslicht hinten"
       },
       "fill_light_1": {
-        "name": "Arbeitslicht (nah)"
+        "name": "Arbeitslicht nah"
       },
       "fill_light_2": {
-        "name": "Arbeitslicht (rechts)"
+        "name": "Arbeitslicht rechts"
       },
       "fill_light_3": {
-        "name": "Arbeitslicht (links)"
+        "name": "Arbeitslicht links"
       }
     },
     "fan": {
