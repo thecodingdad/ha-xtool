@@ -738,20 +738,12 @@ class P2Protocol(RestProtocol):
     async def read_camera_exposure(self, camera_name: str) -> int | None:
         """A camera's exposure (``GET /camera/exposure`` on port 8329)."""
         stream = self.CAMERA_STREAMS[camera_name]
-        url = f"http://{self.host}:{REST_CAMERA_PORT}/camera/exposure?stream={stream}"
-        try:
-            async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                text = await resp.text()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            _LOGGER.debug("P2 %s exposure read failed: %s", camera_name, err)
-            return None
-        _LOGGER.debug("P2 GET %s -> %r", url, text[:200])
-        try:
-            reply = json.loads(text)
-        except ValueError:
-            return None
-        if isinstance(reply, dict) and isinstance(reply.get("data"), dict):
-            reply = reply["data"]
+        offline = self._offline_until
+        reply = await self._get_json(
+            f"http://{self.host}:{REST_CAMERA_PORT}/camera/exposure?stream={stream}",
+        )
+        # The cameras' port not answering does not make the P2 unreachable
+        self._offline_until = offline
         value = reply.get("value") if isinstance(reply, dict) else None
         try:
             return int(float(value))
@@ -780,7 +772,8 @@ class P2Protocol(RestProtocol):
     ) -> Any:
         if self._is_offline():
             return None
-        url = f"{self._base_url}{path}"
+        # A path, or a whole URL (the cameras' port)
+        url = path if path.startswith("http") else f"{self._base_url}{path}"
         try:
             async with self._session().request(
                 method, url, json=data, timeout=aiohttp.ClientTimeout(total=timeout),
