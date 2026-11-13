@@ -55,8 +55,8 @@ class XtoolPowerSwitch(XtoolEntity, SwitchEntity):
     def _on_underlying_switch_changed(
         self, event: Event[EventStateChangedData]
     ) -> None:
+        # The coordinator updates the other entities (see async_track_power_switch)
         self.async_write_ha_state()
-        self.coordinator.async_set_updated_data(self.coordinator.data)
 
     @property
     def available(self) -> bool:

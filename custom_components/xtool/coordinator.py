@@ -13,12 +13,21 @@ small set of generic helpers.
 from __future__ import annotations
 
 import logging
+import time
+from dataclasses import replace as dataclass_replace
 from datetime import timedelta
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    callback,
+)
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
@@ -29,6 +38,10 @@ from .const import (
     FIRMWARE_CHECK_INTERVAL,
     XtoolStatus,
 )
+
+# After the Power switch turns on, Status shows Initializing (not Off)
+# while the laser cannot be reached yet, for at most this long
+POWER_ON_STARTUP_SECONDS = 180
 
 # Import directly from protocols.base — pulling from the protocols package
 # would eagerly load every family's __init__.py, which in turn loads each
@@ -129,6 +142,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.model = model
         self.laser = LaserInfo()
         self.power_switch_entity_id = power_switch_entity_id
+        # When the Power switch last turned on (monotonic seconds)
+        self._powered_on_at: float | None = None
+        self._cancel_startup_end: CALLBACK_TYPE | None = None
         self.enable_firmware_updates = enable_firmware_updates
         self.firmware_check_interval = max(int(firmware_check_interval), 60)
         self.stats_poll_interval = max(int(stats_poll_interval), 1)
@@ -163,7 +179,60 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         state = self.hass.states.get(self.power_switch_entity_id)
         return state is not None and state.state == "off"
 
+    @property
+    def starting(self) -> bool:
+        """Whether the laser may still be starting after the Power switch turned on."""
+        return (
+            self._powered_on_at is not None
+            and time.monotonic() - self._powered_on_at < POWER_ON_STARTUP_SECONDS
+            and not self.power_switch_is_off
+        )
+
+    @callback
+    def async_track_power_switch(self) -> CALLBACK_TYPE:
+        """Follow the Power switch; returns the function that stops it."""
+        unsub = async_track_state_change_event(
+            self.hass, [self.power_switch_entity_id], self._on_power_switch,
+        )
+
+        @callback
+        def stop() -> None:
+            unsub()
+            self._cancel_startup_timer()
+
+        return stop
+
+    @callback
+    def _cancel_startup_timer(self) -> None:
+        if self._cancel_startup_end is not None:
+            self._cancel_startup_end()
+            self._cancel_startup_end = None
+
+    @callback
+    def _on_power_switch(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if new is None or (old is not None and old.state == new.state):
+            return
+        self._cancel_startup_timer()
+        self._powered_on_at = None
+        if new.state == "on" and old is not None and old.state == "off":
+            self._powered_on_at = time.monotonic()
+            self._cancel_startup_end = async_call_later(
+                self.hass, POWER_ON_STARTUP_SECONDS, self._startup_over,
+            )
+        if self.data is not None and self.data.available:
+            # What the last poll read is from before the power changed:
+            # the laser is reachable again only once a poll answers
+            self.data = dataclass_replace(self.data, available=False)
+        self.async_update_listeners()
+
+    @callback
+    def _startup_over(self, _now: Any) -> None:
+        self._cancel_startup_end = None
+        self.async_update_listeners()
+
     async def async_shutdown(self) -> None:
+        self._cancel_startup_timer()
         await self.protocol.disconnect()
         await super().async_shutdown()
 
