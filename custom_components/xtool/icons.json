@@ -96,12 +96,10 @@
         "default": "mdi:light-recessed"
       },
       "fill_light_2": {
-        "default": "mdi:track-light",
-        "state": { "off": "mdi:track-light-off" }
+        "default": "mdi:page-layout-sidebar-right"
       },
       "fill_light_3": {
-        "default": "mdi:track-light",
-        "state": { "off": "mdi:track-light-off" }
+        "default": "mdi:page-layout-sidebar-left"
       }
     },
     "number": {
