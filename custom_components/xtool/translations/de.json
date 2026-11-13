@@ -67,7 +67,6 @@
             "name": "Overlay-Farben",
             "description": "Farben der Overlays der P2-Kameras.",
             "data": {
-              "work_bed": "Arbeitsbett",
               "process_on_slats": "Auf Lamellen bearbeiten",
               "honeycomb_panel": "Wabenplatte",
               "slats_removed": "Lamellen entfernt",
@@ -835,9 +834,6 @@
       },
       "quick_measure_light": {
         "name": "Roter Punkt (schnell)"
-      },
-      "overlay_work_bed": {
-        "name": "Overlay Arbeitsbett"
       },
       "overlay_mode_process_on_slats": {
         "name": "Overlay Modus auf Lamellen bearbeiten"

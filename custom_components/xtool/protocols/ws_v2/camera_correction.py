@@ -168,8 +168,8 @@ class Overlay:
     origin (top left) and one at its centre, all in its colour.
     ``lines``: (x0, y0, x1, y1, label), the label written at the lower
     end. ``markers``: (x, y), a red target. ``spots``: (x, y, length,
-    width, angle), a soft dot that size (mm), long along ``angle`` (degrees from X
-    toward Y). ``rings``: (x, y, diameter), a circle whose inside is that
+    width, angle), an outline whose inside is that size (mm), long along
+    ``angle`` (degrees from X toward Y), drawn 3 px wide outward like a ring. ``rings``: (x, y, diameter), a circle whose inside is that
     diameter (mm), drawn 3 px wide outward, so a dot that size sits just
     inside it. ``images``: (x, y, width, height, JPEG), a picture laid on
     that area, under everything else. The colours are the lines', the
@@ -194,7 +194,7 @@ OVERLAY_RING_WIDTH = 3
 def _draw_overlay(
     image: Any, overlay: Overlay, left_mm: float, top_mm: float, px_per_mm: float,
 ) -> None:
-    from PIL import Image, ImageDraw, ImageFilter, ImageFont  # Home Assistant ships Pillow
+    from PIL import Image, ImageDraw, ImageFont  # Home Assistant ships Pillow
 
     draw = ImageDraw.Draw(image)
     width = max(2, round(image.width / 500))
@@ -215,19 +215,18 @@ def _draw_overlay(
             continue
         image.paste(picture, (round(a), round(b)))
     for x, y, length, breadth, angle in overlay.spots:
-        # A soft red dot: an ellipse, turned and blurred, painted on
+        # An ellipse's outline, turned: the dot itself stays visible inside
         cx, cy = px(x, y)
-        a = max(3.0, length * px_per_mm / 2)
-        b = max(3.0, breadth * px_per_mm / 2)
-        blur = max(1.0, min(a, b) / 2)
-        size = int(2 * (a + 3 * blur)) + 2
+        a = length * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        b = breadth * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        size = int(2 * max(a, b)) + 4
         mask = Image.new("L", (size, size), 0)
         ImageDraw.Draw(mask).ellipse(
-            (size / 2 - a, size / 2 - b, size / 2 + a, size / 2 + b), fill=235,
+            (size / 2 - a, size / 2 - b, size / 2 + a, size / 2 + b),
+            outline=255, width=OVERLAY_RING_WIDTH,
         )
         # Pillow turns counterclockwise on screen; Y points down
         mask = mask.rotate(-angle, resample=Image.Resampling.BICUBIC)
-        mask = mask.filter(ImageFilter.GaussianBlur(blur))
         x0, y0 = round(cx - size / 2), round(cy - size / 2)
         image.paste(overlay.spot_color, (x0, y0, x0 + size, y0 + size), mask)
     for x, y, diameter in overlay.rings:

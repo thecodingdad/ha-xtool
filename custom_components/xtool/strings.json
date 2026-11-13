@@ -55,7 +55,6 @@
             "name": "Overlay colors",
             "description": "Colors of the P2 camera overlays.",
             "data": {
-              "work_bed": "Work bed",
               "process_on_slats": "Process on slats",
               "honeycomb_panel": "Honeycomb panel",
               "slats_removed": "Slats removed",
@@ -236,9 +235,6 @@
       "safety_lock": { "name": "Safety lock" }
     },
     "switch": {
-      "overlay_work_bed": {
-        "name": "Overlay work bed"
-      },
       "overlay_mode_process_on_slats": {
         "name": "Overlay mode process on slats"
       },

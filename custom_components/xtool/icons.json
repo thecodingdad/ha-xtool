@@ -144,9 +144,6 @@
       }
     },
     "switch": {
-      "overlay_work_bed": {
-        "default": "mdi:grid"
-      },
       "overlay_mode_process_on_slats": {
         "default": "mdi:alpha-p-box-outline"
       },

@@ -520,13 +520,14 @@ OVERLAY_MARKS = ("laser_target", "slat_lines", "red_dot_close", "red_dot_quick")
 # Each overlay is a switch; any number may be on
 P2_OVERLAYS: dict[str, list[str]] = {
     "overview": [
-        *(
-            f"{MODE_PREFIX}{area}" if area in p2_geometry.MODES else area
-            for area in p2_geometry.AREAS
-        ),
+        *(f"{MODE_PREFIX}{mode}" for mode in p2_geometry.MODES),
         CLOSE_CAMERA_IMAGE, *OVERLAY_MARKS,
     ],
-    "closeup": [VIEW_STUDIO, VIEW_CUSTOM, *OVERLAY_MARKS],
+    # Where the laser fires is never in the close camera's picture
+    # (34 mm left of the whole photo)
+    "closeup": [
+        VIEW_STUDIO, VIEW_CUSTOM, *(mark for mark in OVERLAY_MARKS if mark != "laser_target"),
+    ],
 }
 P2_MODE_OPTIONS = list(p2_geometry.MODES)
 # Settings changed while working: on the device page's Controls
@@ -740,7 +741,7 @@ def p2_correction(
         _show_crop(coordinator, camera_name, view, calibration)
 
     def on(overlay: str) -> bool:
-        return bool(settings[_overlay_key(camera_name, overlay)])
+        return bool(settings.get(_overlay_key(camera_name, overlay)))
 
     # Overlays are worked out in the laser's mm, then moved to the
     # camera's calibrated area (the close camera's moves with the head)
@@ -808,7 +809,7 @@ def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:
     settings = _p2_view(coordinator)
 
     def on(overlay: str) -> bool:
-        return bool(settings[_overlay_key(camera_name, overlay)])
+        return bool(settings.get(_overlay_key(camera_name, overlay)))
 
     if on("laser_target") or on("red_dot_close"):
         return True

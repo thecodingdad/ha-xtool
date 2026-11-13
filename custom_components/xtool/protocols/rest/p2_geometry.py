@@ -72,7 +72,6 @@ OVERVIEW_LENS: Final = (
 # Overlay colours until changed in the integration's options: each area
 # (the same on both cameras), the laser target, the slat lines, the red dots
 OVERLAY_COLORS: Final[dict[str, tuple[int, int, int]]] = {
-    "work_bed": (255, 214, 0),
     "process_on_slats": (60, 220, 90),
     "honeycomb_panel": (255, 140, 0),
     "slats_removed": (200, 90, 255),
