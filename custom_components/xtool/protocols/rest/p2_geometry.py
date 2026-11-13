@@ -61,12 +61,13 @@ SLATS_RIGHT: Final = 23
 # calibrated plane, fitted to the P2's calibration grid
 OVERVIEW_CAMERA: Final = (307.4, -41.4, 174.0)
 
-# The overview camera's lens, fitted to a P2's calibration grid (see
-# camera_correction._fit_lens); each P2's own grid refines it
+# The overview camera's lens, fitted to the measured part of a P2's
+# calibration grid (see camera_correction._fit_lens and
+# _measured_bounds); each P2's own grid refines it
 OVERVIEW_LENS: Final = (
-    3.78293, -0.0036276, -0.00216825, -307.617, 72.4371, -162.671,
-    -1826.99, -0.996363, 2227.47, 1744.78,
-    -0.0391064, 0.0953019, -0.0592302, 0.0143858,
+    3.78889, -0.00407315, -0.00394227, -307.39, 71.8962, -160.658,
+    -1809.21, -1.00266, 2226.48, 1743.98,
+    0.00647329, -0.0118656, 0.0326942, -0.0180946,
 )
 
 # Overlay colours until changed in the integration's options: each area

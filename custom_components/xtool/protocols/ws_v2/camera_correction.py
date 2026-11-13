@@ -366,6 +366,47 @@ def _fit_lens(mm: Any, pixels: Any, guess: tuple[float, ...]) -> Any:
     return params
 
 
+def _measured_bounds(calibration: CameraCalibration) -> tuple[int, int, int, int]:
+    """The part of the grid that was measured: first and last column and row.
+
+    A calibration grid can be wider than what was measured, its outer
+    points continued on straight, evenly spaced lines (the P2's overview
+    grid: 6 columns each side and 3 rows at the front). A lens bends
+    every line of points, so such points show as columns (rows) with far
+    less bend than the others. From each side, columns (rows) are left
+    out while their bend is under half the grid's median; the point they
+    were continued from stays. Nothing is left out of a small grid, or
+    when more than a quarter of a side would go.
+    """
+    import numpy as np
+
+    width, height = calibration.grid_w, calibration.grid_h
+    whole = (0, width - 1, 0, height - 1)
+    if width < 8 or height < 8:
+        return whole
+    points = np.array(calibration.points).reshape(height, width, 2)
+
+    def continued(bend: Any) -> tuple[int, int]:
+        """How many points at each end were continued."""
+        limit = 0.5 * float(np.median(bend))
+        counts = []
+        for values in (bend, bend[::-1]):
+            count = 0
+            while count < len(values) and values[count] < limit:
+                count += 1
+            # The run of straight points, and the grid's own edge point
+            counts.append(count + 1 if count else 0)
+        return counts[0], counts[1]
+
+    across = np.abs(points[:, :-2] - 2 * points[:, 1:-1] + points[:, 2:]).sum(-1).mean(0)
+    down = np.abs(points[:-2] - 2 * points[1:-1] + points[2:]).sum(-1).mean(1)
+    left, right = continued(across)
+    top, bottom = continued(down)
+    if max(left, right) > width // 4 or max(top, bottom) > height // 4:
+        return whole
+    return left, width - 1 - right, top, height - 1 - bottom
+
+
 class _SurfaceMap:
     """Where a point of the work surface (mm) is in the raw photo (pixels).
 
@@ -375,7 +416,9 @@ class _SurfaceMap:
     stay smooth beyond the grid instead of following the small
     differences between the outer cells. With a lens guess the fit is the
     camera's lens, which stays true much further beyond the grid than a
-    cubic fit does.
+    cubic fit does. The lens is fitted to the measured part of the grid
+    only (see ``_measured_bounds``) and also replaces the grid's
+    continued points, which a lens does not follow.
     """
 
     def __init__(
@@ -396,16 +439,29 @@ class _SurfaceMap:
         self._fit_x = _least_squares(rows, [point[0] for _, _, point in samples])
         self._fit_y = _least_squares(rows, [point[1] for _, _, point in samples])
         self._lens = None
+        # The area the grid is used in (mm): all of it, or its measured part
+        self._bounds = (0.0, self.width_mm, 0.0, self.height_mm)
         if lens is not None and len(lens) == LENS_PARAMETERS:
             import numpy as np
 
-            mm = np.array([(u, v) for u, v, _ in samples])
-            pixels = np.array([point for _, _, point in samples])
+            col0, col1, row0, row1 = _measured_bounds(calibration)
+            bounds = (
+                col0 * self.cell_mm_x, col1 * self.cell_mm_x,
+                row0 * self.cell_mm_y, row1 * self.cell_mm_y,
+            )
+            measured = [
+                (u, v, point) for u, v, point in samples
+                if bounds[0] - 1e-6 <= u <= bounds[1] + 1e-6
+                and bounds[2] - 1e-6 <= v <= bounds[3] + 1e-6
+            ]
+            mm = np.array([(u, v) for u, v, _ in measured])
+            pixels = np.array([point for _, _, point in measured])
             fitted = _fit_lens(mm, pixels, lens)
             error = np.hypot(*(_lens_project(fitted, mm) - pixels).T)
             # A lens that does not fit the grid is not used
             if np.isfinite(error).all() and float(np.median(error)) < 0.02 * calibration.src_w:
                 self._lens = fitted
+                self._bounds = bounds
 
     def _terms(self, u_mm: float, v_mm: float) -> list[float]:
         s = (u_mm - self.width_mm / 2) / (self.width_mm / 2)
@@ -443,8 +499,9 @@ class _SurfaceMap:
 
     def photo_point(self, u_mm: float, v_mm: float) -> tuple[float, float]:
         """Raw-photo pixel (at the calibration's photo size) of a point."""
-        edge_u = min(max(u_mm, 0.0), self.width_mm)
-        edge_v = min(max(v_mm, 0.0), self.height_mm)
+        u_min, u_max, v_min, v_max = self._bounds
+        edge_u = min(max(u_mm, u_min), u_max)
+        edge_v = min(max(v_mm, v_min), v_max)
         x, y = self._grid(edge_u, edge_v)
         if (edge_u, edge_v) != (u_mm, v_mm):
             far_x, far_y = self._fitted(u_mm, v_mm)
@@ -463,9 +520,10 @@ class _SurfaceMap:
         outside: list[int] = []
         far: list[tuple[float, float]] = []
         near: list[tuple[float, float]] = []
+        u_min, u_max, v_min, v_max = self._bounds
         for u_mm, v_mm in points:
-            edge_u = min(max(u_mm, 0.0), self.width_mm)
-            edge_v = min(max(v_mm, 0.0), self.height_mm)
+            edge_u = min(max(u_mm, u_min), u_max)
+            edge_v = min(max(v_mm, v_min), v_max)
             result.append(self._grid(edge_u, edge_v))
             if (edge_u, edge_v) != (u_mm, v_mm):
                 outside.append(len(result) - 1)

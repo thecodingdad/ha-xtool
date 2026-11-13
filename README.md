@@ -295,11 +295,13 @@ On a laser with several cameras, each camera and its settings are on their own d
 
 The P2's Overview camera and Close camera are straightened with the P2's own camera calibration (the files Studio reads; the integration only reads them). Positions are in the laser's coordinates, as on Studio's canvas: millimetres from home (0, 0), X to the right and Y toward the front. Home is the top left corner of the Process on slats area, 20.5 mm from the bed's left wall and 40.5 mm from its back wall. "Laser position X/Y" is where the laser fires.
 
+The P2's overview calibration is measured only in the middle of the bed (on the P2 tested: X 60–540, Y 0–280); the rest of its grid is filled in with straight lines, which a wide-angle lens does not follow. The integration finds the measured part, uses the calibration there, and continues the picture outside it with the camera's lens fitted to that part. Checked with a ruled mat, the picture then stays within about 1 mm out to where the camera can see. At slat level the camera does not see the last 15 mm or so at the left wall and 25 mm at the right wall (the side rails hide them).
+
 **Overview camera Crop presets.** A preset fills in the four crop numbers; changing a number selects Custom. A width or height of 0 shows as far as the photo reaches.
 
 | Crop preset | Area origin (X, Y) | Size (W × H, mm) | Crop center X, Y written |
 |---|---|---|---|
-| Uncropped | (whole photo) | about 824 × 500 | 305, 152.5 (width and height 0) |
+| Uncropped | (whole photo) | about 938 × 498 | 305, 152.5 (width and height 0) |
 | Sync to Mode | the selected Mode's area (below) | | |
 | Work bed | −20.5, −40.5 | 684 × 376 | 321.5, 147.5 |
 | Process on slats | 0, 0 | 600 × 305 | 300, 152.5 |

@@ -2395,6 +2395,24 @@ and `local_calib.json` (close camera, 15 x 11 points, 2800 x 2000 at
 `localScale` 20, so 140 x 100 mm). `global_ir.txt` holds the Quick
 measure light's curve; `local_ir.txt` reads `{"result":"failed"}`.
 
+**The overview grid is only partly measured.** On the P2 tested
+(calibrated 2023-12-27) the outer points of `global_calib.json` lie on
+straight, evenly spaced lines: columns 0-5 and 55-61 (36.4 and 39.0
+pixels per 10 mm) and rows 29-31. A wide-angle lens compresses the
+picture toward its edges, so these points are continued, not measured.
+A ruled mat, placed with the close camera, showed the real spacing at
+X 570-630 as 34, 32, 31, 29, 28, 26 pixels: mapped through the grid, the
+picture was 5 mm off at X 600, 7.6 mm at X 610 and 5.4 mm at X -5.
+`camera_correction._measured_bounds` finds the measured part (columns
+6-54, rows 0-28: X 60-540, Y 0-280) by how much each column and row
+of points bends; the lens is fitted to that part and used outside it.
+The same mat then read within about 1 mm at the edges (2 mm in the
+back right corner at X 630), and in the measured part within 0.2 mm
+(median) of a uniform shift and scale of up to 2 mm that belongs to the
+P2's own calibration. At slat level the overview camera sees from about
+X -6 to X 640 (bed walls: X -20.5 and 663.5); the head stops at X 610
+and Y 305.
+
 **Replies that do not work on the P2** (the integration creates no entity
 for them):
 
