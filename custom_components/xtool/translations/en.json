@@ -61,6 +61,22 @@
           "firmware_check_interval": "How often the integration queries the xTool cloud for firmware updates.",
           "stats_poll_interval": "How often lifetime statistics are refreshed (M2008). Slow-changing values, default is 5 minutes.",
           "dongle_poll_interval": "How often connected Bluetooth accessories are queried (M9098)."
+        },
+        "sections": {
+          "overlay_colors": {
+            "name": "Overlay colors",
+            "description": "Colors of the P2 camera overlays.",
+            "data": {
+              "process_on_slats": "Process on slats",
+              "honeycomb_panel": "Honeycomb panel",
+              "slats_removed": "Slats removed",
+              "studio": "Studio (close camera)",
+              "custom": "Custom (close camera)",
+              "laser_target": "Laser target",
+              "slat_lines": "Slat lines",
+              "red_dots": "Red dots"
+            }
+          }
         }
       },
       "confirm_updates": {
@@ -75,6 +91,16 @@
   },
   "entity": {
     "sensor": {
+      "connection": {
+        "name": "Connection",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "Wi-Fi"
+        }
+      },
+      "operating_times": {
+        "name": "Operating times"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -103,6 +129,272 @@
           "working_button": "Running (button)",
           "measure_area": "Measuring area",
           "unknown": "Unknown"
+        },
+        "state_attributes": {
+          "laser_position_x": {
+            "name": "Laser position X"
+          },
+          "laser_position_y": {
+            "name": "Laser position Y"
+          },
+          "laser_position_z": {
+            "name": "Laser position Z"
+          },
+          "fire_level": {
+            "name": "Fire level"
+          },
+          "air_assist_level": {
+            "name": "Air assist level"
+          },
+          "task_id": {
+            "name": "Task ID"
+          },
+          "task_time": {
+            "name": "Task time"
+          },
+          "task_progress": {
+            "name": "Task progress"
+          },
+          "working_time": {
+            "name": "Working time"
+          },
+          "session_count": {
+            "name": "Session count"
+          },
+          "standby_time": {
+            "name": "Standby time"
+          },
+          "tool_runtime": {
+            "name": "Laser module runtime"
+          },
+          "ip_address": {
+            "name": "IP address"
+          },
+          "laser_power": {
+            "name": "Laser power"
+          },
+          "laser_module": {
+            "name": "Laser module"
+          },
+          "sd_card": {
+            "name": "SD card"
+          },
+          "workspace_size": {
+            "name": "Workspace size"
+          },
+          "connection_count": {
+            "name": "Active connections"
+          },
+          "origin_offset_x": {
+            "name": "Origin offset X"
+          },
+          "origin_offset_y": {
+            "name": "Origin offset Y"
+          },
+          "last_job_time": {
+            "name": "Last job time"
+          },
+          "working_mode": {
+            "name": "Working mode"
+          },
+          "last_distance": {
+            "name": "Last distance"
+          },
+          "riser_base": {
+            "name": "Riser base"
+          },
+          "water_temperature": {
+            "name": "Water temperature"
+          },
+          "water_flow": {
+            "name": "Water flow rate"
+          },
+          "z_temperature": {
+            "name": "Z-axis temperature"
+          },
+          "workhead_id": {
+            "name": "Workhead"
+          },
+          "workhead_z_height": {
+            "name": "Workhead Z height"
+          },
+          "print_tool_type": {
+            "name": "Print tool type"
+          },
+          "hardware_type": {
+            "name": "Hardware type"
+          },
+          "cpu_temp": {
+            "name": "CPU temperature"
+          },
+          "ambient_temp": {
+            "name": "Ambient temperature"
+          },
+          "ambient_humidity": {
+            "name": "Ambient humidity"
+          },
+          "heating_status": {
+            "name": "Heating status"
+          },
+          "ink_cyan": {
+            "name": "Ink cyan"
+          },
+          "ink_black": {
+            "name": "Ink black"
+          },
+          "ink_magenta": {
+            "name": "Ink magenta"
+          },
+          "ink_white": {
+            "name": "Ink white"
+          },
+          "ink_yellow": {
+            "name": "Ink yellow"
+          },
+          "clean_water": {
+            "name": "Cleaning fluid"
+          },
+          "waste_water": {
+            "name": "Waste fluid"
+          },
+          "gyro_x": {
+            "name": "Gyro X"
+          },
+          "gyro_y": {
+            "name": "Gyro Y"
+          },
+          "gyro_z": {
+            "name": "Gyro Z"
+          },
+          "inkjet_ink_c": {
+            "name": "Ink level cyan"
+          },
+          "inkjet_ink_m": {
+            "name": "Ink level magenta"
+          },
+          "inkjet_ink_y": {
+            "name": "Ink level yellow"
+          },
+          "inkjet_ink_k": {
+            "name": "Ink level black"
+          },
+          "inkjet_sn": {
+            "name": "Inkjet head serial"
+          },
+          "inkjet_version": {
+            "name": "Inkjet head firmware"
+          },
+          "inkjet_toner_sn": {
+            "name": "Toner serial"
+          },
+          "active_alarms": {
+            "name": "Active alarms"
+          },
+          "job_name": {
+            "name": "Job name"
+          },
+          "job_progress": {
+            "name": "Job progress"
+          },
+          "job_time_remaining": {
+            "name": "Job time remaining"
+          },
+          "queued_jobs": {
+            "name": "Queued jobs"
+          },
+          "air_purifier_runtime": {
+            "name": "Air purifier runtime"
+          },
+          "uv_lamp_runtime": {
+            "name": "UV lamp runtime"
+          },
+          "cover_open": {
+            "name": "Cover"
+          },
+          "machine_lock": {
+            "name": "Safety key"
+          },
+          "alarm": {
+            "name": "Alarm"
+          },
+          "xcs_compatibility_mode": {
+            "name": "XCS compatibility mode"
+          },
+          "air_assist_connected": {
+            "name": "Air-Assist connected"
+          },
+          "drawer_open": {
+            "name": "Drawer"
+          },
+          "cooling_fan_running": {
+            "name": "Cooling fan"
+          },
+          "smoking_fan_running": {
+            "name": "Exhaust fan"
+          },
+          "cpu_fan_running": {
+            "name": "CPU fan"
+          },
+          "uv_fire_alarm": {
+            "name": "UV fire sensor"
+          },
+          "water_pump_running": {
+            "name": "Water pump"
+          },
+          "water_line_ok": {
+            "name": "Water line"
+          },
+          "film_buffer_ready": {
+            "name": "Film buffer ready"
+          },
+          "film_position_ready": {
+            "name": "Film position ready"
+          },
+          "powder_loop_running": {
+            "name": "Powder loop running"
+          },
+          "heater_connected": {
+            "name": "Heater connected"
+          },
+          "flame_alarm_enabled": {
+            "name": "Flame alarm enabled"
+          },
+          "beep_enabled": {
+            "name": "Beep enabled"
+          },
+          "gap_check_enabled": {
+            "name": "Cover check enabled"
+          },
+          "machine_lock_check_enabled": {
+            "name": "Lock check enabled"
+          },
+          "inkjet_head_capped": {
+            "name": "Inkjet head capped"
+          },
+          "inkjet_toner_installed": {
+            "name": "Toner installed"
+          },
+          "inkjet_calibrated": {
+            "name": "Inkjet head calibrated"
+          },
+          "front_door": {
+            "name": "Front door"
+          },
+          "rear_door": {
+            "name": "Rear door"
+          },
+          "waste_tank_full": {
+            "name": "Waste ink tank full"
+          },
+          "waste_tank_present": {
+            "name": "Waste ink tank installed"
+          },
+          "filter_installed": {
+            "name": "Air filter installed"
+          },
+          "firmware": {
+            "name": "Firmware"
+          }
         }
       },
       "laser_position_x": {
@@ -182,9 +474,6 @@
         "name": "Purifier speed"
       },
       "accessory_ductfan_current_speed": {
-        "name": "Current speed"
-      },
-      "accessory_ductfanv3_current_speed": {
         "name": "Current speed"
       },
       "accessory_purifier_filter_pre": {
@@ -360,6 +649,9 @@
       },
       "uv_lamp_runtime": {
         "name": "UV lamp runtime"
+      },
+      "measured_thickness_or_distance": {
+        "name": "Measured thickness or distance"
       }
     },
     "binary_sensor": {
@@ -461,6 +753,16 @@
       },
       "filter_installed": {
         "name": "Air filter installed"
+      },
+      "lid": {
+        "name": "Lid"
+      },
+      "baseplate": {
+        "name": "Baseplate",
+        "state": {
+          "on": "Installed",
+          "off": "Removed"
+        }
       }
     },
     "camera": {
@@ -468,7 +770,7 @@
         "name": "Overview camera"
       },
       "camera_closeup": {
-        "name": "Close-up camera"
+        "name": "Close camera"
       },
       "camera_main": {
         "name": "Main camera"
@@ -498,6 +800,15 @@
       },
       "fill_light_back": {
         "name": "Fill light back"
+      },
+      "fill_light_1": {
+        "name": "Fill light close"
+      },
+      "fill_light_2": {
+        "name": "Fill light right"
+      },
+      "fill_light_3": {
+        "name": "Fill light left"
       }
     },
     "fan": {
@@ -525,6 +836,9 @@
         "name": "Limit stop"
       },
       "smoking_fan": {
+        "name": "Exhaust fan"
+      },
+      "exhaust_fan_setting": {
         "name": "Exhaust fan"
       },
       "power_switch": {
@@ -595,9 +909,78 @@
       },
       "accessory_largepurifierv3_auto_continue": {
         "name": "Auto continue"
+      },
+      "aimed_measure_light": {
+        "name": "Red dot (close)"
+      },
+      "quick_measure_light": {
+        "name": "Red dot (quick)"
+      },
+      "overlay_mode_process_on_slats": {
+        "name": "Overlay mode process on slats"
+      },
+      "overlay_mode_honeycomb_panel": {
+        "name": "Overlay mode honeycomb panel"
+      },
+      "overlay_mode_slats_removed": {
+        "name": "Overlay mode slats removed"
+      },
+      "overlay_close_camera": {
+        "name": "Overlay close camera"
+      },
+      "overlay_studio": {
+        "name": "Overlay studio"
+      },
+      "overlay_custom": {
+        "name": "Overlay custom"
+      },
+      "overlay_laser_target": {
+        "name": "Overlay laser target"
+      },
+      "overlay_slat_lines": {
+        "name": "Overlay slat lines"
+      },
+      "overlay_red_dot_close": {
+        "name": "Overlay red dot (close)"
+      },
+      "overlay_red_dot_quick": {
+        "name": "Overlay red dot (quick)"
       }
     },
     "number": {
+      "camera_thumbnail_refresh": {
+        "name": "Camera thumbnail refresh interval"
+      },
+      "exposure": {
+        "name": "Exposure"
+      },
+      "thumbnail_refresh": {
+        "name": "Thumbnail refresh interval"
+      },
+      "crop_width": {
+        "name": "Crop width"
+      },
+      "crop_height": {
+        "name": "Crop height"
+      },
+      "crop_center_x": {
+        "name": "Crop center X"
+      },
+      "crop_center_y": {
+        "name": "Crop center Y"
+      },
+      "camera_main_crop_width": {
+        "name": "Main camera crop width"
+      },
+      "camera_main_crop_height": {
+        "name": "Main camera crop height"
+      },
+      "camera_main_crop_center_x": {
+        "name": "Main camera crop center X"
+      },
+      "camera_main_crop_center_y": {
+        "name": "Main camera crop center Y"
+      },
       "air_assist_close_delay": {
         "name": "Air-assist post-run"
       },
@@ -690,9 +1073,32 @@
       },
       "accessory_largepurifierv3_auto_off_timeout": {
         "name": "Auto off timeout"
+      },
+      "focus_height": {
+        "name": "Focus height"
+      },
+      "lowest_output_power": {
+        "name": "Lowest output power"
+      },
+      "laser_position_x": {
+        "name": "Laser position X"
+      },
+      "laser_position_y": {
+        "name": "Laser position Y"
+      },
+      "thickness_or_distance": {
+        "name": "Thickness or distance"
       }
     },
     "select": {
+      "perspective": {
+        "name": "Perspective",
+        "state": {
+          "uncorrected": "Uncorrected",
+          "rotated": "Rotated",
+          "straightened": "Straightened"
+        }
+      },
       "flame_alarm_sensitivity": {
         "name": "Flame alarm sensitivity",
         "state": {
@@ -718,9 +1124,6 @@
           "medium": "Medium",
           "high": "High"
         }
-      },
-      "accessory_ductfanv3_mode_speed": {
-        "name": "Fan"
       },
       "accessory_purifier_gear_select": {
         "name": "Set purifier speed"
@@ -753,6 +1156,37 @@
       },
       "accessory_largepurifierv3_speed_select": {
         "name": "Speed"
+      },
+      "flame_alarm_level": {
+        "name": "Flame alarm",
+        "state": {
+          "low": "Low",
+          "high": "High"
+        }
+      },
+      "crop_preset": {
+        "name": "Crop",
+        "state": {
+          "custom": "Custom",
+          "work_bed": "Work bed",
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed",
+          "uncropped": "Uncropped",
+          "close_camera_uncropped": "Close camera (uncropped)",
+          "close_camera_studio": "Close camera (studio)",
+          "close_camera_custom": "Close camera (custom)",
+          "studio": "Studio",
+          "sync_to_mode": "Sync to Mode"
+        }
+      },
+      "processing_mode": {
+        "name": "Mode",
+        "state": {
+          "process_on_slats": "Process on slats",
+          "honeycomb_panel": "Honeycomb panel",
+          "slats_removed": "Slats removed"
+        }
       }
     },
     "update": {
@@ -825,7 +1259,10 @@
         "name": "Home Z"
       },
       "home_laser_head": {
-        "name": "Home laser head"
+        "name": "Home laser"
+      },
+      "wake": {
+        "name": "Wake"
       },
       "measure_distance": {
         "name": "Measure distance"
@@ -838,6 +1275,23 @@
       },
       "time_sync": {
         "name": "Sync time"
+      },
+      "autofocus": {
+        "name": "Autofocus"
+      },
+      "measure_thickness_or_distance": {
+        "name": "Measure thickness or distance"
+      },
+      "move_laser": {
+        "name": "Move laser"
+      }
+    },
+    "image": {
+      "calibration_image": {
+        "name": "Calibration"
+      },
+      "camera_main_calibration_image": {
+        "name": "Main camera calibration"
       }
     },
     "event": {
@@ -890,7 +1344,14 @@
               "camera_fault": "Camera fault",
               "dongle_fault": "Bluetooth dongle fault",
               "udisk_fault": "USB disk fault",
-              "machine_lock_md_fault": "Machine lock fault"
+              "machine_lock_md_fault": "Machine lock fault",
+              "firmware": "Firmware",
+              "water_cooling": "Water cooling",
+              "exhaust_fan": "Exhaust fan",
+              "safety_lock": "Safety lock",
+              "air_pump": "Air pump",
+              "short_circuit": "Short circuit",
+              "other": "Other"
             }
           }
         }
@@ -906,6 +1367,129 @@
           }
         }
       }
+    },
+    "lock": {
+      "safety_lock": {
+        "name": "Safety lock"
+      }
+    }
+  },
+  "device": {
+    "camera_main": {
+      "name": "{laser} Main camera"
+    },
+    "camera_deep": {
+      "name": "{laser} Deep camera"
+    },
+    "camera_overview": {
+      "name": "{laser} Overview camera"
+    },
+    "camera_closeup": {
+      "name": "{laser} Close camera"
+    },
+    "camera_far": {
+      "name": "{laser} Global camera"
+    },
+    "camera_near": {
+      "name": "{laser} Local camera"
+    },
+    "camera_side": {
+      "name": "{laser} Side camera"
+    }
+  },
+  "services": {
+    "focus": {
+      "name": "Focus",
+      "description": "Moves the laser's focus as xTool Studio's manual focus does: by a signed step (repeated a number of times), or straight to a material thickness. Stops at 0 or 150 mm. Refused while a job runs, while the laser focuses or measures, or when it reports an error.",
+      "fields": {
+        "step": {
+          "name": "Step",
+          "description": "Signed step in mm: positive moves up, negative moves down."
+        },
+        "steps": {
+          "name": "Steps",
+          "description": "How many times to apply the step."
+        },
+        "thickness": {
+          "name": "Thickness",
+          "description": "Material thickness to focus on, in mm (0-150), as Studio shows it."
+        }
+      }
+    },
+    "camera": {
+      "name": "Camera crop",
+      "description": "Sets the part of the work surface the straightened main camera shows, in mm, and refreshes its picture. Give any of the four values; the others stay. A width or height of 0 shows the whole photo that way.",
+      "fields": {
+        "crop_width": {
+          "name": "Crop width",
+          "description": "Width of the area in mm (20-460), or 0 for the whole photo across."
+        },
+        "crop_height": {
+          "name": "Crop height",
+          "description": "Height of the area in mm (20-460), or 0 for the whole photo down."
+        },
+        "crop_center_x": {
+          "name": "Crop center X",
+          "description": "Center of the area in mm from the center of the calibrated area; positive moves right."
+        },
+        "crop_center_y": {
+          "name": "Crop center Y",
+          "description": "Center of the area in mm from the center of the calibrated area; positive moves down."
+        }
+      }
+    },
+    "move": {
+      "name": "Move",
+      "description": "Moves the P2's laser head as xTool Studio's move controls do: to an X and Y position, or by signed steps (repeated a number of times). An axis given neither stays where it is. Stops at 0-620 by 0-308 mm. Refused unless the laser is idle. Moves run one at a time, in the order asked.",
+      "fields": {
+        "x": {
+          "name": "X",
+          "description": "Position to move to, in mm from home (0-610); X grows to the right."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Position to move to, in mm from home (0-305); Y grows toward the front."
+        },
+        "step_x": {
+          "name": "Step X",
+          "description": "Signed step in mm: positive moves right, negative moves left."
+        },
+        "step_y": {
+          "name": "Step Y",
+          "description": "Signed step in mm: positive moves toward the front, negative toward the back."
+        },
+        "steps": {
+          "name": "Steps",
+          "description": "How many times to apply the steps."
+        },
+        "device_id": {
+          "name": "Laser",
+          "description": "The P2 whose laser head moves."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "focus_wrong_entity": {
+      "message": "This entity is not an xTool focus height."
+    },
+    "focus_needs_step_or_thickness": {
+      "message": "Give either a step or a thickness."
+    },
+    "camera_wrong_entity": {
+      "message": "This camera cannot be cropped. Choose an xTool main camera that the laser calibrates."
+    },
+    "camera_value_out_of_range": {
+      "message": "{field} is {value} mm, but this camera allows {minimum} to {maximum} mm."
+    },
+    "camera_needs_a_value": {
+      "message": "Give at least one crop value."
+    },
+    "move_needs_a_value": {
+      "message": "Give an X or Y position, or a step."
+    },
+    "move_wrong_device": {
+      "message": "Pick an xTool P2: only its laser head can be moved."
     }
   }
 }

@@ -60,6 +60,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import ssl
 import time
 import uuid
@@ -298,6 +299,34 @@ def _decode_frames(buffer: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
         pos += total
     return frames, buffer[pos:]
 
+# Focus height, as xTool Studio's manual focus (GS009-CLASS-4 bundle):
+# Studio shows the material thickness as the laser-head Z minus 6, takes
+# 0-150 mm in steps of 0.1 mm, and moves the head with ``goTo`` to the
+# thickness plus 6.
+FOCUS_Z_OFFSET = 6.0
+FOCUS_MIN = 0.0
+FOCUS_MAX = 150.0
+PATH_FOCUS_CONTROL = "/v1/laser-head/focus/control"
+# Statuses in which Studio refuses a focus move: a job (or framing) is
+# under way, the laser is measuring, or it reports an error.
+_FOCUS_BUSY = frozenset({
+    XtoolStatus.PROCESSING_READY, XtoolStatus.PROCESSING, XtoolStatus.PAUSED,
+    XtoolStatus.FRAME_READY, XtoolStatus.FRAMING, XtoolStatus.CANCELLING,
+    XtoolStatus.MEASURING, XtoolStatus.FIRMWARE_UPDATE,
+    XtoolStatus.WORKING_API, XtoolStatus.WORKING_BUTTON,
+})
+
+
+def round_focus(value: float) -> float:
+    """Round to 0.1 mm with halves up, as Studio's ``Math.round``."""
+    return math.floor(value * 10 + 0.5) / 10
+
+
+def focus_thickness_from_z(z: float) -> float:
+    """Material thickness Studio shows for a laser-head Z (mm)."""
+    return round_focus(z - FOCUS_Z_OFFSET)
+
+
 # Mapping of V2 work-mode strings to the integration's normalised status enum.
 # Sources: xTool Studio bundle ``/work/mode`` push handler + the
 # ``/v1/device/runtime-infos`` `curMode.mode` response field.
@@ -497,7 +526,7 @@ class WSV2Protocol(XtoolProtocol):
     # so entity state surfaces in HA without waiting for next poll).
     _LATEST_STATE_FIELDS: tuple[str, ...] = (
         "status", "task_id", "task_time", "cover_open", "machine_lock",
-        "last_job_time_seconds",
+        "last_job_time_seconds", "focus_thickness",
         "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
         "water_flow", "cpu_temp", "ambient_temp", "ambient_humidity",
@@ -574,6 +603,11 @@ class WSV2Protocol(XtoolProtocol):
         # Slow-cadence counter for /v1/device/statistics + /v1/device/configs
         # — re-querying every poll wastes bandwidth + device CPU.
         self._poll_counter = 0
+        # Raw work mode (``P_IDLE``, ``P_AUTOFOCUS`` …) from the last
+        # poll or push.
+        self._device_mode = ""
+        # True once the focus height was read on this connection.
+        self._focus_known = False
         # Per-connection cache of peripheral types the firmware refused
         # (`code -3`, `code -2`, `code 10`, `code 1`). Avoids re-hammering
         # endpoints the model doesn't expose. Cleared on every fresh
@@ -693,6 +727,8 @@ class WSV2Protocol(XtoolProtocol):
         # The config read body that works is found again for each connection
         self._config_read_body = None
         self._config_read_known = False
+        # Read the focus height again on the next poll.
+        self._focus_known = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -861,7 +897,17 @@ class WSV2Protocol(XtoolProtocol):
         F2UV-specific type-error response, cache the key in
         ``_config_keys_bool`` and retry with the bool. Subsequent
         writes to a cached key skip the int attempt.
+
+        Once the laser takes the value, it is kept as the laser's own
+        (``_apply_configs``): the settings are read only every sixth
+        poll, and a push may not follow.
         """
+        result = await self._put_config(key, value)
+        self._apply_configs({"kv": {key: value}})
+        return result
+
+    async def _put_config(self, key: str, value: Any) -> dict[str, Any]:
+        """PUT the key, as an int first or as a bool (see :meth:`set_config`)."""
         coerced: Any = value
         if isinstance(value, bool) and key not in self._config_keys_bool:
             coerced = 1 if value else 0
@@ -970,6 +1016,63 @@ class WSV2Protocol(XtoolProtocol):
             data={"mode": mode},
         )
 
+    async def _poll_focus(self) -> None:
+        """Read the laser-head Z, as Studio's ``getZ`` (only reads)."""
+        try:
+            r = await self.request(PATH_FOCUS_CONTROL, "POST", data={"action": "coord"})
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 focus read failed: %s", err)
+            return
+        z = r.get("value") if isinstance(r, dict) else None
+        if isinstance(z, (int, float)) and not isinstance(z, bool):
+            self._latest["focus_thickness"] = focus_thickness_from_z(float(z))
+            self._focus_known = True
+
+    def focus_refusal(self) -> str | None:
+        """Why Studio would refuse a focus move now, or None."""
+        status = self._latest.get("status")
+        if self._device_mode == "P_AUTOFOCUS":
+            return "the laser is focusing"
+        if self._device_mode in ("P_MEASURE", "P_WORKING", "P_WORK", "P_PAUSE"):
+            return "the laser is busy"
+        if status in _FOCUS_BUSY:
+            return "the laser is busy"
+        if isinstance(status, XtoolStatus) and status.value.startswith("error"):
+            return "the laser reports an error"
+        return None
+
+    async def focus_to(self, thickness: float) -> float:
+        """Move the focus to a material thickness, as Studio's manual focus.
+
+        Studio switches the laser to autofocus mode and sends ``goTo``
+        with Z = thickness + 6. The laser returns to idle by itself when
+        the move ends. Nothing is stored on the laser.
+        """
+        target = round_focus(min(max(thickness, FOCUS_MIN), FOCUS_MAX))
+        await self.set_mode("P_AUTOFOCUS")
+        await self.request(
+            PATH_FOCUS_CONTROL, "POST",
+            data={"action": "goTo", "z": target + FOCUS_Z_OFFSET, "stopFirst": 1},
+            timeout=60.0,
+        )
+        return target
+
+    async def autofocus(self) -> None:
+        """Start the laser's autofocus, as Studio's Autofocus button does.
+
+        Studio switches the laser to autofocus mode and sends
+        ``auto_start``; the laser measures the material and moves the
+        focus itself (the same as its own button). The new height comes
+        with the Z push. Nothing is stored on the laser.
+        """
+        sleeping = self._latest.get("status") == XtoolStatus.SLEEPING
+        await self.set_mode("P_AUTOFOCUS")
+        if sleeping:
+            await asyncio.sleep(0.3)  # Studio waits as long after a wake
+        await self.request(
+            PATH_FOCUS_CONTROL, "POST", data={"action": "auto_start"}, timeout=10.0,
+        )
+
     async def parts_control(
         self, mcode: str, prefix: bytes, timeout: float = 6.0,
     ) -> str | None:
@@ -1033,6 +1136,70 @@ class WSV2Protocol(XtoolProtocol):
            ``PUT /v1/filetransfer/download`` + the ``function=
            file_stream`` WS + ``PUT /v1/filetransfer/finish``.
         """
+        # No photo while the laser is not connected: a request would only
+        # wait for its timeout, and requests would pile up behind it.
+        if not self._connected:
+            return None
+        # A request for a camera whose photo is already coming gets that
+        # photo, so requests never queue up: at most one photo per
+        # camera is waiting or being taken.
+        pending: dict[str, asyncio.Future[bytes | None]] = getattr(
+            self, "_camera_pending", None
+        ) or {}
+        self._camera_pending = pending
+        task = pending.get(camera_name)
+        if task is None:
+            task = asyncio.ensure_future(self._camera_snap_locked(camera_name))
+            pending[camera_name] = task
+            task.add_done_callback(
+                lambda done, name=camera_name: pending.pop(name, None)
+                if pending.get(name) is done else None
+            )
+        # Shielded: a viewer that goes away does not cancel the photo
+        # another request is waiting for.
+        return await asyncio.shield(task)
+
+    async def _camera_snap_locked(self, camera_name: str) -> bytes | None:
+        # One photo at a time: each one opens its own file transfer,
+        # and live views of both lenses would otherwise overlap them.
+        lock = getattr(self, "_camera_lock", None)
+        if lock is None:
+            lock = self._camera_lock = asyncio.Lock()
+        queued = time.monotonic()
+        async with lock:
+            started = time.monotonic()
+            image = await self._camera_snap(camera_name)
+        _LOGGER.debug(
+            "V2 camera_snap %s: %s bytes, waited %.2f s, took %.2f s",
+            camera_name, len(image) if image else 0,
+            started - queued, time.monotonic() - started,
+        )
+        return image
+
+    async def camera_calibration_file(self) -> bytes | None:
+        """Download the laser's camera calibration (``global_calib.json``).
+
+        Studio's ``downLoadConfig`` reads it with a file transfer of
+        type 3 and the bare file name. The camera lock keeps it from
+        overlapping a photo's transfer.
+        """
+        lock = getattr(self, "_camera_lock", None)
+        if lock is None:
+            lock = self._camera_lock = asyncio.Lock()
+        async with lock:
+            try:
+                blob = await self._download_file_stream(
+                    "global_calib.json", file_type=3,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("V2 camera calibration download failed: %s", err)
+                return None
+        _LOGGER.debug(
+            "V2 camera calibration: %s bytes", len(blob) if blob else 0,
+        )
+        return blob or None
+
+    async def _camera_snap(self, camera_name: str) -> bytes | None:
         try:
             snap = await self.request(
                 self.PATH_CAMERA_SNAP,
@@ -1281,6 +1448,8 @@ class WSV2Protocol(XtoolProtocol):
             mode = ""
             if isinstance(info, dict):
                 mode = str(info.get("mode") or "").upper()
+                if mode:
+                    self._device_mode = mode
                 if info.get("taskId") is not None:
                     self._latest["task_id"] = info["taskId"]
                 # Only overwrite working_mode when the push carries a
@@ -1456,6 +1625,12 @@ class WSV2Protocol(XtoolProtocol):
                 ("error", "gyro",
                  {"raw_type": str(typ), "info": info}),
             )
+
+        elif url == "/laser_head/value" and module == "LASER_HEAD" and typ == "MODE_CHANGE":
+            # Sent after every Z move (autofocus, manual focus).
+            z = info.get("z") if isinstance(info, dict) else None
+            if isinstance(z, (int, float)) and not isinstance(z, bool):
+                self._latest["focus_thickness"] = focus_thickness_from_z(float(z))
 
         elif url == "/laser_head/alarm":
             # Distinct from the ``/laserhead/status BUSY/IDLE`` push
@@ -1849,6 +2024,8 @@ class WSV2Protocol(XtoolProtocol):
             cur_mode = rt.get("curMode") or {}
             if isinstance(cur_mode, dict):
                 mode = str(cur_mode.get("mode") or "").upper()
+                if mode:
+                    self._device_mode = mode
                 mapped = WSV2_MODE_MAP.get(mode)
                 if mapped is not None:
                     state.status = mapped
@@ -1918,6 +2095,15 @@ class WSV2Protocol(XtoolProtocol):
         # is overridable: P2S V2 firmware swaps it for
         # ``/v1/device/runningStatus`` (same response shape).
         await self._poll_runtime_status(state)
+
+        # A sleeping laser wakes when it is asked for its settings: an
+        # F2 Ultra UV left Sleep 0.35 s after a configs read, while the
+        # runtime, peripheral and accessory reads left it asleep. Studio
+        # does not read the settings of a sleeping laser either. So the
+        # slow reads wait while it sleeps, and run on the first poll
+        # after it wakes (the counter starts again at 0).
+        asleep = self._latest.get("status") == XtoolStatus.SLEEPING
+        slow = not asleep and self._poll_counter % 6 == 0
 
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
         # Build the type list dynamically from the model's capability
@@ -2019,14 +2205,22 @@ class WSV2Protocol(XtoolProtocol):
         # every 30 s at 5 s base interval). Push events keep the values
         # fresh between polls. ``_poll_configs`` is overridable: P2S V2
         # firmware uses ``/v1/config/get`` with a kv-list body.
-        if self._poll_counter % 6 == 0:
+        if slow:
             await self._poll_configs()
+        # The focus height is read on the same slow cadence, and also on
+        # every poll until it is known (after each connect), so it shows
+        # soon after the laser powers on.
+        if model is not None and getattr(model, "has_focus_control", False) and (
+            self._poll_counter % 6 == 0 or not self._focus_known
+        ):
+            await self._poll_focus()
 
         # 4. Statistics — lifetime counters, slow cadence. Skip on every
         # poll once cached as unsupported (GS006, P2S, DT001 don't
         # expose ``/v1/device/statistics``).
         if (
-            self._poll_counter % 12 == 0
+            not asleep
+            and self._poll_counter % 12 == 0
             and self.PATH_STATISTICS not in self._unsupported_endpoints
         ):
             try:
@@ -2112,7 +2306,7 @@ class WSV2Protocol(XtoolProtocol):
         # arrive via push frames `/temperature/alarm`, `/laser_head/alarm`
         # etc.).
         if (
-            self._poll_counter % 6 == 0
+            slow
             and self.PATH_ALARMS not in self._unsupported_endpoints
         ):
             try:
@@ -2134,7 +2328,7 @@ class WSV2Protocol(XtoolProtocol):
             elif isinstance(alarms, list):
                 self._latest["alarm_present"] = bool(alarms)
 
-        self._poll_counter += 1
+        self._poll_counter = 0 if asleep else self._poll_counter + 1
 
         # 7. Push-cached values (overrule poll if newer)
         self._apply_latest_to_state(state)

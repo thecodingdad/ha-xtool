@@ -1,0 +1,130 @@
+focus:
+  target:
+    entity:
+      integration: xtool
+      domain: number
+      device_class: distance
+  fields:
+    step:
+      example: 1.0
+      selector:
+        number:
+          min: -150
+          max: 150
+          step: 0.1
+          unit_of_measurement: mm
+          mode: box
+    steps:
+      example: 3
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1500
+          step: 1
+          mode: box
+    thickness:
+      example: 12.7
+      selector:
+        number:
+          min: 0
+          max: 150
+          step: 0.1
+          unit_of_measurement: mm
+          mode: box
+move:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - integration: xtool
+              model: xTool P2
+    x:
+      example: 100
+      selector:
+        number:
+          min: 0
+          max: 610
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    y:
+      example: 50
+      selector:
+        number:
+          min: 0
+          max: 305
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    step_x:
+      example: 10
+      selector:
+        number:
+          min: -610
+          max: 610
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    step_y:
+      example: -10
+      selector:
+        number:
+          min: -305
+          max: 305
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    steps:
+      example: 3
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1000
+          step: 1
+          mode: box
+camera:
+  target:
+    entity:
+      integration: xtool
+      domain: camera
+  fields:
+    crop_width:
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 700
+          step: 1
+          unit_of_measurement: mm
+          mode: box
+    crop_height:
+      example: 200
+      selector:
+        number:
+          min: 0
+          max: 700
+          step: 1
+          unit_of_measurement: mm
+          mode: box
+    crop_center_x:
+      example: 0
+      selector:
+        number:
+          min: -700
+          max: 700
+          step: 1
+          unit_of_measurement: mm
+          mode: box
+    crop_center_y:
+      example: 0
+      selector:
+        number:
+          min: -700
+          max: 700
+          step: 1
+          unit_of_measurement: mm
+          mode: box

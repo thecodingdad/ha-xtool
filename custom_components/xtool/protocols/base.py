@@ -152,6 +152,34 @@ class XtoolDeviceModel:
     # - P2 / P2S / P3                → ``("overview", "closeup")``
     #   (V1 legacy naming carried through to their V2 variant).
     camera_names: tuple[str, ...] = ()
+    # The laser stores a calibration grid for its ``main`` camera
+    # (``global_calib.json``); photos are straightened with it, as
+    # Studio does (F2 Ultra UV).
+    has_camera_calibration: bool = False
+    # Other cameras with a calibration file of their own: ``(camera
+    # name, file name, pixels per mm of the straightened image, the
+    # calibrated area's width and height in mm)``, as the laser's Studio
+    # extension names them (P2: ``global_calib.json`` for the overview
+    # camera, ``local_calib.json`` for the close camera).
+    camera_calibrations: tuple[
+        tuple[str, str, float, tuple[float, float]], ...
+    ] = ()
+    # Calibrated cameras whose crop centre is measured from the
+    # calibrated area's origin (the P2 overview's is the laser's home, so
+    # the centre is in the laser's coordinates) instead of its centre.
+    camera_crop_from_origin: tuple[str, ...] = ()
+    # Cameras that look at the bed at an angle: ``(camera name,
+    # perspective coefficients, photo size, result size)``. The eight
+    # Pillow perspective coefficients map the result to the photo and
+    # were measured on a cutting mat so its grid is straight, square
+    # and upright.
+    camera_perspectives: tuple[
+        tuple[str, tuple[float, ...], tuple[int, int], tuple[int, int]], ...
+    ] = ()
+    # ``(camera name, degrees)``: the turn (counter-clockwise) that sets
+    # such a camera upright, used when its perspective correction is
+    # switched off.
+    camera_rotations: tuple[tuple[str, float], ...] = ()
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False
@@ -163,6 +191,9 @@ class XtoolDeviceModel:
     has_camera_exposure: bool = False
     has_fire_record: bool = False
     has_laser_head_position: bool = False
+    # Focus height read and moved as Studio's manual focus does
+    # (``/v1/laser-head/focus/control``; F2 Ultra UV).
+    has_focus_control: bool = False
     has_mode_switch: bool = False
     has_purifier_timeout: bool = False
     has_water_cooling: bool = False  # REST: F1 Ultra fiber-laser water loop
@@ -251,6 +282,9 @@ class XtoolDeviceState:
     position_x: float = 0.0
     position_y: float = 0.0
     position_z: float = 0.0
+    # Material thickness the laser is focused on, in mm, as Studio
+    # shows it (laser-head Z minus 6). None until the laser reports it.
+    focus_thickness: float | None = None
 
     # Settings
     # ``flame_alarm`` carries the legacy 3-state sensitivity int
@@ -412,12 +446,20 @@ class XtoolDeviceState:
     ir_led_close: bool = False
     ir_led_global: bool = False
 
+    # P2: each fill light's brightness by index (0-255), and the
+    # /config/get settings by Studio's key
+    fill_light_levels: dict[int, int] = field(default_factory=dict)
+    device_config: dict[str, Any] = field(default_factory=dict)
+
     # REST camera exposure
     camera_exposure_overview: int = 0
     camera_exposure_closeup: int = 0
 
     # REST distance measurement
     last_distance_mm: float | None = None
+    # P2: the material thickness from the last IR reading, and where it was read
+    measured_thickness_mm: float | None = None
+    measured_at: tuple[float, float] | None = None
 
     # AP2 air cleaner
     purifier_speed: int = 0

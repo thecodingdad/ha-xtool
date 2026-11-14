@@ -163,6 +163,8 @@ class RestProtocol(XtoolProtocol):
     PATH_JOB_PAUSE: str = "/processing/pause"
     PATH_JOB_RESUME: str = "/processing/resume"
     PATH_JOB_STOP: str = "/processing/stop"
+    # /peripheral/gap "off" read as the lid open (the P2 reports "off" while closed)
+    GAP_OFF_MEANS_OPEN: bool = True
 
     def __init__(self, host: str, port: int = REST_HTTP_PORT) -> None:
         """Initialize the protocol."""
@@ -170,6 +172,17 @@ class RestProtocol(XtoolProtocol):
         self._port = port
         self._base_url = f"http://{host}:{port}"
         self._offline_until: float = 0.0
+
+    async def change_host(self, host: str) -> None:
+        """Talk to the laser at another address from now on, without a reload."""
+        await self.disconnect()
+        self.host = host
+        self._base_url = f"http://{host}:{self._port}"
+        self._offline_until = 0.0
+        try:
+            await self.connect()
+        except Exception:  # noqa: BLE001 - the next poll connects again
+            pass
 
     @property
     def connected(self) -> bool:
@@ -288,7 +301,7 @@ class RestProtocol(XtoolProtocol):
                 cur_mode = running.get("curMode", {})
                 if isinstance(cur_mode, dict):
                     raw_mode = cur_mode.get("mode", "")
-                    mapped = _map_rest_mode(raw_mode)
+                    mapped = self._map_running_mode(cur_mode)
                     if mapped is None and raw_mode:
                         _LOGGER.debug(
                             "REST /device/runningStatus mode unmapped "
@@ -331,7 +344,7 @@ class RestProtocol(XtoolProtocol):
             if isinstance(inner, dict):
                 gs = str(inner.get("state", "")).lower()
                 if gs in ("on", "off"):
-                    state.cover_open = gs == "off"
+                    state.cover_open = (gs == "off") == self.GAP_OFF_MEANS_OPEN
 
         # Air-Assist V2 connect state (M1 Ultra) — returns {state:"on"|"off"};
         # other REST models 404 silently (kept as None).
@@ -513,6 +526,10 @@ class RestProtocol(XtoolProtocol):
             state.working_mode, state.cover_open, state.air_assist_connected,
         )
 
+    def _map_running_mode(self, cur_mode: dict) -> XtoolStatus | None:
+        """The status for ``/device/runningStatus`` ``curMode``."""
+        return _map_rest_mode(str(cur_mode.get("mode", "")))
+
     async def _poll_simple_get(self, state: XtoolDeviceState, path: str, attr: str, conv) -> None:
         """Poll a ``/get*`` endpoint with a tolerant JSON-shape extractor."""
         d = await self._get_json(path)
@@ -565,7 +582,8 @@ class RestProtocol(XtoolProtocol):
         """Lock or unlock the motorised cover (P2/P2S)."""
         await self._post(
             REST_PATH_DIGITAL_LOCK,
-            data={"action": "lock" if locked else "unlock"},
+            # The P2 accepts only "on" and "off" ("action failed, not on|off")
+            data={"action": "on" if locked else "off"},
         )
 
     async def move_laser_head(self, x: float, y: float, wait: int = 0) -> None:

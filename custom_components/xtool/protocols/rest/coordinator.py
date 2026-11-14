@@ -6,6 +6,13 @@ import logging
 from dataclasses import replace as dataclass_replace
 from typing import TYPE_CHECKING, Any
 
+import time
+
+import aiohttp
+from homeassistant.const import CONF_HOST
+from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.storage import Store
+
 from ...coordinator import XtoolCoordinator
 from ..base import XtoolDeviceState
 
@@ -15,6 +22,7 @@ if TYPE_CHECKING:
     from homeassistant.components.camera import Camera
     from homeassistant.components.event import EventEntity
     from homeassistant.components.light import LightEntity
+    from homeassistant.components.lock import LockEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
     from homeassistant.components.sensor import SensorEntity
@@ -255,3 +263,241 @@ class RestCoordinator(XtoolCoordinator):
             "triggered" if new_fire else "cleared",
             None,
         )
+
+
+class P2Coordinator(RestCoordinator):
+    """The P2: polls like the REST family and follows Studio's push channel.
+
+    A push updates the entities at once; the poll every few seconds still
+    reads everything. When the push channel closes or goes quiet, the laser
+    shows unavailable at once instead of keeping its last values.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.protocol._push_notify = self._on_push
+        # Error codes already sent as events from a push
+        self._announced: set[str] = set()
+        # The laser's addresses seen so far (Wi-Fi and Ethernet), kept
+        # across restarts; when the configured one stops answering, the
+        # others are tried
+        self._hosts_store: Store | None = None
+        self._known_hosts: list[str] = []
+        self._next_host_search = 0.0
+        self._own_entry_update: tuple[dict[str, Any], dict[str, Any]] | None = None
+
+    # --- Identity and addresses ------------------------------------------
+
+    async def _fetch_device_info(self) -> None:
+        await super()._fetch_device_info()
+        protocol = self.protocol
+        self.model_variant = protocol.model_variant() or self.model_variant
+        mac = await self.hass.async_add_executor_job(_arp_mac, protocol.host)
+        if mac and format_mac(mac) != format_mac(self.mac_address or ""):
+            self.other_mac_addresses.add(format_mac(mac))
+        await self._remember_hosts([protocol.host, *protocol.addresses()])
+        await self._prefer_ethernet()
+
+    async def _prefer_ethernet(self) -> None:
+        """Move to the Ethernet address when a cable is connected and it answers."""
+        ethernet = self.protocol.ethernet_address()
+        if not ethernet or ethernet == self.protocol.host or not self.config_entry:
+            return
+        if await _serial_at(ethernet) != self.serial_number:
+            return
+        _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
+                     self.device_name, ethernet, self.protocol.host)
+        await self._move_to(ethernet)
+
+    async def _move_to(self, host: str) -> None:
+        """Use the new address at once and save it, without reloading the entry."""
+        entry = self.config_entry
+        await self.protocol.change_host(host)
+        self.host = host
+        data = {**entry.data, CONF_HOST: host}
+        # The update listener skips this change: nothing needs a reload
+        self._own_entry_update = (data, dict(entry.options))
+        self.hass.config_entries.async_update_entry(entry, data=data)
+
+    def made_entry_update(self, entry: Any) -> bool:
+        """True when the entry holds exactly what this coordinator wrote to it."""
+        return self._own_entry_update == (dict(entry.data), dict(entry.options))
+
+    def _store(self) -> Store:
+        if self._hosts_store is None:
+            entry_id = self.config_entry.entry_id if self.config_entry else self.serial_number
+            self._hosts_store = Store(self.hass, 1, f"xtool.{entry_id}.hosts")
+        return self._hosts_store
+
+    async def _load_hosts(self) -> list[str]:
+        if not self._known_hosts:
+            stored = await self._store().async_load()
+            if isinstance(stored, dict) and isinstance(stored.get("hosts"), list):
+                self._known_hosts = [str(h) for h in stored["hosts"]]
+        return self._known_hosts
+
+    async def _remember_hosts(self, hosts: list[str]) -> None:
+        known = await self._load_hosts()
+        new = [h for h in dict.fromkeys(hosts) if h and h not in known]
+        if new:
+            self._known_hosts = [*known, *new]
+            await self._store().async_save({"hosts": self._known_hosts})
+
+    async def _find_on_other_address(self) -> None:
+        """When the laser stops answering, look for it at its other address."""
+        now = time.monotonic()
+        if now < self._next_host_search or self.power_switch_is_off or not self.config_entry:
+            return
+        self._next_host_search = now + HOST_SEARCH_SECONDS
+        current = self.protocol.host
+        for host in await self._load_hosts():
+            if host == current:
+                continue
+            serial = await _serial_at(host)
+            if serial and serial == self.serial_number:
+                _LOGGER.info("%s answers at %s instead of %s; switching", self.device_name, host, current)
+                await self._move_to(host)
+                return
+
+    def _on_push(self) -> None:
+        if self.data is None:
+            return
+        state = dataclass_replace(self.data)
+        if not self.protocol.connected:
+            if not state.available:
+                return
+            state.available = False
+            self.data = state
+            self.async_update_listeners()
+            return
+        if not state.available:
+            # Back after an outage: the next poll reads everything again
+            self.hass.async_create_task(self.async_request_refresh())
+            return
+        prev_status = state.status
+        self.protocol.apply_latest(state)
+        self.data = state
+        self._emit_status_transition_events(prev_status, state)
+        self._emit_fire_warning_if_status_changed(prev_status, state.status)
+        self._emit_push_events()
+        # Not async_set_updated_data: that would move the next poll
+        self.async_update_listeners()
+
+    def _emit_push_events(self) -> None:
+        for kind, event_type, attributes in self.protocol.take_push_events():
+            if kind == "error" and attributes.get("code"):
+                self._announced.add(attributes["code"])
+            self._emit_event(kind, event_type, attributes)
+
+    async def _async_update_data(self) -> XtoolDeviceState:
+        prev_alarms = list(self.data.active_alarms) if self.data else []
+        state = await super()._async_update_data()
+        self._emit_push_events()
+        if state.available:
+            self._emit_alarm_changes(prev_alarms, state.active_alarms)
+        else:
+            await self._find_on_other_address()
+        return state
+
+    def _emit_alarm_changes(
+        self, prev: list[dict[str, Any]], new: list[dict[str, Any]],
+    ) -> None:
+        """Events for alarms that appeared since the last poll (and were not pushed)."""
+
+        def key(alarm: dict[str, Any]) -> str:
+            return str(alarm.get("code") or alarm.get("message") or "")
+
+        before = {key(a) for a in prev}
+        now = {key(a) for a in new}
+        for alarm in new:
+            if key(alarm) in before or key(alarm) in self._announced:
+                continue
+            if alarm.get("event_type") == "fire":
+                self._emit_event("fire_warning", "triggered", {"level": alarm.get("level")})
+                continue
+            self._emit_event("error", alarm.get("event_type") or "other", {
+                "code": alarm.get("code"),
+                "message": alarm.get("message"),
+                "level": alarm.get("level"),
+            })
+        fire_before = any(a.get("event_type") == "fire" for a in prev)
+        fire_now = any(a.get("event_type") == "fire" for a in new)
+        if fire_before and not fire_now:
+            self._emit_event("fire_warning", "cleared", None)
+        self._announced.intersection_update(now)
+
+    def build_sensors(self) -> list["SensorEntity"]:
+        from .entities import build_p2_sensors
+        from .p2_entities import P2Connection, P2Measured
+        return [
+            *build_p2_sensors(self),
+            P2Connection(self),
+            P2Measured(self),
+        ]
+
+    def build_switches(self) -> list["SwitchEntity"]:
+        from .p2_entities import build_p2_switches
+        return build_p2_switches(self)
+
+    def build_locks(self) -> list["LockEntity"]:
+        from .p2_entities import build_p2_locks
+        return build_p2_locks(self)
+
+    def build_numbers(self) -> list["NumberEntity"]:
+        from .p2_entities import build_p2_numbers
+        return build_p2_numbers(self)
+
+    def build_selects(self) -> list["SelectEntity"]:
+        from .p2_entities import build_p2_selects
+        return build_p2_selects(self)
+
+    def build_lights(self) -> list["LightEntity"]:
+        from .p2_entities import build_p2_lights
+        return build_p2_lights(self)
+
+    def build_cameras(self) -> list["Camera"]:
+        from .p2_entities import build_p2_cameras
+        return build_p2_cameras(self)
+
+    def build_binary_sensors(self) -> list["BinarySensorEntity"]:
+        from .p2_entities import build_p2_binary_sensors
+        return build_p2_binary_sensors(self)
+
+    def build_buttons(self) -> list["ButtonEntity"]:
+        from .p2_entities import build_p2_buttons
+        return build_p2_buttons(self)
+
+    def build_events(self) -> list["EventEntity"]:
+        from .entities import build_p2_events
+        return build_p2_events(self)
+
+
+# How often a P2 that stopped answering is looked for at its other address
+HOST_SEARCH_SECONDS = 30.0
+
+
+def _arp_mac(host: str) -> str:
+    """The MAC behind ``host`` in the system's ARP table (Linux), or ""."""
+    try:
+        with open("/proc/net/arp", encoding="ascii") as arp:
+            for line in arp.read().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 4 and parts[0] == host and parts[3] != "00:00:00:00:00:00":
+                    return parts[3]
+    except OSError:
+        pass
+    return ""
+
+
+async def _serial_at(host: str) -> str:
+    """The serial number of the laser answering at ``host``, or ""."""
+    try:
+        async with aiohttp.ClientSession() as session, session.get(
+            f"http://{host}:8080/device/machineInfo", timeout=aiohttp.ClientTimeout(total=3),
+        ) as resp:
+            data = await resp.json(content_type=None)
+    except Exception:  # noqa: BLE001
+        return ""
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        return str(data["data"].get("sn") or "")
+    return ""

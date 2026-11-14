@@ -1,6 +1,14 @@
 {
   "entity": {
     "binary_sensor": {
+      "lid": {
+        "default": "mdi:window-shutter-open",
+        "state": { "off": "mdi:window-shutter" }
+      },
+      "baseplate": {
+        "default": "mdi:tray",
+        "state": { "off": "mdi:tray-remove" }
+      },
       "accessory_airpump_connected": {
         "default": "mdi:power-plug",
         "state": { "off": "mdi:power-plug-off" }
@@ -33,8 +41,8 @@
         "default": "mdi:weather-windy"
       },
       "alarm": {
-        "default": "mdi:alarm-light",
-        "state": { "off": "mdi:alarm-light-off" }
+        "default": "mdi:bell",
+        "state": { "off": "mdi:bell-off" }
       },
       "cooling_fan_running": {
         "default": "mdi:fan",
@@ -72,7 +80,104 @@
         "state": { "off": "mdi:laptop-off" }
       }
     },
+    "button": {
+      "home_laser_head": {
+        "default": "mdi:home-import-outline"
+      },
+      "move_laser": {
+        "default": "mdi:arrow-all"
+      },
+      "wake": {
+        "default": "mdi:sleep-off"
+      }
+    },
+    "light": {
+      "fill_light_1": {
+        "default": "mdi:light-recessed"
+      },
+      "fill_light_2": {
+        "default": "mdi:page-layout-sidebar-right"
+      },
+      "fill_light_3": {
+        "default": "mdi:page-layout-sidebar-left"
+      }
+    },
+    "number": {
+      "thickness_or_distance": {
+        "default": "mdi:format-line-weight"
+      },
+      "auto_power_off": {
+        "default": "mdi:timer-off-outline"
+      },
+      "laser_position_x": {
+        "default": "mdi:arrow-left-right"
+      },
+      "laser_position_y": {
+        "default": "mdi:arrow-up-down"
+      }
+    },
+    "select": {
+      "crop_preset": {
+        "default": "mdi:crop"
+      },
+      "processing_mode": {
+        "default": "mdi:layers-outline"
+      },
+      "perspective": {
+        "default": "mdi:perspective-less",
+        "state": {
+          "uncorrected": "mdi:camera-outline",
+          "rotated": "mdi:rotate-right",
+          "straightened": "mdi:perspective-less"
+        }
+      }
+    },
+    "sensor": {
+      "measured_thickness_or_distance": {
+        "default": "mdi:format-line-weight"
+      },
+      "connection": {
+        "default": "mdi:ethernet",
+        "state": { "wifi": "mdi:wifi" }
+      }
+    },
     "switch": {
+      "overlay_mode_process_on_slats": {
+        "default": "mdi:alpha-p-box-outline"
+      },
+      "overlay_mode_honeycomb_panel": {
+        "default": "mdi:alpha-h-box-outline"
+      },
+      "overlay_mode_slats_removed": {
+        "default": "mdi:alpha-s-box-outline"
+      },
+      "overlay_close_camera": {
+        "default": "mdi:picture-in-picture-bottom-right"
+      },
+      "overlay_studio": {
+        "default": "mdi:monitor-screenshot"
+      },
+      "overlay_custom": {
+        "default": "mdi:crop-free"
+      },
+      "overlay_laser_target": {
+        "default": "mdi:crosshairs"
+      },
+      "overlay_slat_lines": {
+        "default": "mdi:view-parallel-outline"
+      },
+      "overlay_red_dot_close": {
+        "default": "mdi:pan-down"
+      },
+      "overlay_red_dot_quick": {
+        "default": "mdi:laser-pointer"
+      },
+      "aimed_measure_light": {
+        "default": "mdi:pan-down"
+      },
+      "quick_measure_light": {
+        "default": "mdi:laser-pointer"
+      },
       "accessory_ductfan_buzzer": {
         "default": "mdi:bell-ring",
         "state": { "off": "mdi:bell-off" }
@@ -171,6 +276,10 @@
         "state": { "off": "mdi:autorenew-off" }
       },
       "smoking_fan": {
+        "default": "mdi:fan-chevron-up",
+        "state": { "off": "mdi:fan-off" }
+      },
+      "exhaust_fan_setting": {
         "default": "mdi:fan-chevron-up",
         "state": { "off": "mdi:fan-off" }
       },

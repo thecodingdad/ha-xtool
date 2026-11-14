@@ -61,6 +61,22 @@
           "firmware_check_interval": "Wie oft die Integration die xTool Cloud nach neuen Firmware-Versionen prüft.",
           "stats_poll_interval": "Wie oft Lebensdauer-Statistiken (M2008) aktualisiert werden. Langsam veränderliche Werte, Standard 5 Minuten.",
           "dongle_poll_interval": "Wie oft die verbundenen Bluetooth-Zubehörteile (M9098) abgefragt werden."
+        },
+        "sections": {
+          "overlay_colors": {
+            "name": "Overlay-Farben",
+            "description": "Farben der Overlays der P2-Kameras.",
+            "data": {
+              "process_on_slats": "Auf Lamellen bearbeiten",
+              "honeycomb_panel": "Wabenplatte",
+              "slats_removed": "Lamellen entfernt",
+              "studio": "Studio (Nahkamera)",
+              "custom": "Benutzerdefiniert (Nahkamera)",
+              "laser_target": "Laserziel",
+              "slat_lines": "Lamellenlinien",
+              "red_dots": "Rote Punkte"
+            }
+          }
         }
       },
       "confirm_updates": {
@@ -75,6 +91,16 @@
   },
   "entity": {
     "sensor": {
+      "connection": {
+        "name": "Verbindung",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "WLAN"
+        }
+      },
+      "operating_times": {
+        "name": "Betriebsvorgänge"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -103,6 +129,233 @@
           "working_button": "Auftrag (Taste)",
           "measure_area": "Bereich messen",
           "unknown": "Unbekannt"
+        },
+        "state_attributes": {
+          "laser_position_x": {
+            "name": "Laserposition X"
+          },
+          "laser_position_y": {
+            "name": "Laserposition Y"
+          },
+          "laser_position_z": {
+            "name": "Laserposition Z"
+          },
+          "fire_level": {
+            "name": "Feuerlevel"
+          },
+          "air_assist_level": {
+            "name": "Air-Assist Stufe"
+          },
+          "task_id": {
+            "name": "Auftrags-ID"
+          },
+          "task_time": {
+            "name": "Auftragszeit"
+          },
+          "task_progress": {
+            "name": "Auftragsfortschritt"
+          },
+          "working_time": {
+            "name": "Betriebszeit"
+          },
+          "session_count": {
+            "name": "Aufträge gesamt"
+          },
+          "standby_time": {
+            "name": "Standby-Zeit"
+          },
+          "tool_runtime": {
+            "name": "Lasermodul-Laufzeit"
+          },
+          "ip_address": {
+            "name": "IP-Adresse"
+          },
+          "laser_power": {
+            "name": "Laserleistung"
+          },
+          "laser_module": {
+            "name": "Lasermodul"
+          },
+          "sd_card": {
+            "name": "SD-Karte"
+          },
+          "workspace_size": {
+            "name": "Arbeitsbereich"
+          },
+          "connection_count": {
+            "name": "Aktive Verbindungen"
+          },
+          "origin_offset_x": {
+            "name": "Origin-Offset X"
+          },
+          "origin_offset_y": {
+            "name": "Origin-Offset Y"
+          },
+          "last_job_time": {
+            "name": "Letzte Auftragszeit"
+          },
+          "working_mode": {
+            "name": "Betriebsmodus"
+          },
+          "last_distance": {
+            "name": "Letzte Distanz"
+          },
+          "riser_base": {
+            "name": "Erhöhungsbasis"
+          },
+          "water_temperature": {
+            "name": "Wassertemperatur"
+          },
+          "water_flow": {
+            "name": "Wasserdurchfluss"
+          },
+          "z_temperature": {
+            "name": "Z-Achsen-Temperatur"
+          },
+          "workhead_id": {
+            "name": "Werkzeug"
+          },
+          "workhead_z_height": {
+            "name": "Werkzeug Z-Höhe"
+          },
+          "print_tool_type": {
+            "name": "Werkzeugtyp"
+          },
+          "hardware_type": {
+            "name": "Hardware-Typ"
+          },
+          "gyro_x": {
+            "name": "Gyro X"
+          },
+          "gyro_y": {
+            "name": "Gyro Y"
+          },
+          "gyro_z": {
+            "name": "Gyro Z"
+          },
+          "inkjet_ink_c": {
+            "name": "Tintenstand Cyan"
+          },
+          "inkjet_ink_m": {
+            "name": "Tintenstand Magenta"
+          },
+          "inkjet_ink_y": {
+            "name": "Tintenstand Gelb"
+          },
+          "inkjet_ink_k": {
+            "name": "Tintenstand Schwarz"
+          },
+          "inkjet_sn": {
+            "name": "Seriennummer Druckkopf"
+          },
+          "inkjet_version": {
+            "name": "Firmware Druckkopf"
+          },
+          "inkjet_toner_sn": {
+            "name": "Seriennummer Toner"
+          },
+          "active_alarms": {
+            "name": "Aktive Alarme"
+          },
+          "job_name": {
+            "name": "Auftragsname"
+          },
+          "job_progress": {
+            "name": "Auftragsfortschritt"
+          },
+          "job_time_remaining": {
+            "name": "Verbleibende Auftragszeit"
+          },
+          "queued_jobs": {
+            "name": "Aufträge in Warteschlange"
+          },
+          "air_purifier_runtime": {
+            "name": "Laufzeit Luftreiniger"
+          },
+          "ambient_temp": {
+            "name": "Umgebungstemperatur"
+          },
+          "ambient_humidity": {
+            "name": "Luftfeuchtigkeit"
+          },
+          "uv_lamp_runtime": {
+            "name": "Laufzeit UV-Lampe"
+          },
+          "cover_open": {
+            "name": "Deckel"
+          },
+          "machine_lock": {
+            "name": "Sicherheitsschlüssel"
+          },
+          "alarm": {
+            "name": "Alarm"
+          },
+          "xcs_compatibility_mode": {
+            "name": "XCS-Kompatibilitätsmodus"
+          },
+          "air_assist_connected": {
+            "name": "Air-Assist verbunden"
+          },
+          "drawer_open": {
+            "name": "Schublade"
+          },
+          "cooling_fan_running": {
+            "name": "Kühllüfter"
+          },
+          "smoking_fan_running": {
+            "name": "Absauglüfter"
+          },
+          "cpu_fan_running": {
+            "name": "CPU-Lüfter"
+          },
+          "uv_fire_alarm": {
+            "name": "UV-Brandsensor"
+          },
+          "water_pump_running": {
+            "name": "Wasserpumpe"
+          },
+          "water_line_ok": {
+            "name": "Wasserkreislauf"
+          },
+          "flame_alarm_enabled": {
+            "name": "Feueralarm aktiv"
+          },
+          "beep_enabled": {
+            "name": "Signalton aktiv"
+          },
+          "gap_check_enabled": {
+            "name": "Deckelüberwachung aktiv"
+          },
+          "machine_lock_check_enabled": {
+            "name": "Verriegelungsüberwachung aktiv"
+          },
+          "inkjet_head_capped": {
+            "name": "Druckkopf abgedeckt"
+          },
+          "inkjet_toner_installed": {
+            "name": "Toner eingesetzt"
+          },
+          "inkjet_calibrated": {
+            "name": "Druckkopf kalibriert"
+          },
+          "front_door": {
+            "name": "Fronttür"
+          },
+          "rear_door": {
+            "name": "Hintertür"
+          },
+          "waste_tank_full": {
+            "name": "Resttintenbehälter voll"
+          },
+          "waste_tank_present": {
+            "name": "Resttintenbehälter eingesetzt"
+          },
+          "filter_installed": {
+            "name": "Luftfilter eingesetzt"
+          },
+          "firmware": {
+            "name": "Firmware"
+          }
         }
       },
       "laser_position_x": {
@@ -182,9 +435,6 @@
         "name": "Reiniger-Stufe"
       },
       "accessory_ductfan_current_speed": {
-        "name": "Aktuelle Drehzahl"
-      },
-      "accessory_ductfanv3_current_speed": {
         "name": "Aktuelle Drehzahl"
       },
       "accessory_purifier_filter_pre": {
@@ -333,6 +583,9 @@
       },
       "uv_lamp_runtime": {
         "name": "Laufzeit UV-Lampe"
+      },
+      "measured_thickness_or_distance": {
+        "name": "Gemessene Stärke oder Distanz"
       }
     },
     "binary_sensor": {
@@ -422,6 +675,16 @@
       },
       "filter_installed": {
         "name": "Luftfilter eingesetzt"
+      },
+      "lid": {
+        "name": "Deckel"
+      },
+      "baseplate": {
+        "name": "Bodenplatte",
+        "state": {
+          "on": "Eingesetzt",
+          "off": "Entfernt"
+        }
       }
     },
     "camera": {
@@ -429,7 +692,7 @@
         "name": "Übersichtskamera"
       },
       "camera_closeup": {
-        "name": "Nahaufnahme-Kamera"
+        "name": "Nahkamera"
       },
       "camera_main": {
         "name": "Hauptkamera"
@@ -459,6 +722,15 @@
       },
       "fill_light_back": {
         "name": "Arbeitslicht hinten"
+      },
+      "fill_light_1": {
+        "name": "Arbeitslicht nah"
+      },
+      "fill_light_2": {
+        "name": "Arbeitslicht rechts"
+      },
+      "fill_light_3": {
+        "name": "Arbeitslicht links"
       }
     },
     "fan": {
@@ -486,6 +758,9 @@
         "name": "Endschalter-Stopp"
       },
       "smoking_fan": {
+        "name": "Absaugung"
+      },
+      "exhaust_fan_setting": {
         "name": "Absaugung"
       },
       "power_switch": {
@@ -553,9 +828,78 @@
       },
       "accessory_largepurifierv3_auto_continue": {
         "name": "Auto-Weiterlauf"
+      },
+      "aimed_measure_light": {
+        "name": "Roter Punkt (nah)"
+      },
+      "quick_measure_light": {
+        "name": "Roter Punkt (schnell)"
+      },
+      "overlay_mode_process_on_slats": {
+        "name": "Overlay Modus auf Lamellen bearbeiten"
+      },
+      "overlay_mode_honeycomb_panel": {
+        "name": "Overlay Modus Wabenplatte"
+      },
+      "overlay_mode_slats_removed": {
+        "name": "Overlay Modus Lamellen entfernt"
+      },
+      "overlay_close_camera": {
+        "name": "Overlay Nahkamera"
+      },
+      "overlay_studio": {
+        "name": "Overlay Studio"
+      },
+      "overlay_custom": {
+        "name": "Overlay benutzerdefiniert"
+      },
+      "overlay_laser_target": {
+        "name": "Overlay Laserziel"
+      },
+      "overlay_slat_lines": {
+        "name": "Overlay Lamellenlinien"
+      },
+      "overlay_red_dot_close": {
+        "name": "Overlay roter Punkt (nah)"
+      },
+      "overlay_red_dot_quick": {
+        "name": "Overlay roter Punkt (schnell)"
       }
     },
     "number": {
+      "camera_thumbnail_refresh": {
+        "name": "Kamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "exposure": {
+        "name": "Belichtung"
+      },
+      "thumbnail_refresh": {
+        "name": "Vorschaubild-Aktualisierungsintervall"
+      },
+      "crop_width": {
+        "name": "Bildausschnitt Breite"
+      },
+      "crop_height": {
+        "name": "Bildausschnitt Höhe"
+      },
+      "crop_center_x": {
+        "name": "Bildausschnitt Mitte X"
+      },
+      "crop_center_y": {
+        "name": "Bildausschnitt Mitte Y"
+      },
+      "camera_main_crop_width": {
+        "name": "Hauptkamera Bildausschnitt Breite"
+      },
+      "camera_main_crop_height": {
+        "name": "Hauptkamera Bildausschnitt Höhe"
+      },
+      "camera_main_crop_center_x": {
+        "name": "Hauptkamera Bildausschnitt Mitte X"
+      },
+      "camera_main_crop_center_y": {
+        "name": "Hauptkamera Bildausschnitt Mitte Y"
+      },
       "accessory_ductfan_manual_gear": {
         "name": "Manuelle Stufe"
       },
@@ -648,9 +992,32 @@
       },
       "accessory_largepurifierv3_auto_off_timeout": {
         "name": "Abschalt-Verzögerung"
+      },
+      "focus_height": {
+        "name": "Fokushöhe"
+      },
+      "lowest_output_power": {
+        "name": "Niedrigste Ausgangsleistung"
+      },
+      "laser_position_x": {
+        "name": "Laserposition X"
+      },
+      "laser_position_y": {
+        "name": "Laserposition Y"
+      },
+      "thickness_or_distance": {
+        "name": "Stärke oder Distanz"
       }
     },
     "select": {
+      "perspective": {
+        "name": "Perspektive",
+        "state": {
+          "uncorrected": "Unkorrigiert",
+          "rotated": "Gedreht",
+          "straightened": "Begradigt"
+        }
+      },
       "flame_alarm_sensitivity": {
         "name": "Feueralarm-Empfindlichkeit",
         "state": {
@@ -676,9 +1043,6 @@
           "medium": "Mittel",
           "high": "Hoch"
         }
-      },
-      "accessory_ductfanv3_mode_speed": {
-        "name": "Lüfter"
       },
       "accessory_purifier_gear_select": {
         "name": "Reiniger-Stufe einstellen"
@@ -711,6 +1075,37 @@
       },
       "accessory_largepurifierv3_speed_select": {
         "name": "Geschwindigkeit"
+      },
+      "flame_alarm_level": {
+        "name": "Feueralarm",
+        "state": {
+          "low": "Niedrig",
+          "high": "Hoch"
+        }
+      },
+      "crop_preset": {
+        "name": "Zuschnitt",
+        "state": {
+          "custom": "Benutzerdefiniert",
+          "work_bed": "Arbeitsbett",
+          "process_on_slats": "Auf Lamellen bearbeiten",
+          "honeycomb_panel": "Wabenplatte",
+          "slats_removed": "Lamellen entfernt",
+          "uncropped": "Unbeschnitten",
+          "close_camera_uncropped": "Nahkamera (unbeschnitten)",
+          "close_camera_studio": "Nahkamera (Studio)",
+          "close_camera_custom": "Nahkamera (benutzerdefiniert)",
+          "studio": "Studio",
+          "sync_to_mode": "Mit Modus abgleichen"
+        }
+      },
+      "processing_mode": {
+        "name": "Modus",
+        "state": {
+          "process_on_slats": "Auf Lamellen bearbeiten",
+          "honeycomb_panel": "Wabenplatte",
+          "slats_removed": "Lamellen entfernt"
+        }
       }
     },
     "update": {
@@ -783,7 +1178,10 @@
         "name": "Z homen"
       },
       "home_laser_head": {
-        "name": "Laserkopf homen"
+        "name": "Laser homen"
+      },
+      "wake": {
+        "name": "Aufwecken"
       },
       "measure_distance": {
         "name": "Distanz messen"
@@ -796,6 +1194,23 @@
       },
       "time_sync": {
         "name": "Zeit synchronisieren"
+      },
+      "autofocus": {
+        "name": "Autofokus"
+      },
+      "measure_thickness_or_distance": {
+        "name": "Stärke oder Distanz messen"
+      },
+      "move_laser": {
+        "name": "Laser bewegen"
+      }
+    },
+    "image": {
+      "calibration_image": {
+        "name": "Kalibrierung"
+      },
+      "camera_main_calibration_image": {
+        "name": "Kalibrierung der Hauptkamera"
       }
     },
     "event": {
@@ -844,6 +1259,13 @@
               "dongle_fault": "Bluetooth-Dongle-Fehler",
               "udisk_fault": "USB-Stick-Fehler",
               "machine_lock_md_fault": "Verriegelungs-Fehler",
+              "firmware": "Firmware",
+              "water_cooling": "Wasserkühlung",
+              "exhaust_fan": "Abluftventilator",
+              "safety_lock": "Sicherheitsschloss",
+              "air_pump": "Luftpumpe",
+              "short_circuit": "Kurzschluss",
+              "other": "Sonstiges",
               "laser_control": "Lasersteuerung",
               "laser_module": "Lasermodul",
               "tilt": "Neigung",
@@ -864,6 +1286,129 @@
           }
         }
       }
+    },
+    "lock": {
+      "safety_lock": {
+        "name": "Sicherheitsschloss"
+      }
+    }
+  },
+  "device": {
+    "camera_main": {
+      "name": "{laser} Hauptkamera"
+    },
+    "camera_deep": {
+      "name": "{laser} Tiefenkamera"
+    },
+    "camera_overview": {
+      "name": "{laser} Übersichtskamera"
+    },
+    "camera_closeup": {
+      "name": "{laser} Nahkamera"
+    },
+    "camera_far": {
+      "name": "{laser} Übersichtskamera"
+    },
+    "camera_near": {
+      "name": "{laser} Nahkamera"
+    },
+    "camera_side": {
+      "name": "{laser} Seitenkamera"
+    }
+  },
+  "services": {
+    "focus": {
+      "name": "Fokus",
+      "description": "Bewegt den Fokus des Lasers wie die manuelle Fokussierung in xTool Studio: um einen Schritt mit Vorzeichen (mehrfach wiederholt) oder direkt auf eine Materialstärke. Hält bei 0 oder 150 mm an. Abgelehnt, während ein Auftrag läuft, der Laser fokussiert oder misst, oder wenn er einen Fehler meldet.",
+      "fields": {
+        "step": {
+          "name": "Schritt",
+          "description": "Schritt in mm mit Vorzeichen: positiv nach oben, negativ nach unten."
+        },
+        "steps": {
+          "name": "Schritte",
+          "description": "Wie oft der Schritt angewendet wird."
+        },
+        "thickness": {
+          "name": "Materialstärke",
+          "description": "Materialstärke für den Fokus in mm (0-150), wie Studio sie anzeigt."
+        }
+      }
+    },
+    "camera": {
+      "name": "Kamera-Bildausschnitt",
+      "description": "Legt den Teil der Arbeitsfläche fest, den die entzerrte Hauptkamera zeigt (in mm), und aktualisiert ihr Bild. Einer der vier Werte genügt; die anderen bleiben. Eine Breite oder Höhe von 0 zeigt das ganze Foto in dieser Richtung.",
+      "fields": {
+        "crop_width": {
+          "name": "Bildausschnitt Breite",
+          "description": "Breite des Bereichs in mm (20-460) oder 0 für das ganze Foto quer."
+        },
+        "crop_height": {
+          "name": "Bildausschnitt Höhe",
+          "description": "Höhe des Bereichs in mm (20-460) oder 0 für das ganze Foto hoch."
+        },
+        "crop_center_x": {
+          "name": "Bildausschnitt Mitte X",
+          "description": "Mitte des Bereichs in mm von der Mitte des kalibrierten Bereichs; positiv nach rechts."
+        },
+        "crop_center_y": {
+          "name": "Bildausschnitt Mitte Y",
+          "description": "Mitte des Bereichs in mm von der Mitte des kalibrierten Bereichs; positiv nach unten."
+        }
+      }
+    },
+    "move": {
+      "name": "Bewegen",
+      "description": "Bewegt den Laserkopf des P2 wie die Bewegungssteuerung in xTool Studio: auf eine X- und Y-Position oder um Schritte mit Vorzeichen (mehrfach wiederholt). Eine Achse ohne Angabe bleibt, wo sie ist. Hält bei 0-620 mal 0-308 mm an. Abgelehnt, solange der Laser nicht bereit ist. Bewegungen laufen nacheinander, in der angefragten Reihenfolge.",
+      "fields": {
+        "x": {
+          "name": "X",
+          "description": "Zielposition in mm von der Grundstellung (0-610); X wächst nach rechts."
+        },
+        "y": {
+          "name": "Y",
+          "description": "Zielposition in mm von der Grundstellung (0-305); Y wächst nach vorne."
+        },
+        "step_x": {
+          "name": "Schritt X",
+          "description": "Schritt in mm mit Vorzeichen: positiv nach rechts, negativ nach links."
+        },
+        "step_y": {
+          "name": "Schritt Y",
+          "description": "Schritt in mm mit Vorzeichen: positiv nach vorne, negativ nach hinten."
+        },
+        "steps": {
+          "name": "Schritte",
+          "description": "Wie oft die Schritte angewendet werden."
+        },
+        "device_id": {
+          "name": "Laser",
+          "description": "Der P2, dessen Laserkopf sich bewegt."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "focus_wrong_entity": {
+      "message": "Diese Entität ist keine xTool-Fokushöhe."
+    },
+    "focus_needs_step_or_thickness": {
+      "message": "Gib entweder einen Schritt oder eine Materialstärke an."
+    },
+    "camera_wrong_entity": {
+      "message": "Diese Kamera kann nicht zugeschnitten werden. Wähle eine xTool-Hauptkamera, die der Laser kalibriert."
+    },
+    "camera_value_out_of_range": {
+      "message": "{field} ist {value} mm, aber diese Kamera erlaubt {minimum} bis {maximum} mm."
+    },
+    "camera_needs_a_value": {
+      "message": "Gib mindestens einen Wert für den Bildausschnitt an."
+    },
+    "move_needs_a_value": {
+      "message": "Gib eine X- oder Y-Position oder einen Schritt an."
+    },
+    "move_wrong_device": {
+      "message": "Wähle einen xTool P2: Nur sein Laserkopf kann bewegt werden."
     }
   }
 }

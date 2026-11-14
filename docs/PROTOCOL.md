@@ -470,7 +470,7 @@ strings reveal the purpose of many otherwise-opaque codes:
 | `M9043` | (V3 purifier reserved) | unknown |
 | `M9046 S<n>` | setPurifierV3Buzzer | toggle V3 purifier buzzer |
 | `M9055 W<n> A<n> B<n> C<n>` | filter usage report | which / total / used (V3) |
-| `M9064 A<n> B<n> S<n>` | setFanGear / setFanGearV3 | duct-fan gear |
+| `M9064 <A\|B><gear>` / `M9064 <A\|B><gear> C<mode>` | setFanGear / setFanGearV3 | duct-fan gear (IF2 / IF2 2.0; see the IF2 2.0 notes below) |
 | `M9066` | updateOptimizeFan | (re)trigger fan optimisation |
 | `M9079 S<n>` | setFanBuzzer | duct-fan buzzer |
 | `M9081` | setDuctMotorStallDebug | debug stall detection |
@@ -1319,10 +1319,33 @@ class).
 
 Studio uses this on demand only — there is no Studio-driven
 camera-refresh interval. Implementations that want a "live preview"
-have to drive their own poll loop. Empirically a 1 Hz cadence is
-the lowest the device firmware tolerates without bunching the JPEG
-encoder; faster than ~2 Hz starts to drop frames or queue snaps
-behind unfinished `file_stream` transfers.
+have to drive their own poll loop. Measured on an F2 Ultra UV
+(firmware 40.130.023.00.ht5): the snap request answers in about
+0.13 s and the ~200 KB download takes about 0.16 s, so one photo
+takes about 0.3 s. The integration takes one photo at a time (the
+transfers of two lenses would otherwise overlap) and starts a
+live-view frame every 0.4 s.
+
+Main-camera calibration (F2 Ultra UV, GS009). Studio straightens
+every main-camera photo before showing it. Its base extension's
+`downLoadConfig()` downloads `global_calib.json` from the laser with
+the file transfer above (`fileType` 3, `filename:"global_calib.json"`),
+and `correctGlobalPhoto` runs the native `GS009_CORRECT_IMAGE_WITH_Z`
+algorithm with it and the material height. The file:
+
+| Key | Example | Meaning |
+|---|---|---|
+| `grid_num_w`, `grid_num_h` | 21, 21 | Grid points across and down |
+| `data0` | `"[1084,644][1170,646]..."` | Grid points in the raw photo, row by row from the top |
+| `image_src_w`, `image_src_h` | 4000, 3000 | Raw photo size |
+| `image_dst_w`, `image_dst_h` | 2000, 2000 | Straightened image size; the grid spreads evenly over it |
+| `thick_num`, `thick0` | 1, 0.0 | Calibrated material heights |
+| `calib_time` | `"2025-11-09 09:41:58"` | When the laser was calibrated |
+
+Mapping each grid cell (a quadrilateral in the photo) onto its
+rectangle in the result corrects the keystone and the lens
+distortion together. The integration does this with Pillow's mesh
+transform for the calibrated plane only (no material height).
 
 Per-model step-1 variants (audited from each Studio bundle):
 
@@ -1342,6 +1365,14 @@ The third WS channel (`function=media_stream`) carries the live
 camera video over **WebRTC**, not a simple WS-MJPEG stream.
 Signaling rides the `/v1/signaling/*` and `/v1/platform/camera/*`
 endpoints (see below).
+
+On the F2 Ultra UV (firmware 40.130.023.00.ht5) the live video is not
+available: `POST /v1/platform/camera/live` with `{name, action:"start"}`
+answers code -1 `camera disabled` for `main`, `deep`, `far`, `upside`
+and `0`, and `GET /v1/platform/camera/list` answers code -1
+`getCameraList failed`. Studio's GS009 bundles never call these; they
+only take photos. Only the P3 bundle calls `/v1/platform/camera/live`
+(see upstream PR #14).
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -1854,7 +1885,7 @@ filter reset) ride the same transport with a different M-code.
 
 | Accessory type | Info M-code | Reply tokens | Writers |
 |---|---|---|---|
-| `DuctFan` / `DuctFanV3` | `M9082` | DuctFan: ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"``. DuctFanV3 (IF2 2.0, verified live on F2 Ultra UV firmware 40.130.021 against a 14-action Studio click trace): ``A<firmware-version-string> B<current_gear> C<c_state> D<mode_class> E:"<sn>" S<buzzer> Z<connected>``. **Field semantics:** `A` = full dotted firmware version (parse positionally, not via `num()`). `B` = current motor speed; in Manual mode this is the gear (1–4); in Manual Off it holds the residual RPM of the prior gear; in Auto modes it reports the ramping speed. `D` = mode_class — authoritative mode discriminator: `2` = Manual Off, `3` = Manual running, `4` = Auto running. `C` = transient state indicator (alternates 2/3 across mode transitions; semantics unclear, ignore unless debugging). `S` = buzzer flag, `Z` = online flag. **Caveat:** `D=4` does NOT distinguish Auto Regular from Auto Quiet — both yield the same poll. Clients tracking sub-mode have to remember it from their own writes (`M9064 B1` = Auto Quiet, `M9064 B3` = Auto Regular) or from M9064 push events; external Studio sets that did not transit the client's write path are unrecoverable from the M9082 reply. | `M9064 <mode><gear>` (mode = `A` Manual / `B` Auto; gear = 0-4 or Auto preset), `M9079 S<0\|1>` (buzzer), `M9085 T<seconds>` (post-run timer), `M9258 A0` (reset filter) |
+| `DuctFan` / `DuctFanV3` | `M9082` | DuctFan: ``<v1> <v2> A<gear> C<ctrl> Z<buzzer> E:"<sn>"``. DuctFanV3 (IF2 2.0, verified live on F2 Ultra UV firmware 40.130.021 against a 14-action Studio click trace): ``A<firmware-version-string> B<current_gear> C<c_state> D<mode_class> E:"<sn>" S<buzzer> Z<connected>``. **Field semantics:** `A` = full dotted firmware version (parse positionally, not via `num()`). `B` = current motor speed; in Manual mode this is the gear (1–4); in Manual Off it holds the residual RPM of the prior gear; in Auto modes it reports the ramping speed. `D` = mode_class — authoritative mode discriminator: `2` = Manual Off, `3` = Manual running, `4` = Auto running. `C` = transient state indicator (alternates 2/3 across mode transitions; semantics unclear, ignore unless debugging). `Z` = buzzer flag (Studio reads `fanBuzzerEnable` from `Z`). **Caveat:** `D=4` does NOT distinguish Auto Regular from Auto Quiet — both yield the same poll. The Auto gear and preset are not in the reply; the M9064 push carries the Auto gear (`B`), and Studio's quiet preset is one gear below its regular one (`M9064 B3 C4` regular, `M9064 B2 C4` quiet by default). | DuctFan: `M9064 <mode><gear>` (mode = `A` Manual / `B` Auto). DuctFanV3: `M9064 <A\|B><gear> C<2\|3\|4>` (see the IF2 2.0 write table below), `M9079 S<0\|1>` (buzzer), `M9085 T<seconds>` (post-run timer), `M9258 A0` (reset filter) |
 | `Purifier` / `BigPurifierV3` / `LargePurifier` | `M9033` | ``<v1> <v2> <gear> H<H> I<I> J<J> K<K> L<L> E:"<sn>"`` (H/I/J/K/L = pre / medium / carbon / dense_carbon / hepa filter % per AP2 datasheet) | `M9039 <gear>` (gear), `M9258 0` (reset filter) |
 | `BackpackPurifier` | `M9033` | `<vA> H<H> I<I> L<L> E:"<sn>"` (3-filter variant) | `M9258 <filterType>0` (reset filter) |
 | `AirPump` / `AirPumpV2` | `M9082` | reuses the DuctFan parser (sn + gear) | — |
@@ -1890,18 +1921,31 @@ opcode (e.g. ``M9064`` → DuctFan / DuctFanV3, ``M9039`` →
 Purifier family) and merge the parsed fields into the paired
 accessory's cached state without waiting on the next BT walk.
 
-**DuctFanV3 ``M9064`` push body** uses the same letter-positional
-convention as the M9082 reply but **without** the firmware-version
-anchor: ``A<a> B<b> C<c> D<d> S<s>``. ``D`` carries the
-authoritative ``mode_class`` (same semantics as the poll: 2/3/4
-for Manual Off / Manual running / Auto running). ``A`` echoes the
-last manual gear (0 = Off, 1–4) and is useful as an immediate
-``current_gear`` hint when ``D=3`` so the consumer entity can
-flip before the next M9082 poll (~600 ms behind). ``B`` and ``C``
-are transient state indicators; their values do **not** reliably
-discriminate Auto Regular from Auto Quiet — sub-mode tracking
-needs to be done client-side from the writer path (`M9064 B1` =
-Quiet, `M9064 B3` = Regular). ``S`` mirrors the buzzer flag.
+**DuctFanV3 ``M9064`` push body** (Studio's M9064 report handler):
+``A<gear> B<auto_gear> C<mode> D<d> S<alert>``, for example
+``M9064 A4 B3 C4 D0 S0``. ``C`` is the mode: ``2`` = Manual Off,
+``3`` = Manual, ``4`` = Auto. ``A`` is the Manual gear (kept while
+in Auto or Off), ``B`` is the gear Auto runs at, and ``D`` is
+always ``0``. ``S`` carries alerts: ``1`` fan stall, ``2`` cleaning
+reminder, ``3`` both. The M9082 poll reports the mode in ``D``
+instead (see the table above); the push does not.
+
+**DuctFanV3 ``M9064`` write** (Studio's ``setFanGearV3``):
+``M9064 ${ctr}${gear} ${mode}`` with ``ctr`` = ``A`` (Manual) or
+``B`` (Auto) and ``mode`` = ``C3`` (Manual), ``C4`` (Auto) or
+``C2`` (Manual gear 0, Off):
+
+| Action | Command |
+|---|---|
+| Off | `M9064 A0 C2` |
+| Manual gear n (1-4) | `M9064 A<n> C3` |
+| Auto (Studio's default gear 3) | `M9064 B3 C4` |
+| Auto, quiet work mode (one gear less) | `M9064 B2 C4` |
+
+Without the ``C`` token the IF2 2.0 stores the gear but keeps its
+mode, so a gear set while Off leaves the fan off. Studio's Auto
+gear is the gear of the current processing mode (default 3);
+neither the poll nor the push names the regular or quiet preset.
 
 ### `M9098` reply shape per family
 
@@ -2041,12 +2085,13 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness. **Note:** on F2 family V2 firmware this endpoint accepts the PUT but never persists the value — Studio writes brightness through `/v1/device/configs` with `fillLightBrightFront` / `fillLightBrightBack` keys instead. The peripheral endpoint is read-only on those models. |
 | `/peripheral/laser_head` | POST | `{action:"go_to",x,y,waitTime}` move head, `{action:"get_coord"}` query |
 | `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close-up, 2=global) — P2/P2S |
-| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover open |
+| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover closed (Studio's `isCover`; checked on the P2) |
 | `/peripheral/airassist?action=get` | GET | Air-Assist V2 connect state — `state==="on"` means accessory attached. Used by M1 Ultra. |
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
 | `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
-| `/peripheral/digital_lock` | POST | Lock cover |
-| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR distance |
+| `/peripheral/digital_lock` | POST `{action:"on/off"}` | Lock (`on`) or unlock the cover (P2) |
+| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (the sensor read nothing). The reply cannot tell "no reading" from a real one, so the integration uses the next row. |
+| `/peripheral/quest/ir_measure_distance` | GET | The IR sensor's own distance (P2): `{distance, coord_x, coord_y}`. `distance` is 0 while the sensor has no reading (dot off, or within about 0.2 s of the dot turning on) and -1 when the P2 could not talk to it. The sensor starts when the dot turns on: asked in the first 0.2 s, the P2 sometimes fails to reach it (about 1 time in 15 measured), replies -1 (thickness Z + 1 on the row above) and raises the warning `MEASURE_DISTANCE_SENSOR` / `COMMUNI_ABNORMAL` in `/device/runningStatus`, which stays until the P2 restarts. From 0.3 s after, 90 of 90 readings were good. The integration waits 0.5 s. |
 | `/device/modeSwitch` | POST | Switch mode |
 | `/parts` | POST multipart, port **8080** | Upload accessory firmware |
 | `/partsProgress` | GET, port **8080** | Accessory firmware update progress |
@@ -2227,6 +2272,175 @@ table (see `_REST_STATUS_MAP` in the bundles).
 
 
 ---
+
+### P2 (as xTool Studio's P2 extension talks to it)
+
+Measured on a P2 with firmware 40.21.025 (2026-11-07) and read from Studio's
+`P2/index.js`.
+
+**Push channel.** Studio keeps `ws://<laser>:8081/` open and sends the text
+`ping` every 3 s; it treats 11 s without a frame as a lost laser. The laser
+sends a 10-byte binary keepalive (`00 00 00 00 00 00 0a 00 14 00`) every 2 s.
+Every push is a binary frame: a 10-byte header (bytes 2-5 = JSON length,
+little-endian; bytes 6-9 = `01 00 02 00`) followed by
+`{"module", "type", "info", "level"}`. On connect the laser pushes its
+current `MODE_CHANGE` at once.
+
+| module | types | meaning |
+|---|---|---|
+| `STATUS_CONTROLLER` | `MODE_CHANGE` (`info.mode`, `info.subMode`, `info.taskId`) | status change |
+| `STATUS_CONTROLLER` | `WORK_PREPARED`, `WORK_STARTED`, `WORK_PAUSED`, `WORK_STOPED`, `WORK_FINISHED`, `CLEAN_START`, `IDLE` | job steps; Studio reads `WORK_STOPED` and then `WORK_FINISHED` as a cancelled job |
+| `GAP` | `OPEN`, `CLOSE` | lid opened, lid closed |
+| `DRAWER` | `OPEN`, `CLOSE` | baseplate taken out, baseplate in place |
+| `BUTTON` | `SHOERT_PRESS` (sic) | button |
+| `FIRE_RECOGNITION` | `FIND_EXCEPTION` (`level`: `fatal` = large flame) | flame alarm |
+| `BOARDS` | `CONNNECT` (sic), `DISCONNECT` (`info`: `ext_firebox_esp32`) | seen about every 8 minutes |
+| any | `<module>.<type>.<info>` in Studio's error table | an error (Studio codes `Qx..`) |
+
+**Status.** `/device/runningStatus` `curMode` as Studio maps it:
+`P_SLEEP` Sleeping, `P_IDLE` Idle, `Work.workReady` Ready,
+`Work.working` Processing, `Work.workPause` Paused, `P_WORK_DONE` Finished,
+`P_MEASURE` Measuring (`P_UPGRADE` also seen). `curAlarmInfo.alarm` lists the
+active alarms (`{module, type, info, level}`); `cpuTemp` is the CPU
+temperature. `/processing/progress` is `{time, total, value}`.
+
+**Settings** are `POST /config/get` and `/config/set` with
+`{"alias": "config", "type": "user", "kv": ...}` (a list of keys to read, an
+object to write). A settings change, made by Studio or anyone else, is not
+pushed, so the integration reads the settings on every poll (5 s). Studio's
+Device settings for firmware 25 and later:
+
+| Studio label | key | values |
+|---|---|---|
+| Buzzer | `beepEnable` | bool |
+| Flame alarm (Low / High) | `flameAlarmLevel1` (written with `flameLevelHLSelect: 1`) | bool, true = High |
+| Fill light brightness | `fillLightBrightness` | 0-255, shown as %; changing it in Studio also sets the lights that are on. The integration has no entity for it: each fill light has its own brightness and turns on at this level. Studio has one brightness for the right and left lights, so the integration keeps them in step: a change to either writes the brighter of the two here, and a change made in Studio sets both |
+| Exhaust fan | `purifierEnable` | bool; Studio also writes `purifierTimeout: 5` when turned on |
+| Exhaust time after processing | `purifierTimeout` | 1-60 s |
+| Lowest output power | `motionPowerCut` | `M37S<1-10>` |
+| Baseplate detection, Background brightness increase | none | stored in Studio only; Background brightness increase only changes the exposure Studio sets before each photo (overview 100, or 1000 with it on; close camera 150, or 500) |
+
+**Laser head.** `POST /peripheral/laser_head` `{action: "go_to", x, y, f,
+waitTime}` moves the head; Studio sends `f: 9600` and `waitTime: 30000`, and
+the reply comes when the head has arrived. x and y are mm from home (0, 0) at
+the top left; x grows to the right and y toward the front (tested: (100, 50)
+put the close camera over the mat 100 mm right of and 50 mm below home).
+`{action: "get_coord", waitTime: 0}` reads `{x, y, z, a, u}`. A plain GET is
+refused. The integration reads the position once a minute and on the poll
+after each move.
+
+**Bed positions** (mm in the laser's coordinates, which Studio's canvas and
+the overview camera's straightened picture share; measured on a P2 with a
+cutting mat and the red dots):
+
+| What | X | Y | Width | Height |
+|---|---|---|---|---|
+| Actual work bed | -20.5 | -40.5 | 684 | 376 |
+| Process on slats, Honeycomb panel | 0 | 0 | 600 | 305 |
+| Slats removed | 50 | 0 | 500 | 250 |
+| Head travel (the P2 stops there; Studio's limits are 620 x 308) | 0 | 0 | 610 | 305 |
+| Close camera picture | head + 55 | head - 30 | 140 | 100 |
+| IR measuring spot (`laserMeasureOffset`) | head + 64.3 | head + 0.9 | | |
+| Slat 0 reference (348 from the left wall) | 327.5 | | | |
+
+Slats are 13.2 mm apart, numbered from the 0 reference outward: 1-24 to
+the left and 1-23 to the right, each slat 1 half a pitch from the 0
+reference. The overview picture showed a mat's centre line at X 327.4,
+the close camera's picture started at the head plus (54.9, -31.5), and
+the close red dot (`ir_led` index 1, on the head) landed at the head plus
+(64.8, 0.7), about 0.9 mm across, in the close camera's picture. The quick red dot (index 2) is fixed in the machine, at
+(343.2, 81.9). The overview calibration's plane is `thick0` (3 mm) above
+the slats; Studio's distance with the honeycomb panel or the slats removed
+is measured down from 25 mm above the slats.
+
+**Head and sleep** (seen on a P2 with firmware 40.21.025): the P2 sleeps
+600 s after it wakes; head moves and measurements do not restart that
+time. About 60 s before it sleeps it turns off the close red dot and
+moves the head home, and it homes again when it wakes. It moves the head
+while it sleeps (`go_to` answers and `get_coord` reports the new
+position).
+
+**Peripherals** (checked on a P2 with firmware 40.21.025):
+
+- `/peripheral/gap` `state` `off` = lid closed (Studio's `isCover`).
+- `/peripheral/drawer` `state` `off` = baseplate in place (Studio's
+  `drawerStatus`). The P2 does not detect a baseplate in the riser.
+- `/peripheral/digital_lock` reads `{state, limit_state, curOpen, curClose}`
+  and takes `{action: on|off}` (`on` locks); any other action is refused
+  with `action failed, not on|off`. A lock change is not pushed. Studio
+  never locks the lid itself (its calls are commented out).
+- `/peripheral/fill_light` reads `[{idx, value}]` (0-255): 1 = on the laser
+  head (the close-view camera's light), 2 = right, 3 = left. Studio writes
+  `{action: set_bri, idx: 0, value}` (0 = all three). A value of 3 (1 %) is
+  too dim to see.
+- `/peripheral/ir_led` reads `{ir1, ir2}` and takes `{action: on|off,
+  index: 1|2}`: 1 = the close-view infrared laser, a red dot under the laser
+  head (xTool's Aimed Measure); 2 = the distant-view infrared laser, from
+  the back right corner to the middle of the bed (xTool's Quick Measure). Pause is `GET /processing/pause` and cancel
+`GET /processing/stop`; Studio has no resume request.
+
+**Sleep.** After the sleep timeout (600 s) the P2 pushes `P_SLEEP` and turns
+the fill lights off. A camera photo (`:8329/camera/snap`) wakes it at once
+(`P_IDLE`); the status and settings reads above and a push connection do
+not. The integration takes no photo while the P2 sleeps.
+
+**Cameras.** `GET :8329/camera/snap?stream=0` is the overview camera and
+`stream=1` the close camera; both give 4656 x 3496 JPEGs. Exposure is
+`POST :8329/camera/exposure?stream=<n>` `{value}` (Studio sets 80 and
+100 before its photos); `GET` reads `{mode: "auto", value}`. Each camera
+has a calibration grid, downloaded as Studio does with
+`GET :8080/file?action=download&filename=<name>`:
+`global_calib.json` (overview, 62 x 32 points, straightened to
+2440 x 1220 at Studio's `globalScale` 4 pixels per mm, so 610 x 305 mm)
+and `local_calib.json` (close camera, 15 x 11 points, 2800 x 2000 at
+`localScale` 20, so 140 x 100 mm). `global_ir.txt` holds the Quick
+measure light's curve; `local_ir.txt` reads `{"result":"failed"}`.
+
+**The overview grid is only partly measured.** On the P2 tested
+(calibrated 2023-12-27) the outer points of `global_calib.json` lie on
+straight, evenly spaced lines: columns 0-5 and 55-61 (36.4 and 39.0
+pixels per 10 mm) and rows 29-31. A wide-angle lens compresses the
+picture toward its edges, so these points are continued, not measured.
+A ruled mat, placed with the close camera, showed the real spacing at
+X 570-630 as 34, 32, 31, 29, 28, 26 pixels: mapped through the grid, the
+picture was 5 mm off at X 600, 7.6 mm at X 610 and 5.4 mm at X -5.
+`camera_correction._measured_bounds` finds the measured part (columns
+6-54, rows 0-28: X 60-540, Y 0-280) by how much each column and row
+of points bends; the lens is fitted to that part and used outside it.
+The same mat then read within about 1 mm at the edges (2 mm in the
+back right corner at X 630), and in the measured part within 0.2 mm
+(median) of a uniform shift and scale of up to 2 mm that belongs to the
+P2's own calibration. At slat level the overview camera sees from about
+X -6 to X 640 (bed walls: X -20.5 and 663.5); the head stops at X 610
+and Y 305.
+
+**Replies that do not work on the P2** (the integration creates no entity
+for them):
+
+| request | reply |
+|---|---|
+| `/getBeepEnable`, `/setBeepEnable` | `invalid request` (the Buzzer is `beepEnable`) |
+| `/getfiltercheck` | `{"result": "not support"}` |
+| `/gethardwaretype` | `Not Implement` |
+| `/peripheral/button?action=get` | `{"code": 1, "msg": "action failed, not short\|long"}` (buttons are pushed) |
+| `/peripheral/airassist`, `/peripheral/uv_fire_sensor`, `/peripheral/cpu_fan` | `invalid request` |
+| `/config/get {"keys": [...]}` | refused: `key 'kv' not found` |
+| `/system` | `{"result": "failed"}` (Studio reads `/system?action=version_v2`) |
+| `/setsleeptimeout`, `/setsleeptimeoutopengap`, `/setFilllightAutoClosetimout`, `/setIrlightAutoClosetimout` | `invalid request` as JSON, form or query (the `/get…` forms read 600, 180, 180, 120 s); Studio does not set them |
+| `/reboot` (GET or POST) | `invalid request`; Studio has no reboot for the P2 |
+
+Not offered on the P2 because Studio does not offer them: Filter check,
+Purifier check, Purifier continue (Studio uses `purifierEnable` and
+`purifierTimeout`), Baseplate detection (Studio only), Purifier speed,
+the cooling fan switch (the water cooling's fans), Time sync, the
+`/peripheral/water_line` reading (its meaning is not known).
+
+Left out because they tell nothing on the P2: Tool type and Working mode
+(never reported), Gyro X/Y/Z (`/peripheral/gyro` reads 0 rotation while
+the laser stands still; it also has `acc_*`, `pitch`, `roll`, `yaw`),
+Laser power and Laser module (fixed for the model). Task ID, CPU
+temperature, Cooling fan running and Water pump running are created
+turned off.
 
 ## M2 protocol
 

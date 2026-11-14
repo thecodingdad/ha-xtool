@@ -15,7 +15,9 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
+    ColorRGBSelector,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
@@ -26,6 +28,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
+    CONF_OVERLAY_COLORS,
     CONF_FIRMWARE_CHECK_INTERVAL,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
@@ -112,6 +115,10 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if conn_info.serial_number:
             await self.async_set_unique_id(conn_info.serial_number)
+            if await self._configured_host_answers(conn_info.serial_number, host):
+                # A laser on Ethernet and Wi-Fi at once is seen at both
+                # addresses; keep the one in use while it answers
+                self._abort_if_unique_id_configured()
             self._abort_if_unique_id_configured(updates={CONF_HOST: host})
 
         self._discovered_host = host
@@ -119,6 +126,16 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
 
         self.context["title_placeholders"] = {"name": self._discovered_name}
         return await self.async_step_discovery_confirm()
+
+    async def _configured_host_answers(self, serial: str, host: str) -> bool:
+        """True when this laser's entry has another address that still answers."""
+        for entry in self._async_current_entries(include_ignore=False):
+            current = entry.data.get(CONF_HOST)
+            if entry.unique_id != serial or not current or current == host:
+                continue
+            info = await validate_connection(current)
+            return isinstance(info, ConnectionInfo) and info.serial_number == serial
+        return False
 
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
@@ -406,6 +423,19 @@ class XtoolOptionsFlow(OptionsFlow):
                     unit_of_measurement="s",
                     mode=NumberSelectorMode.BOX,
                 )
+            )
+
+        # P2: the camera overlays' colours, in a section that opens
+        if "overview" in (getattr(model, "camera_names", ()) or ()):
+            from .protocols.rest.p2_geometry import OVERLAY_COLORS
+
+            chosen = current_options.get(CONF_OVERLAY_COLORS) or {}
+            schema_dict[vol.Required(CONF_OVERLAY_COLORS)] = section(
+                vol.Schema({
+                    vol.Optional(key, default=list(chosen.get(key, default))): ColorRGBSelector()
+                    for key, default in OVERLAY_COLORS.items()
+                }),
+                {"collapsed": True},
             )
 
         return self.async_show_form(
