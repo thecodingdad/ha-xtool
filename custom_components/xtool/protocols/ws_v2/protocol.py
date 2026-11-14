@@ -1370,7 +1370,12 @@ class WSV2Protocol(XtoolProtocol):
                     )
 
         elif url == "/work/result" and module == "WORK_RESULT" and typ == "WORK_FINISHED":
-            self._latest["status"] = XtoolStatus.FINISHED
+            # ``result`` is ``success`` or ``failed``. A job a power cut
+            # stopped is reported as failed after the laser boots, with
+            # ``timeUse`` 0; the Status then follows the work mode.
+            failed = isinstance(info, dict) and info.get("result") == "failed"
+            if not failed:
+                self._latest["status"] = XtoolStatus.FINISHED
             task_id = str(self._latest.get("task_id") or "")
             duration: int | None = None
             if isinstance(info, dict):
@@ -1382,16 +1387,17 @@ class WSV2Protocol(XtoolProtocol):
                         # and reported ``timeUse: 7028`` ≈ 7063 s
                         # wall-clock.
                         secs = int(info["timeUse"])
-                        self._latest["task_time"] = secs
-                        self._latest["last_job_time_seconds"] = secs
                         duration = secs
+                        if not failed:
+                            self._latest["task_time"] = secs
+                            self._latest["last_job_time_seconds"] = secs
                     except (TypeError, ValueError):
                         pass
                 if info.get("taskId") is not None:
                     self._latest["task_id"] = info["taskId"]
                     task_id = str(info["taskId"])
             self._maybe_emit_job_event(
-                "finished", task_id,
+                "failed" if failed else "finished", task_id,
                 {"task_id": task_id, "duration": duration},
             )
 
@@ -1919,6 +1925,15 @@ class WSV2Protocol(XtoolProtocol):
         # ``/v1/device/runningStatus`` (same response shape).
         await self._poll_runtime_status(state)
 
+        # A sleeping laser wakes when it is asked for its settings: an
+        # F2 Ultra UV left Sleep 0.35 s after a configs read, while the
+        # runtime, peripheral and accessory reads left it asleep. Studio
+        # does not read the settings of a sleeping laser either. So the
+        # slow reads wait while it sleeps, and run on the first poll
+        # after it wakes (the counter starts again at 0).
+        asleep = self._latest.get("status") == XtoolStatus.SLEEPING
+        slow = not asleep and self._poll_counter % 6 == 0
+
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
         # Build the type list dynamically from the model's capability
         # flags so we don't hammer the device with queries it has no
@@ -2019,14 +2034,15 @@ class WSV2Protocol(XtoolProtocol):
         # every 30 s at 5 s base interval). Push events keep the values
         # fresh between polls. ``_poll_configs`` is overridable: P2S V2
         # firmware uses ``/v1/config/get`` with a kv-list body.
-        if self._poll_counter % 6 == 0:
+        if slow:
             await self._poll_configs()
 
         # 4. Statistics — lifetime counters, slow cadence. Skip on every
         # poll once cached as unsupported (GS006, P2S, DT001 don't
         # expose ``/v1/device/statistics``).
         if (
-            self._poll_counter % 12 == 0
+            not asleep
+            and self._poll_counter % 12 == 0
             and self.PATH_STATISTICS not in self._unsupported_endpoints
         ):
             try:
@@ -2112,7 +2128,7 @@ class WSV2Protocol(XtoolProtocol):
         # arrive via push frames `/temperature/alarm`, `/laser_head/alarm`
         # etc.).
         if (
-            self._poll_counter % 6 == 0
+            slow
             and self.PATH_ALARMS not in self._unsupported_endpoints
         ):
             try:
@@ -2134,7 +2150,7 @@ class WSV2Protocol(XtoolProtocol):
             elif isinstance(alarms, list):
                 self._latest["alarm_present"] = bool(alarms)
 
-        self._poll_counter += 1
+        self._poll_counter = 0 if asleep else self._poll_counter + 1
 
         # 7. Push-cached values (overrule poll if newer)
         self._apply_latest_to_state(state)
