@@ -11,6 +11,7 @@ from homeassistant.components.update import (
     UpdateEntity,
     UpdateEntityFeature,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -22,6 +23,7 @@ from .firmware import (
     FirmwareUpdateInfo,
     check_firmware_update,
     download_firmware,
+    parse_firmware_version,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,6 +58,8 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
 
     _attr_translation_key = "firmware"
     _attr_device_class = UpdateDeviceClass.FIRMWARE
+    # The same group on every model (Home Assistant's default is Configuration)
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
@@ -67,6 +71,7 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         self._latest_notes: str | None = None
         self._last_check: float = 0.0
         self._checked_once = False
+        self._checked_version: str | None = None
         self._attr_in_progress: int | bool = False
 
         features = UpdateEntityFeature.RELEASE_NOTES
@@ -89,10 +94,20 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
 
     @property
     def latest_version(self) -> str | None:
-        """Default: latest_version from cloud check, fall back to installed."""
+        """Default: latest_version from cloud check, fall back to installed.
+
+        The cloud and the device write the same version differently
+        (cloud ``40.130.023.05``, device ``40.130.023.00.ht5``), and Home
+        Assistant would call the cloud's string newer. When both name
+        the same version, report the installed one so no update shows.
+        """
+        installed = self.installed_version
         if self._update_info:
-            return self._update_info.latest_version
-        return self.installed_version
+            latest = self._update_info.latest_version
+            if installed and latest and parse_firmware_version(latest) == parse_firmware_version(installed):
+                return installed
+            return latest
+        return installed
 
     def release_notes(self) -> str | None:
         # When an update is available we already have the notes from the
@@ -126,8 +141,12 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         await super().async_added_to_hass()
 
         async def _check_for_update() -> None:
-            if self._checked_once:
+            # Check again when the installed version changes (for
+            # example after an update from xTool Studio), so an update
+            # that is now installed stops showing.
+            if self._checked_once and self.installed_version == self._checked_version:
                 return
+            self._checked_once = False
             await self.async_update()
             self.async_write_ha_state()
 
@@ -158,6 +177,7 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
 
         self._last_check = now
         self._checked_once = True
+        self._checked_version = self.installed_version
 
         model = self.coordinator.model
         current_versions = await self.coordinator.protocol.get_firmware_versions(

@@ -97,6 +97,29 @@ def _resolve_type_id(row: dict[str, Any]) -> str | None:
 class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
     """Base coordinator. One subclass per protocol family."""
 
+    @property
+    def firmware_version(self) -> str:
+        """The laser's firmware version, as last read from the device."""
+        return self._firmware_version
+
+    @firmware_version.setter
+    def firmware_version(self, value: str) -> None:
+        """Store a new version and show it on the device page.
+
+        The device registry takes ``sw_version`` from the entities only
+        when the entry loads, so a firmware update made outside Home
+        Assistant (for example in xTool Studio) kept showing the old
+        version until a reload.
+        """
+        changed = value != getattr(self, "_firmware_version", value)
+        self._firmware_version = value
+        device_id = getattr(self, "laser_device_id", None)
+        if not changed or not value or device_id is None:
+            return
+        from homeassistant.helpers import device_registry as dr
+
+        dr.async_get(self.hass).async_update_device(device_id, sw_version=value)
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -125,7 +148,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self.device_name = device_name
         self.serial_number = serial_number
         self.laser_device_id: str | None = None
-        self.firmware_version = firmware_version
+        self._firmware_version = firmware_version
         self.model = model
         self.laser = LaserInfo()
         self.power_switch_entity_id = power_switch_entity_id
@@ -496,8 +519,13 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         mac_tail = re.compile(
             r":[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}$"
         )
-        # Snapshot — async_remove_device mutates the registry's dict.
-        for device in list(dev_reg.devices.values()):
+        entry = getattr(self, "config_entry", None)
+        if entry is None:
+            return
+        # Only this laser's devices. ``dev_reg.devices`` as a mapping is
+        # deprecated (Home Assistant 2026.11). A copy, because
+        # async_remove_device changes the registry.
+        for device in list(dr.async_entries_for_config_entry(dev_reg, entry.entry_id)):
             for ident in device.identifiers:
                 # Defensive: third-party integrations occasionally
                 # register 3-tuple identifiers; unpack-by-index keeps

@@ -37,7 +37,7 @@ from homeassistant.const import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX
+from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX, task_id_value
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -421,10 +421,11 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="task_id",
         translation_key="task_id",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:identifier",
         # Studio-side UUID; rarely meaningful to a HA user — opt-in.
         entity_registry_enabled_default=False,
-        value_fn=lambda state, _: state.task_id or None,
+        value_fn=lambda state, _: task_id_value(state.status, state.task_id),
     ),
     XtoolSensorEntityDescription(
         key="task_time",

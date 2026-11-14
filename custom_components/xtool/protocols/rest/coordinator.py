@@ -81,7 +81,7 @@ class RestCoordinator(XtoolCoordinator):
             await self._poll_accessories(state)
 
         except Exception as err:
-            _LOGGER.debug("Error polling xTool REST device: %s", err)
+            _LOGGER.debug("Error polling xTool REST device: %r", err)
             state.available = False
             await self.protocol.disconnect()
 
