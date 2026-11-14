@@ -273,7 +273,7 @@ class S1Coordinator(XtoolCoordinator):
             await self._poll_accessories(state)
 
         except Exception as err:
-            _LOGGER.debug("Error polling xTool S1: %s", err)
+            _LOGGER.debug("Error polling xTool S1: %r", err)
             # XCS Compatibility Mode — keep cached state on transient errors.
             if self.xcs_compatibility_mode and self.data and self.data.available:
                 _LOGGER.debug("XCS Compatibility Mode — keeping cached state")

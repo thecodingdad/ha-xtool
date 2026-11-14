@@ -154,7 +154,7 @@ class WSV2Coordinator(XtoolCoordinator):
             await self._poll_accessories(state)
 
         except Exception as err:
-            _LOGGER.debug("WS-V2 poll failed: %s", err)
+            _LOGGER.debug("WS-V2 poll failed: %r", err)
             state.available = False
             # Read the identity again after the next connect: the
             # laser may have been power-cycled or updated meanwhile.
