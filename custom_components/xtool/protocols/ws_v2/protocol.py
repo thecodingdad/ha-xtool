@@ -60,6 +60,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
+import math
 import ssl
 import time
 import uuid
@@ -298,6 +300,34 @@ def _decode_frames(buffer: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
         pos += total
     return frames, buffer[pos:]
 
+# Focus height, as xTool Studio's manual focus (GS009-CLASS-4 bundle):
+# Studio shows the material thickness as the laser-head Z minus 6, takes
+# 0-150 mm in steps of 0.1 mm, and moves the head with ``goTo`` to the
+# thickness plus 6.
+FOCUS_Z_OFFSET = 6.0
+FOCUS_MIN = 0.0
+FOCUS_MAX = 150.0
+PATH_FOCUS_CONTROL = "/v1/laser-head/focus/control"
+# Statuses in which Studio refuses a focus move: a job (or framing) is
+# under way, the laser is measuring, or it reports an error.
+_FOCUS_BUSY = frozenset({
+    XtoolStatus.PROCESSING_READY, XtoolStatus.PROCESSING, XtoolStatus.PAUSED,
+    XtoolStatus.FRAME_READY, XtoolStatus.FRAMING, XtoolStatus.CANCELLING,
+    XtoolStatus.MEASURING, XtoolStatus.FIRMWARE_UPDATE,
+    XtoolStatus.WORKING_API, XtoolStatus.WORKING_BUTTON,
+})
+
+
+def round_focus(value: float) -> float:
+    """Round to 0.1 mm with halves up, as Studio's ``Math.round``."""
+    return math.floor(value * 10 + 0.5) / 10
+
+
+def focus_thickness_from_z(z: float) -> float:
+    """Material thickness Studio shows for a laser-head Z (mm)."""
+    return round_focus(z - FOCUS_Z_OFFSET)
+
+
 # Mapping of V2 work-mode strings to the integration's normalised status enum.
 # Sources: xTool Studio bundle ``/work/mode`` push handler + the
 # ``/v1/device/runtime-infos`` `curMode.mode` response field.
@@ -481,6 +511,63 @@ CONFIG_READ_KEYS: tuple[str, ...] = (
 )
 
 
+# Studio's ``uvReady``.
+PATH_UV_LASER = "/v1/device/uv-laser"
+# The UV laser ready read is tried this many times after a connect
+# before it waits for the slow cadence (it can time out at boot).
+UV_READY_TRIES = 3
+# Studio waits up to 2 minutes for autofocus; Focusing ends after this
+# even if the finish push was missed.
+FOCUSING_TIMEOUT = 150.0
+# Statuses only the Status details produce.
+_STATUS_OVERLAYS = frozenset({
+    XtoolStatus.FOCUSING, XtoolStatus.WARMING_UP,
+    XtoolStatus.LASER_OVERHEAT,
+})
+# Base statuses the details may replace (no job, no error).
+_STATUS_QUIET = frozenset({
+    XtoolStatus.IDLE, XtoolStatus.SLEEPING, XtoolStatus.FINISHED,
+    XtoolStatus.INITIALIZING, XtoolStatus.PROCESSING_READY,
+    XtoolStatus.UNKNOWN,
+})
+
+
+def calibration_value(value: Any) -> Any:
+    """Return a stored calibration value in a readable form.
+
+    Offsets are stored as G-code, such as ``M531X-0.26Y0.01P`` (an XY
+    offset in mm) or ``M533S0.0B`` (an angle); others are numbers.
+    """
+    if isinstance(value, str):
+        xy = re.fullmatch(r"M531X(-?[0-9.]+)Y(-?[0-9.]+)[A-Z]?", value.strip())
+        if xy:
+            return {"x": float(xy.group(1)), "y": float(xy.group(2))}
+        angle = re.fullmatch(r"M533S(-?[0-9.]+)[A-Z]?", value.strip())
+        if angle:
+            return float(angle.group(1))
+    return value
+
+
+def calibration_time(blob: str) -> datetime | None:
+    """Return the camera calibration time (``calib_time``) of the grid.
+
+    The laser stores it as local time without a zone; Home Assistant's
+    time zone is assumed.
+    """
+    from homeassistant.util import dt as dt_util
+
+    try:
+        text = json.loads(blob).get("calib_time")
+    except (ValueError, AttributeError):
+        return None
+    parsed = dt_util.parse_datetime(str(text)) if text else None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.get_default_time_zone())
+    return parsed
+
+
 class WSV2Protocol(XtoolProtocol):
     """V2 protocol — TLS WS request/response + push events.
 
@@ -497,8 +584,10 @@ class WSV2Protocol(XtoolProtocol):
     # so entity state surfaces in HA without waiting for next poll).
     _LATEST_STATE_FIELDS: tuple[str, ...] = (
         "status", "task_id", "task_time", "cover_open", "machine_lock",
-        "last_job_time_seconds",
-        "cooling_fan_running", "smoking_fan_running", "uv_fire_alarm",
+        "last_job_time_seconds", "focus_thickness", "engraving_lens",
+        "wifi_signal", "flame_alarm_record",
+        "cooling_fan_running", "smoking_fan_running", "smoking_fan_installed",
+        "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
         "water_flow", "cpu_temp", "ambient_temp", "ambient_humidity",
         "heating_status", "film_buffer_ready", "film_position_ready",
@@ -548,6 +637,67 @@ class WSV2Protocol(XtoolProtocol):
         for k in self._LATEST_STATE_FIELDS:
             if k in self._latest:
                 setattr(state, k, self._latest[k])
+        base = self._latest.get("status", state.status)
+        if base in _STATUS_OVERLAYS:
+            base = XtoolStatus.UNKNOWN
+        state.status = self._effective_status(base)
+
+    def _effective_status(self, base: Any) -> Any:
+        """Return Status with the details Studio shows beside the mode.
+
+        The laser's work mode stays the base. Laser overheat wins over
+        everything; a job or an error wins over the rest. Otherwise
+        autofocus shows as Focusing, and a UV laser that is not ready
+        yet as Warming up.
+        """
+        if self._laser_overheat:
+            return XtoolStatus.LASER_OVERHEAT
+        if base not in _STATUS_QUIET:
+            return base
+        if (
+            self._focusing_since is not None
+            and time.monotonic() - self._focusing_since < FOCUSING_TIMEOUT
+        ):
+            return XtoolStatus.FOCUSING
+        if self._uv_ready is False and base == XtoolStatus.IDLE:
+            return XtoolStatus.WARMING_UP
+        return base
+
+    async def _poll_status_reads(self) -> None:
+        """Read whether the UV laser is ready, as Studio's ``uvReady``.
+
+        Pushes keep it current after that. After a connect it is read on
+        each poll until it answers, up to ``UV_READY_TRIES`` times; the
+        laser can be too busy to answer while it boots.
+        """
+        self._status_read_tries += 1
+        try:
+            r = await self.request(PATH_UV_LASER, "GET", timeout=8.0)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 %s failed: %s", PATH_UV_LASER, err)
+        else:
+            if isinstance(r, dict) and r.get("uv_ready") is not None:
+                self._uv_ready = str(r["uv_ready"]) == "1"
+                self._status_reads_known = True
+        if self._status_read_tries >= UV_READY_TRIES:
+            self._status_reads_known = True
+
+    def _note_status_push(self, module: Any, typ: Any) -> None:
+        """Track the Status details from pushes, as Studio does."""
+        if module == "STATUS_CONTROLLER":
+            if typ == "FOCUS_STARTED":
+                self._focusing_since = time.monotonic()
+            elif typ in ("FOCUS_FINISHED", "FOCUS_STOPED", "FOCUS_STOPPED"):
+                self._focusing_since = None
+        elif module == "LASER_HEAD":
+            if typ == "UV_PREPARE":
+                self._uv_ready = False
+            elif typ == "UV_READY":
+                self._uv_ready = True
+            elif typ == "TMP_HIGH":
+                self._laser_overheat = True
+            elif typ == "TMP_RECOVER":
+                self._laser_overheat = False
 
     def __init__(self, host: str, port: int = WSV2_PORT) -> None:
         super().__init__(host)
@@ -559,6 +709,9 @@ class WSV2Protocol(XtoolProtocol):
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._pending: dict[int, _PendingRequest] = {}
         self._heartbeat_pending: asyncio.Future[dict[str, Any]] | None = None
+        # True once /v1/device/statistics has given a working time;
+        # until then machineInfo's ``worktime`` is used.
+        self._statistics_has_time = False
         self._transaction_counter = 0
         # Single-byte channel counter for the file-transfer sliding-window
         # protocol (Studio ``Rv.MAX_CHANNEL = 255``). Each concurrent
@@ -574,6 +727,11 @@ class WSV2Protocol(XtoolProtocol):
         # Slow-cadence counter for /v1/device/statistics + /v1/device/configs
         # — re-querying every poll wastes bandwidth + device CPU.
         self._poll_counter = 0
+        # Raw work mode (``P_IDLE``, ``P_AUTOFOCUS`` …) from the last
+        # poll or push.
+        self._device_mode = ""
+        # True once the focus height was read on this connection.
+        self._focus_known = False
         # Per-connection cache of peripheral types the firmware refused
         # (`code -3`, `code -2`, `code 10`, `code 1`). Avoids re-hammering
         # endpoints the model doesn't expose. Cleared on every fresh
@@ -601,6 +759,24 @@ class WSV2Protocol(XtoolProtocol):
         self._unsupported_endpoints: set[str] = set()
         self._config_read_body: dict[str, Any] | None = None
         self._config_read_known = False
+        # Status details Studio tracks beside the work mode (F2 Ultra
+        # UV): the UV laser is ready (None until read), it is too hot,
+        # and autofocus started (monotonic time).
+        self._uv_ready: bool | None = None
+        self._laser_overheat = False
+        self._focusing_since: float | None = None
+        self._status_reads_known = False
+        self._status_read_tries = 0
+        # Engraving lens, Wi-Fi signal and what Studio calibrated
+        # (F2 Ultra UV), read again on each connection.
+        self._laser_info_known = False
+        self.calibration_time: datetime | None = None
+        self.calibration_info: dict[str, Any] = {}
+        # The red dot is on whenever the laser powers on, and the
+        # firmware does not report it on every model, so it is assumed
+        # on for each new connection unless the laser reports it.
+        self._assume_red_dot_on = False
+        self._red_dot_reported = False
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -689,10 +865,29 @@ class WSV2Protocol(XtoolProtocol):
         # firmware revisions might expose types the previous one didn't.
         self._unsupported_peripheral_types.clear()
         self._unsupported_endpoints.clear()
+        # The firmware never reports whether the exhaust fan runs, so
+        # it is assumed off on each new connection (after the laser
+        # powers on, or after HA or the network reconnects) and then
+        # follows HA's own commands. Drop any value from the last
+        # connection so it cannot overrule that.
+        self._latest.pop("smoking_fan_running", None)
+        self._assume_smoking_fan_off = True
         self._config_keys_bool.clear()
         # The config read body that works is found again for each connection
         self._config_read_body = None
         self._config_read_known = False
+        # Read again for each connection: after a power cut the UV
+        # laser is cold, and a value from before the cut is stale.
+        self._uv_ready = None
+        self._laser_overheat = False
+        self._focusing_since = None
+        self._status_reads_known = False
+        self._status_read_tries = 0
+        self._laser_info_known = False
+        self._assume_red_dot_on = True
+        self._red_dot_reported = False
+        # Read the focus height again on the next poll.
+        self._focus_known = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -968,6 +1163,75 @@ class WSV2Protocol(XtoolProtocol):
             "/v1/device/mode",
             "PUT",
             data={"mode": mode},
+        )
+
+    async def _poll_focus(self) -> None:
+        """Read the laser-head Z, as Studio's ``getZ`` (only reads)."""
+        try:
+            r = await self.request(PATH_FOCUS_CONTROL, "POST", data={"action": "coord"})
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 focus read failed: %s", err)
+            return
+        z = r.get("value") if isinstance(r, dict) else None
+        if isinstance(z, (int, float)) and not isinstance(z, bool):
+            self._latest["focus_thickness"] = focus_thickness_from_z(float(z))
+            self._focus_known = True
+
+    def focus_refusal(self) -> str | None:
+        """Why Studio would refuse a focus move now, or None."""
+        status = self._latest.get("status")
+        # Studio offers autofocus and manual focus only with the surface
+        # lens: with the inner engraving lens the job sets the height from
+        # the material's size, its refractive index and the inner
+        # engraving calibration.
+        lens = self._latest.get("engraving_lens")
+        if lens == "small":
+            return (
+                "the inner engraving lens is in; with it the job sets the "
+                "height from the material's size"
+            )
+        if lens == "none":
+            return "no engraving lens is in"
+        if self._device_mode == "P_AUTOFOCUS":
+            return "the laser is focusing"
+        if self._device_mode in ("P_MEASURE", "P_WORKING", "P_WORK", "P_PAUSE"):
+            return "the laser is busy"
+        if status in _FOCUS_BUSY:
+            return "the laser is busy"
+        if isinstance(status, XtoolStatus) and status.value.startswith("error"):
+            return "the laser reports an error"
+        return None
+
+    async def focus_to(self, thickness: float) -> float:
+        """Move the focus to a material thickness, as Studio's manual focus.
+
+        Studio switches the laser to autofocus mode and sends ``goTo``
+        with Z = thickness + 6. The laser returns to idle by itself when
+        the move ends. Nothing is stored on the laser.
+        """
+        target = round_focus(min(max(thickness, FOCUS_MIN), FOCUS_MAX))
+        await self.set_mode("P_AUTOFOCUS")
+        await self.request(
+            PATH_FOCUS_CONTROL, "POST",
+            data={"action": "goTo", "z": target + FOCUS_Z_OFFSET, "stopFirst": 1},
+            timeout=60.0,
+        )
+        return target
+
+    async def autofocus(self) -> None:
+        """Start the laser's autofocus, as Studio's Autofocus button does.
+
+        Studio switches the laser to autofocus mode and sends
+        ``auto_start``; the laser measures the material and moves the
+        focus itself (the same as its own button). The new height comes
+        with the Z push. Nothing is stored on the laser.
+        """
+        sleeping = self._latest.get("status") == XtoolStatus.SLEEPING
+        await self.set_mode("P_AUTOFOCUS")
+        if sleeping:
+            await asyncio.sleep(0.3)  # Studio waits as long after a wake
+        await self.request(
+            PATH_FOCUS_CONTROL, "POST", data={"action": "auto_start"}, timeout=10.0,
         )
 
     async def parts_control(
@@ -1266,6 +1530,7 @@ class WSV2Protocol(XtoolProtocol):
             "V2 push url=%s module=%s type=%s info=%r",
             url, module, typ, info,
         )
+        self._note_status_push(module, typ)
 
         # BT-accessory live status — wire shape not yet decoded; logged
         # explicitly so a future debug-log capture can drive the
@@ -1281,6 +1546,8 @@ class WSV2Protocol(XtoolProtocol):
             mode = ""
             if isinstance(info, dict):
                 mode = str(info.get("mode") or "").upper()
+                if mode:
+                    self._device_mode = mode
                 if info.get("taskId") is not None:
                     self._latest["task_id"] = info["taskId"]
                 # Only overwrite working_mode when the push carries a
@@ -1401,6 +1668,12 @@ class WSV2Protocol(XtoolProtocol):
             elif typ == "CLOSE":
                 self._latest["cover_open"] = False
 
+        elif module == "CJ_CHECK" and typ == "MODE_CHANGE":
+            # The engraving lens changed (Studio's LENS push: the lens
+            # type in info, as its cj_check read gives it)
+            if info in ("none", "small", "big"):
+                self._latest["engraving_lens"] = info
+
         elif url == "/drawer/status" and module == "DRAWER":
             if typ == "OPEN":
                 self._latest["drawer_open"] = True
@@ -1456,6 +1729,12 @@ class WSV2Protocol(XtoolProtocol):
                 ("error", "gyro",
                  {"raw_type": str(typ), "info": info}),
             )
+
+        elif url == "/laser_head/value" and module == "LASER_HEAD" and typ == "MODE_CHANGE":
+            # Sent after every Z move (autofocus, manual focus).
+            z = info.get("z") if isinstance(info, dict) else None
+            if isinstance(z, (int, float)) and not isinstance(z, bool):
+                self._latest["focus_thickness"] = focus_thickness_from_z(float(z))
 
         elif url == "/laser_head/alarm":
             # Distinct from the ``/laserhead/status BUSY/IDLE`` push
@@ -1526,8 +1805,9 @@ class WSV2Protocol(XtoolProtocol):
                     self._latest["device_name"] = info["deviceName"]
                 if info.get("sn"):
                     self._latest["serial_number"] = info["sn"]
-                if info.get("mac"):
+                if info.get("mac") and not self._wrong_machine_info_mac():
                     self._latest["mac_address"] = info["mac"]
+                self._latch_worktime(info)
                 fw = info.get("firmware") or {}
                 if isinstance(fw, dict):
                     pkg = (
@@ -1622,9 +1902,19 @@ class WSV2Protocol(XtoolProtocol):
                     wm = str(info["workingMode"] or "").upper()
                     self._latest["stops_when_moved"] = wm == "NORMAL"
 
+        elif module == "SMOKING_FAN" and typ in ("DEVICE_ADD", "DEVICE_REMOVE"):
+            # Exhaust fan plugged in or removed (Studio sets its
+            # ``smokingFanStatus`` from these).
+            self._latest["smoking_fan_installed"] = typ == "DEVICE_ADD"
+
         elif url.startswith("/peripheral/"):
             ptype = url.removeprefix("/peripheral/")
             self._apply_peripheral_push(ptype, data, info, typ)
+
+        elif url == "/laser_head/status" and module == "LASER_HEAD":
+            # UV laser ready and laser temperature, followed by
+            # ``_note_status_push`` for the Status.
+            pass
 
         else:
             _LOGGER.debug("V2 unhandled push event: %s", event)
@@ -1760,6 +2050,24 @@ class WSV2Protocol(XtoolProtocol):
             return ver or None
         return None
 
+    def _latch_worktime(self, data: dict[str, Any]) -> None:
+        """Cache machineInfo's ``worktime`` (seconds) as the working time.
+
+        Only used while ``/v1/device/statistics`` has given no time, so
+        the statistics value stays the source where it exists.
+        """
+        v = data.get("worktime")
+        if (
+            isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and not self._statistics_has_time
+        ):
+            self._latest["working_seconds"] = int(v)
+
+    def _wrong_machine_info_mac(self) -> bool:
+        model = getattr(self, "_model", None)
+        return bool(getattr(model, "has_wrong_machine_info_mac", False))
+
     async def get_device_info(self) -> DeviceInfo:
         info = DeviceInfo()
         try:
@@ -1772,7 +2080,9 @@ class WSV2Protocol(XtoolProtocol):
                 data.get("deviceName") or data.get("machine_name") or ""
             )
             info.serial_number = data.get("sn") or data.get("snCode") or ""
-            info.mac_address = data.get("mac", "")
+            if not self._wrong_machine_info_mac():
+                info.mac_address = data.get("mac", "")
+            self._latch_worktime(data)
             firmware = data.get("firmware") or {}
             if isinstance(firmware, dict):
                 info.main_firmware = (
@@ -1849,6 +2159,8 @@ class WSV2Protocol(XtoolProtocol):
             cur_mode = rt.get("curMode") or {}
             if isinstance(cur_mode, dict):
                 mode = str(cur_mode.get("mode") or "").upper()
+                if mode:
+                    self._device_mode = mode
                 mapped = WSV2_MODE_MAP.get(mode)
                 if mapped is not None:
                     state.status = mapped
@@ -1909,6 +2221,85 @@ class WSV2Protocol(XtoolProtocol):
         )
         self._unsupported_endpoints.add(self.PATH_CONFIGS_GET)
 
+    async def _poll_laser_info(self) -> None:
+        """Read the engraving lens, the Wi-Fi signal and the calibration.
+
+        Studio's ``getLensesType`` (``cj_check``: ``fieldLensType`` is
+        ``none``, ``small`` or ``big``) and ``wifi_signal_strength``
+        (a POST that only reads). All of them only read.
+        """
+        try:
+            r = await self.request(
+                "/v1/peripheral/param", "GET",
+                params={"type": "cj_check"}, data={"action": "get"}, timeout=8.0,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 engraving lens read failed: %s", err)
+        else:
+            lens = r.get("fieldLensType") if isinstance(r, dict) else None
+            if lens in ("none", "small", "big"):
+                self._latest["engraving_lens"] = lens
+        try:
+            r = await self.request(
+                "/v1/net/wifi_signal_strength", "POST",
+                data={"name": "wlan0"}, timeout=8.0,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 Wi-Fi signal read failed: %s", err)
+        else:
+            dbm = r.get("wifi_signal_strength") if isinstance(r, dict) else None
+            if isinstance(dbm, (int, float)) and not isinstance(dbm, bool):
+                self._latest["wifi_signal"] = int(dbm)
+        await self._read_calibration_info()
+        self._laser_info_known = True
+
+    async def _read_calibration_info(self) -> None:
+        """Read, never write, what Studio calibrated on the laser.
+
+        For the diagnostic Calibration sensor: its state is the camera
+        calibration time, and its attributes are the offsets below, as
+        the laser stores them. Only GET reads of the config, so nothing
+        on the laser changes. Also reads the flame record flag (a fire
+        alarm photo is stored on the laser).
+        """
+        keys = {
+            "globalOffsetZ": "global_offset_z",
+            "zPositionCompensate": "z_position_compensate",
+            "zPositionCompensateSmall": "z_position_compensate_small",
+            "zPositionSecondCompensate": "z_position_second_compensate",
+            "innerZOffset": "inner_z_offset",
+            "laserOffsetUv": "laser_offset_uv",
+            "laserOffsetBlue": "laser_offset_blue",
+            "laserAngleBlue": "laser_angle_blue",
+            "secondOffsetFlag": "second_offset_flag",
+        }
+        reads = [list(keys) + ["flameAlarmRecord"]]
+        if self.calibration_time is None:
+            reads.append(["imgConfigGlobalCalib"])
+        for kv_keys in reads:
+            try:
+                cfg = await self.request(
+                    self.PATH_CONFIGS_GET, "GET",
+                    data={"alias": "config", "type": "user", "kv": kv_keys},
+                    timeout=15.0,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("V2 calibration read failed: %s", err)
+                continue
+            kv = cfg.get("kv") if isinstance(cfg, dict) and isinstance(cfg.get("kv"), dict) else cfg
+            if not isinstance(kv, dict):
+                continue
+            info = {
+                name: calibration_value(kv[key]) for key, name in keys.items() if key in kv
+            }
+            if info:
+                self.calibration_info = info
+            if isinstance(kv.get("flameAlarmRecord"), bool):
+                self._latest["flame_alarm_record"] = kv["flameAlarmRecord"]
+            blob = kv.get("imgConfigGlobalCalib")
+            if isinstance(blob, str):
+                self.calibration_time = calibration_time(blob)
+
     async def poll_state(self, state: XtoolDeviceState) -> None:
         """Refresh state via V2 request endpoints + push cache."""
         if not self._connected:
@@ -1960,6 +2351,10 @@ class WSV2Protocol(XtoolProtocol):
                 ptypes.append(("digital_screen", None))
             if getattr(model, "has_fill_light", False):
                 ptypes.append(("fill_light", None))
+            if getattr(model, "has_smoking_fan_install_state", False):
+                # Studio's ``addonStatus`` read: ``state`` is
+                # ``install`` or ``uninstall``.
+                ptypes.append(("smoking_fan", None))
             if getattr(model, "has_ir_led", False):
                 # Studio's ``controlRedLed`` reads the IR LED state
                 # via ``/v1/peripheral/param?type=ir_led`` with
@@ -2021,6 +2416,21 @@ class WSV2Protocol(XtoolProtocol):
         # firmware uses ``/v1/config/get`` with a kv-list body.
         if self._poll_counter % 6 == 0:
             await self._poll_configs()
+        # The focus height is read on the same slow cadence, and also on
+        # every poll until it is known (after each connect), so it shows
+        # soon after the laser powers on.
+        if model is not None and getattr(model, "has_focus_control", False) and (
+            self._poll_counter % 6 == 0 or not self._focus_known
+        ):
+            await self._poll_focus()
+        if getattr(model, "has_uv_laser_status", False) and (
+            self._poll_counter % 6 == 0 or not self._status_reads_known
+        ):
+            await self._poll_status_reads()
+        if getattr(model, "has_laser_info", False) and (
+            self._poll_counter % 6 == 0 or not self._laser_info_known
+        ):
+            await self._poll_laser_info()
 
         # 4. Statistics — lifetime counters, slow cadence. Skip on every
         # poll once cached as unsupported (GS006, P2S, DT001 don't
@@ -2092,6 +2502,20 @@ class WSV2Protocol(XtoolProtocol):
                     v = stats.get(src)
                     if isinstance(v, (int, float)):
                         self._latest[dst] = int(v)
+            self._statistics_has_time = isinstance(stats, dict) and any(
+                isinstance(stats.get(k), (int, float))
+                for k in ("timeModeWorking", "workingTime", "totalWorkTime")
+            )
+            if not self._statistics_has_time:
+                # Some firmware (F2 Ultra UV) has only counts in
+                # statistics; its working time is machineInfo's
+                # ``worktime``, as Studio shows it.
+                try:
+                    data = await self.request(self.PATH_DEVICE_INFO, "GET")
+                except Exception:
+                    data = None
+                if isinstance(data, dict):
+                    self._latch_worktime(data)
 
         # 5. Progress — only when a job is running.
         if state.status in (XtoolStatus.PROCESSING,
@@ -2139,6 +2563,21 @@ class WSV2Protocol(XtoolProtocol):
         # 7. Push-cached values (overrule poll if newer)
         self._apply_latest_to_state(state)
 
+        if getattr(self, "_assume_smoking_fan_off", False):
+            self._assume_smoking_fan_off = False
+            if model is not None and getattr(model, "has_smoking_fan", False):
+                state.smoking_fan_running = False
+
+        if self._assume_red_dot_on:
+            self._assume_red_dot_on = False
+            if (
+                model is not None
+                and getattr(model, "has_ir_led", False)
+                and not self._red_dot_reported
+            ):
+                state.ir_led_global = True
+                state.ir_led_close = True
+
         _LOGGER.debug(
             "V2 poll resolved: status=%s task_id=%r task_time=%s "
             "working_mode=%r cover_open=%s drawer_open=%s "
@@ -2185,7 +2624,13 @@ class WSV2Protocol(XtoolProtocol):
         elif ptype == "cooling_fan":
             state.cooling_fan_running = is_on
         elif ptype == "smoking_fan":
-            state.smoking_fan_running = is_on
+            if st in ("install", "uninstall"):
+                state.smoking_fan_installed = st == "install"
+                self._latest["smoking_fan_installed"] = (
+                    state.smoking_fan_installed
+                )
+            else:
+                state.smoking_fan_running = is_on
         elif ptype == "uv_fire_sensor":
             state.uv_fire_alarm = is_on
         elif ptype == "water_pump":
@@ -2247,9 +2692,11 @@ class WSV2Protocol(XtoolProtocol):
             if is_on is True:
                 state.ir_led_global = True
                 state.ir_led_close = True
+                self._red_dot_reported = True
             elif is_off is True:
                 state.ir_led_global = False
                 state.ir_led_close = False
+                self._red_dot_reported = True
         else:
             _LOGGER.debug(
                 "V2 peripheral/param type=%r returned shape we don't parse: "

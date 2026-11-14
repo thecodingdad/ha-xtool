@@ -75,6 +75,20 @@
   },
   "entity": {
     "sensor": {
+      "engraving_lens": {
+        "name": "Gravurlinse",
+        "state": {
+          "big": "Oberfläche",
+          "small": "Innen",
+          "none": "Keine"
+        }
+      },
+      "wifi_signal": {
+        "name": "WLAN-Signal"
+      },
+      "calibration": {
+        "name": "Kalibrierung"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -102,6 +116,9 @@
           "working_api": "Auftrag (API)",
           "working_button": "Auftrag (Taste)",
           "measure_area": "Bereich messen",
+          "focusing": "Fokussiert",
+          "warming_up": "Aufwärmen",
+          "laser_overheat": "Laser überhitzt",
           "unknown": "Unbekannt"
         }
       },
@@ -422,6 +439,9 @@
       },
       "filter_installed": {
         "name": "Luftfilter eingesetzt"
+      },
+      "smoking_fan_installation": {
+        "name": "Abluftventilator-Installation"
       }
     },
     "camera": {
@@ -648,6 +668,9 @@
       },
       "accessory_largepurifierv3_auto_off_timeout": {
         "name": "Abschalt-Verzögerung"
+      },
+      "focus_height": {
+        "name": "Fokushöhe"
       }
     },
     "select": {
@@ -796,6 +819,9 @@
       },
       "time_sync": {
         "name": "Zeit synchronisieren"
+      },
+      "autofocus": {
+        "name": "Autofokus"
       }
     },
     "event": {
@@ -864,6 +890,34 @@
           }
         }
       }
+    }
+  },
+  "services": {
+    "focus": {
+      "name": "Fokus",
+      "description": "Bewegt den Fokus des Lasers wie die manuelle Fokussierung in xTool Studio: um einen Schritt mit Vorzeichen (mehrfach wiederholt) oder direkt auf eine Materialstärke. Hält bei 0 oder 150 mm an. Abgelehnt, während ein Auftrag läuft, der Laser fokussiert oder misst, oder wenn er einen Fehler meldet.",
+      "fields": {
+        "step": {
+          "name": "Schritt",
+          "description": "Schritt in mm mit Vorzeichen: positiv nach oben, negativ nach unten."
+        },
+        "steps": {
+          "name": "Schritte",
+          "description": "Wie oft der Schritt angewendet wird."
+        },
+        "thickness": {
+          "name": "Materialstärke",
+          "description": "Materialstärke für den Fokus in mm (0-150), wie Studio sie anzeigt."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "focus_wrong_entity": {
+      "message": "Diese Entität ist keine xTool-Fokushöhe."
+    },
+    "focus_needs_step_or_thickness": {
+      "message": "Gib entweder einen Schritt oder eine Materialstärke an."
     }
   }
 }

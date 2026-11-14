@@ -35,6 +35,7 @@ from .const import (
 # fails (Home Assistant then retries it inside the event loop).
 from .protocols import DEVICE_MODELS, LaserInfo, detect_model  # isort: skip
 from .coordinator import XtoolCoordinator  # isort: skip
+from .services import async_setup_services  # isort: skip
 
 PLATFORMS = [
     Platform.BINARY_SENSOR,
@@ -59,6 +60,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the xTool integration."""
+    async_setup_services(hass)
     return True
 
 
@@ -208,6 +210,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
         **XtoolEntity(coordinator).device_info,
     )
     coordinator.laser_device_id = laser_device.id
+    if coordinator.model.has_wrong_machine_info_mac:
+        _drop_mac_connections(hass, laser_device)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -217,6 +221,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
 
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _drop_mac_connections(hass: HomeAssistant, device: dr.DeviceEntry) -> None:
+    """Remove MAC connections an earlier release stored for the laser.
+
+    The device registry merges connections, so a wrong MAC would stay
+    on the device page even after the integration stops reporting it.
+    """
+    keep = {c for c in device.connections if c[0] != dr.CONNECTION_NETWORK_MAC}
+    if keep != device.connections:
+        _LOGGER.info(
+            "Removing wrong MAC connections from %s: %s",
+            device.name, device.connections - keep,
+        )
+        dr.async_get(hass).async_update_device(device.id, new_connections=keep)
+
 
 _OBJECT_ID_MODEL_SLUG_RE = re.compile(r"[^a-z0-9]")
 

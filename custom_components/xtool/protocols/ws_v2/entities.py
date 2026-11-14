@@ -34,11 +34,12 @@ from homeassistant.components.light import (
     ColorMode,
     LightEntity,
 )
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
+    SensorEntityDescription,
     SensorStateClass,
 )
 from homeassistant.components.switch import (
@@ -50,14 +51,17 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.const import (
     EntityCategory,
     PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfLength,
     UnitOfTemperature,
     UnitOfTime,
     UnitOfVolumeFlowRate,
 )
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from ...const import BRIGHTNESS_HA_MAX
+from .protocol import round_focus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -149,6 +153,11 @@ _WORKING_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     icon="mdi:timer-cog",
     entity_category=EntityCategory.DIAGNOSTIC,
     native_unit_of_measurement=UnitOfTime.SECONDS,
+    # A lifetime total reads best in hours (19.7 h, not 70922 s). HA
+    # converts units only for the duration device class.
+    device_class=SensorDeviceClass.DURATION,
+    suggested_unit_of_measurement=UnitOfTime.HOURS,
+    suggested_display_precision=1,
     state_class=SensorStateClass.TOTAL_INCREASING,
     value_fn=lambda state, _: state.working_seconds,
 )
@@ -186,6 +195,31 @@ _AMBIENT_HUMIDITY_DESCRIPTION = XtoolSensorEntityDescription(
 _GATED_SENSOR_DESCRIPTIONS: tuple[
     tuple[XtoolSensorEntityDescription, str], ...
 ] = (
+    (
+        # Studio's lens names, shortened: Surface (big field lens),
+        # Inner (small), or None (no lens detected).
+        XtoolSensorEntityDescription(
+            key="engraving_lens",
+            translation_key="engraving_lens",
+            icon="mdi:camera-iris",
+            device_class=SensorDeviceClass.ENUM,
+            options=["big", "small", "none"],
+            value_fn=lambda state, _: state.engraving_lens,
+        ),
+        "has_laser_info",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="wifi_signal",
+            translation_key="wifi_signal",
+            device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+            native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.wifi_signal,
+        ),
+        "has_laser_info",
+    ),
     (
         XtoolSensorEntityDescription(
             key="position_x",
@@ -310,6 +344,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         "has_gyro",
     ),
     (_LAST_JOB_TIME_DESCRIPTION, "has_runtime_stats"),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_job_result_time"),
     (_WORKING_TIME_DESCRIPTION, "has_runtime_stats"),
     (_STANDBY_TIME_DESCRIPTION, "has_runtime_stats"),
     (
@@ -512,6 +547,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ambient_sensors"),
     (_LAST_JOB_TIME_DESCRIPTION, "has_lifetime_counters"),
     (_WORKING_TIME_DESCRIPTION, "has_lifetime_counters"),
+    (_WORKING_TIME_DESCRIPTION, "has_machine_info_worktime"),
     (_STANDBY_TIME_DESCRIPTION, "has_lifetime_counters"),
     (
         XtoolSensorEntityDescription(
@@ -783,6 +819,56 @@ class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
         return self._is_on_or_restored(live)
 
 
+class _WSV2ExhaustFanInstallSensor(_WSV2BoolSensor):
+    """Exhaust fan installation: Problem when the fan is not installed.
+
+    Matches the warning Studio shows before a job, "Exhaust fan
+    installation abnormal" (``device.gs.fan_install_advice``).
+    """
+
+    _state_attr = "smoking_fan_installed"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "smoking_fan_installation",
+            BinarySensorDeviceClass.PROBLEM,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        installed = (
+            None if self.coordinator.data is None
+            else self.coordinator.data.smoking_fan_installed
+        )
+        return self._is_on_or_restored(
+            None if installed is None else not installed
+        )
+
+
+def _remove_retired_entity(
+    coordinator: XtoolCoordinator, platform: str, key: str,
+) -> None:
+    """Remove the registry entry of an entity this model no longer has.
+
+    Without this, it stays on the device page as unavailable until
+    the user deletes it.
+    """
+    hass = getattr(coordinator, "hass", None)
+    if hass is None:
+        return
+    from homeassistant.helpers import entity_registry as er
+
+    from ...const import DOMAIN
+
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        platform, DOMAIN, f"{coordinator.serial_number}_{key}",
+    )
+    if entity_id is not None:
+        _LOGGER.info("Removing retired entity %s", entity_id)
+        registry.async_remove(entity_id)
+
+
 def _bool_sensor_factory(
     state_attr: str,
     key: str,
@@ -952,6 +1038,11 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
 class _WSV2IRLedSwitch(_WSV2PeripheralSwitch, RestoreEntity):
     """Red-dot / IR-LED switch that survives HA restarts.
 
+    The red dot is on whenever the laser powers on, so the protocol
+    assumes it on after each new connection (unless the laser reports
+    it), and HA's own commands are followed from there. The restored
+    value below covers only the time before the first poll.
+
     Studio's ``controlRedLed`` bundle only defines a PUT route —
     firmware exposes no GET or push for the IR LED state, so a
     fresh HA start has no way to learn whether the LED is
@@ -1038,6 +1129,94 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         if self.coordinator.data is not None:
             setattr(self.coordinator.data, self._state_attr, int(value))
         self.async_write_ha_state()
+
+
+class WSV2FocusHeight(XtoolEntity, NumberEntity):
+    """Focus height as Studio's manual focus: the material thickness in mm.
+
+    Only with the surface lens, as in Studio: with the inner engraving lens
+    (or none) it is Unknown and moves are refused.
+
+    Shows what Studio shows (laser-head Z minus 6). Setting it moves the
+    head as Studio does; the ``xtool.focus`` action also moves it in
+    steps. Moves are refused whenever Studio would refuse them.
+    """
+
+    _attr_translation_key = "focus_height"
+    _attr_icon = "mdi:arrow-expand-vertical"
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 150.0
+    _attr_native_step = 0.1
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("focus_height")
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        # The height is a material thickness only with the surface lens
+        if getattr(d, "engraving_lens", None) in ("small", "none"):
+            return None
+        return getattr(d, "focus_thickness", None)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.async_focus(thickness=value)
+
+    async def async_focus(
+        self,
+        step: float | None = None,
+        steps: int = 1,
+        thickness: float | None = None,
+    ) -> dict[str, Any]:
+        """Move to a thickness, or by ``step`` mm ``steps`` times.
+
+        Returns the height it moved to. A move past 0 or 150 mm stops at
+        that limit and then raises an error that says so, so Home
+        Assistant shows the message.
+        """
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Focus not moved: {reason}")
+        current: float | None = None
+        if thickness is None:
+            current = self.native_value
+            if current is None:
+                raise HomeAssistantError(
+                    "Focus not moved: the current focus height is not known yet"
+                )
+            thickness = current + (step or 0.0) * steps
+        lowest = self._attr_native_min_value
+        highest = self._attr_native_max_value
+        target = round_focus(min(max(thickness, lowest), highest))
+        message: str | None = None
+        if target != round_focus(thickness):
+            limit = "lower" if target == lowest else "upper"
+            if current is not None:
+                count = "1 step" if steps == 1 else f"{steps} steps"
+                message = (
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
+                    f"{count} of {step:+.1f} mm from {current:.1f} mm "
+                    f"would have gone to {round_focus(thickness):.1f} mm."
+                )
+            else:
+                message = (
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
+                    f"{round_focus(thickness):.1f} mm is outside 0-150 mm."
+                )
+            _LOGGER.warning("%s: %s", self.entity_id, message)
+        await protocol.focus_to(target)
+        if message is not None:
+            # Reported as an error so Home Assistant shows it; the move
+            # itself was made.
+            raise HomeAssistantError(message)
+        return {"focus_height": target}
 
 
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
@@ -1309,6 +1488,23 @@ class _WSV2Button(XtoolEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self._action()
+
+
+class WSV2Autofocus(_WSV2Button):
+    """Autofocus, as Studio's button and the laser's own button.
+
+    Refused whenever Studio would refuse it (as Focus height moves).
+    """
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "autofocus", "mdi:image-filter-center-focus")
+
+    async def _action(self) -> None:
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Autofocus not started: {reason}")
+        await protocol.autofocus()
 
 
 class WSV2PauseJob(_WSV2Button):
@@ -1615,6 +1811,50 @@ class WSV2ErrorEvent(XtoolEvent):
 # --- Builders ------------------------------------------------------------
 
 
+class WSV2CalibrationSensor(XtoolEntity, SensorEntity):
+    """When Studio last calibrated the camera, with the stored offsets.
+
+    State: the camera calibration time. Attributes: the Z, focus and
+    laser offsets, as the laser stores them (mm; angles in degrees).
+    Read only; the integration never changes them.
+    """
+
+    entity_description = SensorEntityDescription(
+        key="calibration",
+        translation_key="calibration",
+        icon="mdi:tune-variant",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    )
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("calibration")
+
+    @property
+    def native_value(self) -> Any:
+        return getattr(self.coordinator.protocol, "calibration_time", None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        info = getattr(self.coordinator.protocol, "calibration_info", None)
+        return dict(info) if info else None
+
+
+class _WSV2FlameAlarmSwitch(_WSV2ConfigSwitch):
+    """Flame alarm, with whether a fire alarm photo is stored.
+
+    ``flame_record`` is Studio's ``flameAlarmRecord``: when it is true,
+    Studio offers the photo the laser took at a fire alarm.
+    """
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        d = self.coordinator.data
+        record = getattr(d, "flame_alarm_record", None) if d is not None else None
+        return None if record is None else {"flame_record": record}
+
+
 def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     entities: list[SensorEntity] = [
         XtoolSensor(coordinator, description)
@@ -1625,6 +1865,8 @@ def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
             entities.append(XtoolSensor(coordinator, description))
     if coordinator.model.has_ink_cartridges:
         entities.extend(_build_dt002_slot_sensors(coordinator))
+    if getattr(coordinator.model, "has_laser_info", False):
+        entities.append(WSV2CalibrationSensor(coordinator))
     return entities
 
 
@@ -1672,7 +1914,14 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.RUNNING,
             )(coordinator)
         )
-    if model.has_smoking_fan:
+    if model.has_smoking_fan_install_state:
+        # The firmware reports whether the exhaust fan is installed,
+        # never whether it runs; the Exhaust fan switch shows that.
+        entities.append(_WSV2ExhaustFanInstallSensor(coordinator))
+        _remove_retired_entity(
+            coordinator, "binary_sensor", "smoking_fan_running",
+        )
+    elif model.has_smoking_fan:
         entities.append(
             _bool_sensor_factory(
                 "smoking_fan_running", "smoking_fan_running",
@@ -1818,7 +2067,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # injuries and property damage"). Users who need
         # programmatic control can enable it explicitly.
         entities.append(
-            _WSV2ConfigSwitch(
+            _WSV2FlameAlarmSwitch(
                 coordinator, "flame_alarm_v2", "flameAlarm",
                 "flame_alarm_v2_enabled",
                 enabled_default=False,
@@ -1938,6 +2187,8 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     model = coordinator.model
     if model.is_read_only:
         entities = []
+    if getattr(model, "has_focus_control", False) and not model.is_read_only:
+        entities.append(WSV2FocusHeight(coordinator))
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
     # to the AirPump accessory child device (the per-job-mode default
     # gear is conceptually an AirPump setting even though the wire
@@ -2026,6 +2277,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
+    if coordinator.model.has_focus_control and not coordinator.model.is_read_only:
+        entities.append(WSV2Autofocus(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the

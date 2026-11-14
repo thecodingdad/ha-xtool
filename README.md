@@ -102,10 +102,10 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable. **F2 Ultra UV** also shows, as Studio does: Focusing (autofocus), Warming up (the UV laser is not ready yet) and Laser overheat |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
 | Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
-| Last job time | Last completed job duration |
+| Last job time | Last completed job duration. **F2 Ultra UV:** from the laser's job result, after each job; kept across Home Assistant restarts |
 | Working mode | Current working mode (cut / engrave / knife / inkjet / …). REST V1 + D-series only — V2 firmware uses this field as a `HANDLE`/`NORMAL` enum surfaced through the *Stops when moved* switch instead |
 | Working time | Lifetime working hours |
 | Session count | Lifetime job-start count |
@@ -132,11 +132,14 @@ The available options are gated by the device's protocol family — only relevan
 | Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni only.** Active print job and queue length |
 | Active alarms | **O1 Omni only.** Number of active alarms; the `alarms` attribute lists code / level / message (codes match xTool Studio) |
 | UV lamp runtime / Air purifier runtime | **O1 Omni only.** Lifetime counters (diagnostic) |
+| Engraving lens | **F2 Ultra UV**: the fitted lens: Surface, Inner, or None (Studio's Surface engraving lens, Inner engraving lens, or no lens detected) |
 
 #### Diagnostic Sensors
 
 | Entity | Description |
 |---|---|
+| Wi-Fi signal | **F2 Ultra UV**: Wi-Fi signal strength in dBm |
+| Calibration | **F2 Ultra UV**: when Studio last calibrated the camera. Attributes: the stored Z, focus and laser offsets (read only; the integration never changes them) |
 | IP address | Device IP address |
 | Laser power | Laser-module power in watts |
 | Laser module | Laser-module type (e.g. "Diode", "IR") |
@@ -161,7 +164,8 @@ The available options are gated by the device's protocol family — only relevan
 | Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |
 | Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
 | Cooling fan | Cooling fan currently running |
-| Exhaust fan | Smoke-extraction fan currently running |
+| Exhaust fan | Smoke-extraction fan currently running (not on the F2 Ultra UV) |
+| Exhaust fan installation | **F2 Ultra UV only.** OK, or Problem when the laser reports no exhaust fan installed (Studio warns "Exhaust fan installation abnormal" before a job) |
 | CPU fan | CPU cooling fan currently running |
 | UV fire sensor | UV-based flame-detector trip |
 | Water pump | Water-cooling pump running |
@@ -183,14 +187,14 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Power | Linked smart plug (only when configured in integration options) |
 | Buzzer reminders / Beep | Audio feedback enable |
 | Move stop | Emergency-movement-stop toggle |
-| Exhaust fan | Manual smoke-extraction fan toggle |
+| Exhaust fan | Manual smoke-extraction fan toggle. The F2 Ultra UV never reports whether the fan runs, so it shows off after the laser connects and then follows HA's own commands |
 | Cooling fan | Manual cooling-fan toggle |
 | Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
 | Purifier auto-continue | Keep purifier running after job ends |
-| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED |
+| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED. On V2 lasers the red dot shows on after the laser connects (it is always on when the laser powers on), unless the laser reports otherwise, and then follows HA's own commands |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
-| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control |
+| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control. Attribute `flame_record` (**F2 Ultra UV**): true while the laser stores a photo from a fire alarm (Studio offers it) |
 | Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
 | Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
 | Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |
@@ -210,6 +214,20 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
 | Work area limit (left / right / up / down) | M311 work-area limits (mm) |
+| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Only with the surface lens, as in Studio: with the inner engraving lens the job sets the height from the material's size, so Focus height is Unknown and moves and Autofocus are refused. Nothing is stored on the laser |
+
+#### Action `xtool.focus`
+
+Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to. When a step move stops at a limit, the head moves there and the action then reports an error that says so (for example "Focus moved to 0.0 mm, the lower limit. 35 steps of -1.0 mm from 34.0 mm would have gone to -1.0 mm."), so Home Assistant shows it; an automation stops at that action unless it continues on error.
+
+```yaml
+action: xtool.focus
+target:
+  entity_id: number.xtool_f2_ultra_uv_focus_height
+data:
+  step: -0.5
+  steps: 2
+```
 
 ### Select
 
@@ -251,6 +269,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Home laser head | Move laser head back to (0, 0) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
+| Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |
 | Reboot | Soft reboot |
 | Sync time | Push HA local time to device |
 | Quit LightBurn | Leave LightBurn standby mode |
