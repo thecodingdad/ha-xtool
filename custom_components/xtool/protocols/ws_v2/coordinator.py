@@ -39,7 +39,7 @@ class WSV2Coordinator(XtoolCoordinator):
     Same lifecycle pattern as the legacy REST coordinator: open the
     protocol, periodically poll state into the shared
     ``XtoolDeviceState`` dataclass, hand state to entities through the
-    standard HA `_async_update_data` hook.
+    coordinator's `_async_poll` hook.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -99,7 +99,7 @@ class WSV2Coordinator(XtoolCoordinator):
         updates, self.protocol._pending_accessory_updates = pending, []
         self._merge_accessory_push_updates(state, updates)
 
-    async def _async_update_data(self) -> XtoolDeviceState:
+    async def _async_poll(self) -> XtoolDeviceState:
         # Always carry the last poll's field values forward so the
         # read-only entities (XtoolReadOnlyEntity) keep rendering
         # across a sustained outage. ``state.available`` is flipped
