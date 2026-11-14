@@ -185,19 +185,10 @@ class _AccessoryEntity(XtoolEntity):
 class _AccessoryReadOnlyEntity(_AccessoryEntity):
     """Base for accessory sensor + binary-sensor entities.
 
-    Stays available across laser-side outages so the last-known
-    accessory field values keep rendering on dashboards. The
-    accessory must still be paired (``self._state is not None``)
-    — unpaired accessories really are gone and the entity goes
-    unavailable.
+    Unavailable, like the accessory's controls, while the laser is off
+    or cannot be reached (the accessory is read through the laser), or
+    while the accessory is not paired.
     """
-
-    @property
-    def available(self) -> bool:
-        return (
-            self.coordinator.data is not None
-            and self._state is not None
-        )
 
 
 class _AccessorySensor(_AccessoryReadOnlyEntity, SensorEntity):
