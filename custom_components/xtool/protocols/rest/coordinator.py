@@ -37,7 +37,7 @@ class RestCoordinator(XtoolCoordinator):
         # Stash model on the protocol so capability-gated polls can fire.
         self.protocol.set_model(self.model)
 
-    async def _async_update_data(self) -> XtoolDeviceState:
+    async def _async_poll(self) -> XtoolDeviceState:
         # Carry the last poll's field values forward so the read-only
         # entities (XtoolReadOnlyEntity) keep rendering across a
         # sustained outage. ``state.available`` flips to True only on

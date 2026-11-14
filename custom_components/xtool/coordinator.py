@@ -2,7 +2,7 @@
 
 Each protocol family ships its own coordinator subclass in
 ``protocols/<family>/coordinator.py``. The subclass owns the polling
-loop (``_async_update_data``), device-info fetch (``_fetch_device_info``),
+loop (``_async_poll``), device-info fetch (``_fetch_device_info``),
 all family-specific state (e.g. AP2, XCS, laser/wifi firmware versions,
 workspace dims), and the ``build_<platform>()`` factories.
 
@@ -273,8 +273,19 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
     # --- Polling (per-family override required by HA) -----------------------
 
     async def _async_update_data(self) -> XtoolDeviceState:
+        if self.power_switch_is_off:
+            # No power: the laser is not asked (each try would only time out)
+            if self.protocol.connected:
+                await self.protocol.disconnect()
+            state = dataclass_replace(self.data) if self.data else XtoolDeviceState()
+            state.available = False
+            return state
+        return await self._async_poll()
+
+    async def _async_poll(self) -> XtoolDeviceState:
+        """Read the laser's state (each family's own)."""
         raise NotImplementedError(
-            f"{type(self).__name__} must implement _async_update_data"
+            f"{type(self).__name__} must implement _async_poll"
         )
 
     # --- Entity factories (overridden per family) ---------------------------
