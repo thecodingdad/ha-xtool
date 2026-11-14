@@ -36,7 +36,6 @@ from ...const import XtoolStatus
 from ..base import DeviceInfo, XtoolDeviceState
 from .protocol import (
     PERIPHERAL_ACTION_GET_COORD,
-    PERIPHERAL_ACTION_GET_DISTANCE,
     PERIPHERAL_ACTION_GO_TO,
     REST_BRIGHTNESS_MAX,
     REST_CAMERA_PORT,
@@ -44,7 +43,6 @@ from .protocol import (
     REST_PATH_DIGITAL_LOCK,
     REST_PATH_FILL_LIGHT,
     REST_PATH_GAP,
-    REST_PATH_IR_DISTANCE,
     REST_PATH_IR_LED,
     REST_PATH_LASER_HEAD,
     RestProtocol,
@@ -181,6 +179,10 @@ def decode_push_frame(data: bytes | str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
+# The IR sensor's own distance (/peripheral/ir_measure_distance gives the thickness)
+P2_PATH_SENSOR_DISTANCE = "/peripheral/quest/ir_measure_distance"
+
+
 def describe_alarm(entry: dict[str, Any]) -> dict[str, Any] | None:
     """An alarm as Studio shows it (code, message, level, event type), or None.
 
@@ -232,6 +234,8 @@ class P2Protocol(RestProtocol):
         self._stopping = False
         # Studio's Fill light brightness as last read or written
         self._studio_brightness: int | None = None
+        # The P2's warnings already written to the log
+        self._logged_alarms: set[str] = set()
 
     # --- Connection -----------------------------------------------------
 
@@ -445,9 +449,16 @@ class P2Protocol(RestProtocol):
         if isinstance(alarm_info, dict):
             raw = alarm_info.get("alarm")
             alarms = []
+            current: set[str] = set()
             for entry in raw if isinstance(raw, list) else []:
                 if not isinstance(entry, dict):
                     continue
+                text = " ".join(
+                    str(entry.get(key) or "") for key in ("level", "module", "type", "info")
+                ).strip()
+                current.add(text)
+                if text not in self._logged_alarms:
+                    _LOGGER.warning("The P2 reports: %s", text)
                 alarms.append(describe_alarm(entry) or {
                     "code": None,
                     "message": " ".join(
@@ -457,6 +468,8 @@ class P2Protocol(RestProtocol):
                     "event_type": "other",
                 })
             state.active_alarms = alarms
+            # One that ends and comes back is logged again
+            self._logged_alarms = current
 
     @staticmethod
     def _apply_progress(state: XtoolDeviceState, progress: Any) -> None:
@@ -547,18 +560,16 @@ class P2Protocol(RestProtocol):
         return found if {"x", "y", "z"} <= found.keys() else {}
 
     async def measure_material(self) -> dict[str, float] | None:
-        """One IR reading and the head position it was taken at.
+        """The IR sensor's own distance and the head position it was read at.
 
-        The reply's ``distance`` is the material's thickness: the reading at
-        thickness 0 (``laserMeasureOffset`` Z) minus what the sensor read
-        (``/peripheral/quest/ir_measure_distance`` gives the sensor's own
-        distance). The sensor reads only while the close red dot (``ir_led``
-        index 1) is on; otherwise the thickness is always 0.
+        The sensor reads only while the close red dot (``ir_led`` index 1)
+        is on. ``distance`` is 0 while it has no reading (dot off, or just
+        turned on) and -1 when the P2 could not talk to it; a material's
+        thickness is ``laserMeasureOffset`` Z minus the distance.
+        (``/peripheral/ir_measure_distance`` replies with that thickness,
+        which cannot tell "no reading" from a real one.)
         """
-        result = await self._post_json(
-            REST_PATH_IR_DISTANCE,
-            data={"action": PERIPHERAL_ACTION_GET_DISTANCE, "type": "single"},
-        )
+        result = await self._get_json(P2_PATH_SENSOR_DISTANCE)
         if not isinstance(result, dict):
             return None
         values: dict[str, float] = {}

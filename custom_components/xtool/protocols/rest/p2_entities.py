@@ -999,9 +999,13 @@ def build_p2_view_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
 # The head moves only while the P2 waits for work, as in Studio
 # The P2 moves the head while it sleeps too (it homes when it wakes)
 P2_HEAD_MOVE_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED, XtoolStatus.SLEEPING)
-# Just after the close red dot turns on, the sensor has not read yet
-P2_MEASURE_TRIES = 20
-P2_MEASURE_RETRY_SECONDS = 0.1
+# The IR sensor starts when the close red dot turns on. Asked before it has
+# started, the P2 fails to reach it and raises its MEASURE_DISTANCE_SENSOR
+# warning (seen up to 0.2 s after; never from 0.3 s), so it is given this long
+P2_SENSOR_START_SECONDS = 0.5
+# Then it is asked until it has a reading
+P2_MEASURE_TRIES = 10
+P2_MEASURE_RETRY_SECONDS = 0.2
 
 
 def _head_lock(coordinator: XtoolCoordinator) -> asyncio.Lock:
@@ -1182,9 +1186,10 @@ class P2MeasureDistance(XtoolMeasureDistance):
     """Reads the material under the IR sensor, beside the laser.
 
     The thickness is the P2's own reading at thickness 0 (its
-    ``laserMeasureOffset`` setting) minus the distance read. The result,
-    as the selected Mode takes it, goes into Thickness or distance (which
-    can be changed after).
+    ``laserMeasureOffset`` setting) minus the distance the sensor read.
+    The result, as the selected Mode takes it, goes into Thickness or
+    distance (which can be changed after); a result the Mode cannot take
+    is refused.
     """
 
     _attr_translation_key = "measure_thickness_or_distance"
@@ -1194,47 +1199,58 @@ class P2MeasureDistance(XtoolMeasureDistance):
         data = self.coordinator.data
         if data is None:
             raise HomeAssistantError("The laser did not report a distance")
-        # The sensor reads only while the close red dot is on (otherwise
-        # the thickness is always 0); it is turned off again after
-        dot_was_on = bool(getattr(data, "ir_led_close", False))
         offset = protocol.measure_offset(data)
+        if not offset:
+            raise HomeAssistantError(
+                "The P2 did not report its IR sensor's setting (laserMeasureOffset)"
+            )
+        # The sensor reads only while the close red dot is on; it is
+        # turned off again after
+        dot_was_on = bool(getattr(data, "ir_led_close", False))
         if not dot_was_on:
             await protocol.set_ir_led(1, True)
         try:
-            reading = await self._read(offset.get("z") if offset else None)
+            if not dot_was_on:
+                await asyncio.sleep(P2_SENSOR_START_SECONDS)
+            reading = await self._read()
         finally:
             if not dot_was_on:
                 await protocol.set_ir_led(1, False)
-        # The P2 replies with the thickness (see measure_material)
-        thickness = round(reading["distance"], 2)
-        data.measured_thickness_mm = thickness
-        if offset:
-            data.last_distance_mm = round(offset["z"] - thickness, 2)
-        dx, dy = (offset["x"], offset["y"]) if offset else p2_geometry.MEASURE_OFFSET
-        if "coord_x" in reading and "coord_y" in reading:
-            data.measured_at = (round(reading["coord_x"] + dx, 2), round(reading["coord_y"] + dy, 2))
+        distance = round(reading["distance"], 2)
+        thickness = round(offset["z"] - distance, 2)
         # Thickness or distance takes it, as the Mode does (and can be changed after)
         settings = _p2_view(self.coordinator)
         mode = settings["processing_mode"]
         low, high = p2_geometry.MODES[mode]
         value = round(p2_geometry.mode_value(mode, thickness), 1)
-        settings["thickness_or_distance"] = min(max(value, low), high)
+        if not low <= value <= high:
+            raise HomeAssistantError(
+                f"Measured {value:g} mm, outside this Mode's {low:g} to {high:g} mm"
+                f" (the sensor read {distance:g} mm)"
+            )
+        data.measured_thickness_mm = thickness
+        data.last_distance_mm = distance
+        if "coord_x" in reading and "coord_y" in reading:
+            data.measured_at = (
+                round(reading["coord_x"] + offset["x"], 2),
+                round(reading["coord_y"] + offset["y"], 2),
+            )
+        settings["thickness_or_distance"] = value
         self.coordinator.async_set_updated_data(data)
         await _refresh(self.coordinator, "overview")
 
 
-    async def _read(self, zero: float | None) -> dict[str, float]:
+    async def _read(self) -> dict[str, float]:
         """A reading the sensor made.
 
-        For about 0.2 s after the red dot turns on, the reply is the
-        reading at thickness 0 (``zero``, Z): the sensor has not read yet.
-        Such a reply is asked again.
+        Its distance is 0 while it has no reading and -1 when the P2 could
+        not talk to it: neither is a reading, so it is asked again.
         """
         for _ in range(P2_MEASURE_TRIES):
             reading = await self.coordinator.protocol.measure_material()
             if reading is None:
                 raise HomeAssistantError("The laser did not report a distance")
-            if zero is None or abs(reading["distance"] - zero) > 0.05:
+            if reading["distance"] > 0:
                 return reading
             await asyncio.sleep(P2_MEASURE_RETRY_SECONDS)
         raise HomeAssistantError(
