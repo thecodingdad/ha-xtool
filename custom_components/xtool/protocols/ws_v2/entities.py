@@ -17,6 +17,7 @@ for the V1 REST equivalents whose patterns we mirror.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import timedelta
 import logging
 from typing import Any
@@ -28,17 +29,19 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.components.button import ButtonEntity
 from aiohttp import web
 from homeassistant.components.camera import Camera
+from homeassistant.components.image import ImageEntity
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ColorMode,
     LightEntity,
 )
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode, RestoreNumber
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
+    SensorEntityDescription,
     SensorStateClass,
 )
 from homeassistant.components.switch import (
@@ -50,14 +53,21 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.const import (
     EntityCategory,
     PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfLength,
     UnitOfTemperature,
     UnitOfTime,
     UnitOfVolumeFlowRate,
 )
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from ...const import BRIGHTNESS_HA_MAX
+from ...const import BRIGHTNESS_HA_MAX, DOMAIN
+from .protocol import round_focus
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -68,15 +78,44 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .camera_correction import (
+    CALIBRATED_AREA_MM,
+    CameraCalibration,
+    CameraView,
+    calibration_overlay,
+    correct_image,
+    parse_calibration,
+    perspective_image,
+    rotate_image,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-MIN_SNAPSHOT_INTERVAL = timedelta(seconds=30)
-# Per-frame poll cadence for the MJPEG live-view entity. Studio's
-# ``captureGlobalImage`` route is on-demand only — no firmware-mandated
-# rate. Empirically the V2 firmware tolerates ~1 Hz comfortably; faster
-# than ~2 Hz queues snaps behind unfinished file_stream transfers.
-LIVE_FRAME_INTERVAL = 1.0
+# A still image younger than this is served again instead of taking a
+# new one, so several viewers (thumbnails, the live view) share photos.
+MIN_SNAPSHOT_INTERVAL = timedelta(seconds=2)
+# When a new photo fails, the last one is served only while it is
+# younger than this, so a stale picture is not shown as current.
+MAX_SNAPSHOT_AGE = timedelta(seconds=60)
+# Time from the start of one live-view frame to the next. These
+# lasers have no live video: the firmware answers
+# ``/v1/platform/camera/live`` with "camera disabled", and Studio only
+# takes photos. A photo (``/v1/camera/snap`` plus the file download)
+# takes about 0.3 s on the F2 Ultra UV, and the protocol takes one
+# photo at a time, so this gives about 2.5 frames per second.
+LIVE_FRAME_INTERVAL = 0.4
+# Thumbnail refresh interval (seconds). Home Assistant changes each
+# camera's access token, and so its picture URL, every 5 minutes;
+# the device page reloads the picture only then. Each camera has a
+# number entity to change that.
+THUMBNAIL_REFRESH_DEFAULT = 300
+THUMBNAIL_REFRESH_MIN = 5
+THUMBNAIL_REFRESH_MAX = 600
+THUMBNAIL_REFRESH_STEP = 5
+# A live view whose viewer has not read a frame for this long is ended.
+LIVE_WRITE_TIMEOUT = 10.0
+# Seconds before reading the camera calibration again after it failed.
+CALIBRATION_RETRY = 300.0
 
 
 # --- Sensors -----------------------------------------------------------
@@ -149,6 +188,11 @@ _WORKING_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     icon="mdi:timer-cog",
     entity_category=EntityCategory.DIAGNOSTIC,
     native_unit_of_measurement=UnitOfTime.SECONDS,
+    # A lifetime total reads best in hours (19.7 h, not 70922 s). HA
+    # converts units only for the duration device class.
+    device_class=SensorDeviceClass.DURATION,
+    suggested_unit_of_measurement=UnitOfTime.HOURS,
+    suggested_display_precision=1,
     state_class=SensorStateClass.TOTAL_INCREASING,
     value_fn=lambda state, _: state.working_seconds,
 )
@@ -186,6 +230,31 @@ _AMBIENT_HUMIDITY_DESCRIPTION = XtoolSensorEntityDescription(
 _GATED_SENSOR_DESCRIPTIONS: tuple[
     tuple[XtoolSensorEntityDescription, str], ...
 ] = (
+    (
+        # Studio's lens names, shortened: Surface (big field lens),
+        # Inner (small), or None (no lens detected).
+        XtoolSensorEntityDescription(
+            key="engraving_lens",
+            translation_key="engraving_lens",
+            icon="mdi:camera-iris",
+            device_class=SensorDeviceClass.ENUM,
+            options=["big", "small", "none"],
+            value_fn=lambda state, _: state.engraving_lens,
+        ),
+        "has_laser_info",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="wifi_signal",
+            translation_key="wifi_signal",
+            device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+            native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+            state_class=SensorStateClass.MEASUREMENT,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.wifi_signal,
+        ),
+        "has_laser_info",
+    ),
     (
         XtoolSensorEntityDescription(
             key="position_x",
@@ -310,6 +379,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         "has_gyro",
     ),
     (_LAST_JOB_TIME_DESCRIPTION, "has_runtime_stats"),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_job_result_time"),
     (_WORKING_TIME_DESCRIPTION, "has_runtime_stats"),
     (_STANDBY_TIME_DESCRIPTION, "has_runtime_stats"),
     (
@@ -512,6 +582,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ambient_sensors"),
     (_LAST_JOB_TIME_DESCRIPTION, "has_lifetime_counters"),
     (_WORKING_TIME_DESCRIPTION, "has_lifetime_counters"),
+    (_WORKING_TIME_DESCRIPTION, "has_machine_info_worktime"),
     (_STANDBY_TIME_DESCRIPTION, "has_lifetime_counters"),
     (
         XtoolSensorEntityDescription(
@@ -783,6 +854,56 @@ class _WSV2BoolSensor(XtoolRestoringBinarySensor, BinarySensorEntity):
         return self._is_on_or_restored(live)
 
 
+class _WSV2ExhaustFanInstallSensor(_WSV2BoolSensor):
+    """Exhaust fan installation: Problem when the fan is not installed.
+
+    Matches the warning Studio shows before a job, "Exhaust fan
+    installation abnormal" (``device.gs.fan_install_advice``).
+    """
+
+    _state_attr = "smoking_fan_installed"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(
+            coordinator, "smoking_fan_installation",
+            BinarySensorDeviceClass.PROBLEM,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        installed = (
+            None if self.coordinator.data is None
+            else self.coordinator.data.smoking_fan_installed
+        )
+        return self._is_on_or_restored(
+            None if installed is None else not installed
+        )
+
+
+def _remove_retired_entity(
+    coordinator: XtoolCoordinator, platform: str, key: str,
+) -> None:
+    """Remove the registry entry of an entity this model no longer has.
+
+    Without this, it stays on the device page as unavailable until
+    the user deletes it.
+    """
+    hass = getattr(coordinator, "hass", None)
+    if hass is None:
+        return
+    from homeassistant.helpers import entity_registry as er
+
+    from ...const import DOMAIN
+
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        platform, DOMAIN, f"{coordinator.serial_number}_{key}",
+    )
+    if entity_id is not None:
+        _LOGGER.info("Removing retired entity %s", entity_id)
+        registry.async_remove(entity_id)
+
+
 def _bool_sensor_factory(
     state_attr: str,
     key: str,
@@ -952,6 +1073,11 @@ class _WSV2PeripheralSwitch(XtoolEntity, SwitchEntity):
 class _WSV2IRLedSwitch(_WSV2PeripheralSwitch, RestoreEntity):
     """Red-dot / IR-LED switch that survives HA restarts.
 
+    The red dot is on whenever the laser powers on, so the protocol
+    assumes it on after each new connection (unless the laser reports
+    it), and HA's own commands are followed from there. The restored
+    value below covers only the time before the first poll.
+
     Studio's ``controlRedLed`` bundle only defines a PUT route —
     firmware exposes no GET or push for the IR LED state, so a
     fresh HA start has no way to learn whether the LED is
@@ -1038,6 +1164,94 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         if self.coordinator.data is not None:
             setattr(self.coordinator.data, self._state_attr, int(value))
         self.async_write_ha_state()
+
+
+class WSV2FocusHeight(XtoolEntity, NumberEntity):
+    """Focus height as Studio's manual focus: the material thickness in mm.
+
+    Only with the surface lens, as in Studio: with the inner engraving lens
+    (or none) it is Unknown and moves are refused.
+
+    Shows what Studio shows (laser-head Z minus 6). Setting it moves the
+    head as Studio does; the ``xtool.focus`` action also moves it in
+    steps. Moves are refused whenever Studio would refuse them.
+    """
+
+    _attr_translation_key = "focus_height"
+    _attr_icon = "mdi:arrow-expand-vertical"
+    _attr_device_class = NumberDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 150.0
+    _attr_native_step = 0.1
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("focus_height")
+
+    @property
+    def native_value(self) -> float | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        # The height is a material thickness only with the surface lens
+        if getattr(d, "engraving_lens", None) in ("small", "none"):
+            return None
+        return getattr(d, "focus_thickness", None)
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.async_focus(thickness=value)
+
+    async def async_focus(
+        self,
+        step: float | None = None,
+        steps: int = 1,
+        thickness: float | None = None,
+    ) -> dict[str, Any]:
+        """Move to a thickness, or by ``step`` mm ``steps`` times.
+
+        Returns the height it moved to. A move past 0 or 150 mm stops at
+        that limit and then raises an error that says so, so Home
+        Assistant shows the message.
+        """
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Focus not moved: {reason}")
+        current: float | None = None
+        if thickness is None:
+            current = self.native_value
+            if current is None:
+                raise HomeAssistantError(
+                    "Focus not moved: the current focus height is not known yet"
+                )
+            thickness = current + (step or 0.0) * steps
+        lowest = self._attr_native_min_value
+        highest = self._attr_native_max_value
+        target = round_focus(min(max(thickness, lowest), highest))
+        message: str | None = None
+        if target != round_focus(thickness):
+            limit = "lower" if target == lowest else "upper"
+            if current is not None:
+                count = "1 step" if steps == 1 else f"{steps} steps"
+                message = (
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
+                    f"{count} of {step:+.1f} mm from {current:.1f} mm "
+                    f"would have gone to {round_focus(thickness):.1f} mm."
+                )
+            else:
+                message = (
+                    f"Focus moved to {target:.1f} mm, the {limit} limit. "
+                    f"{round_focus(thickness):.1f} mm is outside 0-150 mm."
+                )
+            _LOGGER.warning("%s: %s", self.entity_id, message)
+        await protocol.focus_to(target)
+        if message is not None:
+            # Reported as an error so Home Assistant shows it; the move
+            # itself was made.
+            raise HomeAssistantError(message)
+        return {"focus_height": target}
 
 
 class WSV2DisplayBrightness(XtoolEntity, NumberEntity):
@@ -1311,6 +1525,23 @@ class _WSV2Button(XtoolEntity, ButtonEntity):
         await self._action()
 
 
+class WSV2Autofocus(_WSV2Button):
+    """Autofocus, as Studio's button and the laser's own button.
+
+    Refused whenever Studio would refuse it (as Focus height moves).
+    """
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "autofocus", "mdi:image-filter-center-focus")
+
+    async def _action(self) -> None:
+        protocol = self.coordinator.protocol
+        reason = protocol.focus_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Autofocus not started: {reason}")
+        await protocol.autofocus()
+
+
 class WSV2PauseJob(_WSV2Button):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "pause_job", "mdi:pause")
@@ -1409,32 +1640,344 @@ class WSV2SyncTime(_WSV2Button):
 # --- Cameras ------------------------------------------------------------
 
 
-class _WSV2Camera(XtoolEntity, Camera):
-    """V2 camera — single entity per physical lens.
+# English names of the cameras; the device page shows the translated
+# ones (``device`` in strings.json).
+CAMERA_LABELS: dict[str, str] = {
+    "main": "Main camera",
+    "deep": "Deep camera",
+    "overview": "Overview camera",
+    "closeup": "Close camera",
+    "far": "Global camera",
+    "near": "Local camera",
+    "side": "Side camera",
+}
 
-    Serves both the still-snapshot flow (``async_camera_image``) and
-    the live MJPEG preview (``handle_async_mjpeg_stream``) over the
-    same ``/v1/camera/snap?name=<n>`` wire path. HA's picture-card
-    auto-subscribes to the streaming method when
-    ``_attr_is_streaming`` is ``True``, while the
-    ``camera.snapshot`` service still consumes the
-    snapshot-cached path.
 
-    Previously split into separate ``_WSV2Camera`` +
-    ``_WSV2LiveCamera`` entities; dual-camera models then surfaced
-    four entries on the device page. Merged in v2.5.4.
+def _camera_has_own_device(coordinator: XtoolCoordinator, camera_name: str) -> bool:
+    """Each camera of a model with several gets its own device.
 
-    ``_attr_is_streaming = True`` since v2.7.2 — the
-    ``handle_async_mjpeg_stream`` path was confirmed working on F2
-    Ultra UV (Issue #4 v2.7.1 retest, "both seem to be streaming,
-    nice work"). HA now reports ``streaming`` as the entity state
-    and auto-refreshes Lovelace picture-card thumbnails from the
-    MJPEG feed. ``camera.snapshot`` continues to consume the
-    still-image cache maintained in :meth:`async_camera_image`.
+    A single camera stays on the laser's device page.
+    """
+    names = coordinator.model.camera_names if coordinator.model.has_camera else ()
+    return len(names) > 1 and camera_name in names
+
+
+def _laser_name(coordinator: XtoolCoordinator) -> str:
+    """The laser's name as the device page shows it (the user's, if renamed)."""
+    device_id = getattr(coordinator, "laser_device_id", None)
+    hass = getattr(coordinator, "hass", None)
+    if device_id and hass is not None:
+        device = dr.async_get(hass).async_get(device_id)
+        if device is not None and (device.name_by_user or device.name):
+            return device.name_by_user or device.name
+    return coordinator.device_name
+
+
+def _camera_device_info(coordinator: XtoolCoordinator, camera_name: str) -> DeviceInfo:
+    """Device of one camera, connected to the laser.
+
+    Its name is the laser's name and the camera's, so entity IDs stay
+    as they were on the laser (``camera.<laser>_main_camera``).
+    """
+    from ..accessories.entities import _via_device_info
+
+    label = CAMERA_LABELS.get(camera_name, f"{camera_name.capitalize()} camera")
+    laser = _laser_name(coordinator)
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{coordinator.serial_number}:camera_{camera_name}")},
+        **_via_device_info(coordinator),
+        name=f"{laser} {label}",
+        translation_key=f"camera_{camera_name}",
+        translation_placeholders={"laser": laser},
+        manufacturer="xTool",
+        model=f"{coordinator.model.name} {label}",
+    )
+
+
+class _CameraDeviceEntity(XtoolEntity):
+    """An entity on a camera's own device (when the camera has one)."""
+
+    _device_camera: str | None = None
+
+    def _use_camera_device(self, camera_name: str) -> bool:
+        if _camera_has_own_device(self.coordinator, camera_name):
+            self._device_camera = camera_name
+            return True
+        return False
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        if self._device_camera is None:
+            return super().device_info
+        return _camera_device_info(self.coordinator, self._device_camera)
+
+
+PERSPECTIVE_UNCORRECTED = "uncorrected"
+PERSPECTIVE_ROTATED = "rotated"
+PERSPECTIVE_STRAIGHTENED = "straightened"
+PERSPECTIVE_OPTIONS = [
+    PERSPECTIVE_UNCORRECTED, PERSPECTIVE_ROTATED, PERSPECTIVE_STRAIGHTENED,
+]
+
+
+def _perspective_settings(coordinator: XtoolCoordinator) -> dict[str, str]:
+    """Perspective option by camera name (default Straightened)."""
+    settings = getattr(coordinator, "_camera_perspective", None)
+    if settings is None:
+        settings = {}
+        coordinator._camera_perspective = settings
+    return settings
+
+
+class _WSV2CameraPerspectiveSelect(_CameraDeviceEntity, SelectEntity, RestoreEntity):
+    """How a camera that looks at the bed at an angle is shown.
+
+    Uncorrected: the photo as the camera takes it. Rotated: turned
+    upright. Straightened (the default): turned upright and its
+    perspective corrected, so a flat surface looks straight and square
+    from above.
+    Kept by Home Assistant; the laser is not involved.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "perspective"
+    _attr_options = PERSPECTIVE_OPTIONS
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, camera_key: str, camera_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id(f"{camera_key}_perspective")
+        self._use_camera_device(camera_name)
+        self._camera_name = camera_name
+        self._attr_current_option = PERSPECTIVE_STRAIGHTENED
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in PERSPECTIVE_OPTIONS:
+            self._attr_current_option = last.state
+        _perspective_settings(self.coordinator)[self._camera_name] = (
+            self._attr_current_option
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        self._attr_current_option = option
+        _perspective_settings(self.coordinator)[self._camera_name] = option
+        self.async_write_ha_state()
+        camera = _thumbnail_registry(self.coordinator).cameras.get(self._camera_name)
+        if camera is not None:
+            await camera.refresh_picture()
+
+
+class _ThumbnailRegistry:
+    """Links each camera with its thumbnail refresh number entity."""
+
+    def __init__(self) -> None:
+        self.seconds: dict[str, float] = {}
+        self.cameras: dict[str, Any] = {}
+
+
+def _thumbnail_registry(coordinator: XtoolCoordinator) -> _ThumbnailRegistry:
+    registry = getattr(coordinator, "_camera_thumbnails", None)
+    if registry is None:
+        registry = _ThumbnailRegistry()
+        coordinator._camera_thumbnails = registry
+    return registry
+
+
+class _WSV2CameraThumbnailRefresh(_CameraDeviceEntity, RestoreNumber):
+    """How often a camera's thumbnail refreshes on the device page.
+
+    Every refresh is a new camera state (a new access token in the
+    picture URL), which every open Home Assistant screen receives,
+    and one photo from the laser for each screen showing the picture.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_device_class = NumberDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_native_min_value = THUMBNAIL_REFRESH_MIN
+    _attr_native_max_value = THUMBNAIL_REFRESH_MAX
+    _attr_native_step = THUMBNAIL_REFRESH_STEP
+    _attr_icon = "mdi:image-refresh"
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, camera_key: str, camera_name: str,
+    ) -> None:
+        super().__init__(coordinator)
+        key = f"{camera_key}_thumbnail_refresh"
+        self._set_unique_id(key)
+        # On the camera's own device the name needs no camera in it.
+        self._attr_translation_key = (
+            "thumbnail_refresh" if self._use_camera_device(camera_name) else key
+        )
+        self._camera_name = camera_name
+        self._attr_native_value = THUMBNAIL_REFRESH_DEFAULT
+
+    @property
+    def available(self) -> bool:
+        # A setting of Home Assistant itself; it does not need the laser.
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._apply(last.native_value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._apply(value)
+        self.async_write_ha_state()
+
+    def _apply(self, value: float) -> None:
+        value = min(max(float(value), THUMBNAIL_REFRESH_MIN), THUMBNAIL_REFRESH_MAX)
+        self._attr_native_value = value
+        thumbnails = _thumbnail_registry(self.coordinator)
+        thumbnails.seconds[self._camera_name] = value
+        camera = thumbnails.cameras.get(self._camera_name)
+        if camera is not None:
+            camera.set_thumbnail_refresh(value)
+
+
+def _camera_keys(coordinator: XtoolCoordinator) -> list[tuple[str, str]]:
+    """``(entity key, camera name)`` for each camera of the model."""
+    if not coordinator.model.has_camera:
+        return []
+    names = coordinator.model.camera_names
+    is_single = len(names) == 1
+    return [(f"camera{'' if is_single else '_' + name}", name) for name in names]
+
+
+# The main camera's crop (millimetres): key, default, min, max, icon.
+# A width or height of 0 shows the whole photo across or down.
+CROP_MIN_SIDE = 20.0
+CAMERA_VIEW_SETTINGS: tuple[tuple[str, float, float, float, str], ...] = (
+    ("width", CALIBRATED_AREA_MM, 0, 460, "mdi:arrow-expand-horizontal"),
+    ("height", CALIBRATED_AREA_MM, 0, 460, "mdi:arrow-expand-vertical"),
+    ("center_x", 0, -200, 200, "mdi:arrow-left-right"),
+    ("center_y", 0, -200, 200, "mdi:arrow-up-down"),
+)
+
+
+def _camera_view_values(coordinator: XtoolCoordinator) -> dict[str, float]:
+    values = getattr(coordinator, "_camera_view", None)
+    if values is None:
+        values = {key: spec[0] for key, *spec in CAMERA_VIEW_SETTINGS}
+        coordinator._camera_view = values
+    return values
+
+
+def _camera_view(coordinator: XtoolCoordinator) -> CameraView:
+    v = _camera_view_values(coordinator)
+    return CameraView(v["width"], v["height"], v["center_x"], v["center_y"])
+
+
+def _clamp_crop(setting: str, value: float) -> float:
+    """A crop value within its limits (a side of 0 means the whole photo)."""
+    _, minimum, maximum, _ = next(
+        spec for key, *spec in CAMERA_VIEW_SETTINGS if key == setting
+    )
+    value = min(max(float(value), minimum), maximum)
+    if setting in ("width", "height") and 0 < value < CROP_MIN_SIDE:
+        value = CROP_MIN_SIDE
+    return value
+
+
+def _crop_numbers(coordinator: XtoolCoordinator) -> dict[str, Any]:
+    """The main camera's crop number entities, by setting."""
+    numbers = getattr(coordinator, "_camera_crop_numbers", None)
+    if numbers is None:
+        numbers = {}
+        coordinator._camera_crop_numbers = numbers
+    return numbers
+
+
+class _WSV2CameraViewNumber(_CameraDeviceEntity, RestoreNumber):
+    """Part of the work surface the straightened main camera shows (mm).
+
+    Width and height set the area (and so the picture's shape); 0 shows
+    the whole photo that way. The centre moves the area from the centre
+    of the calibrated area (X right, Y down). Kept by Home Assistant;
+    the laser is not involved.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_native_step = 1
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, setting: str,
+        default: float, minimum: float, maximum: float, icon: str,
+    ) -> None:  # one row of CAMERA_VIEW_SETTINGS
+        super().__init__(coordinator)
+        # The unique ID keeps its first name ("view"), so settings and
+        # history stay.
+        self._set_unique_id(f"camera_main_view_{setting}")
+        own_device = self._use_camera_device("main")
+        self._attr_translation_key = (
+            f"crop_{setting}" if own_device else f"camera_main_crop_{setting}"
+        )
+        self._attr_icon = icon
+        self._setting = setting
+        self._attr_native_min_value = minimum
+        self._attr_native_max_value = maximum
+        self._attr_native_value = default
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        _crop_numbers(self.coordinator)[self._setting] = self
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            self._apply(last.native_value)
+
+    async def async_will_remove_from_hass(self) -> None:
+        _crop_numbers(self.coordinator).pop(self._setting, None)
+        await super().async_will_remove_from_hass()
+
+    async def async_set_native_value(self, value: float) -> None:
+        self.set_crop(value)
+        camera = _thumbnail_registry(self.coordinator).cameras.get("main")
+        if camera is not None:
+            # Show the new crop now, not at the next thumbnail refresh.
+            await camera.refresh_picture()
+
+    @callback
+    def set_crop(self, value: float) -> None:
+        """Store a new value and show it (the picture is not refreshed)."""
+        self._apply(value)
+        self.async_write_ha_state()
+
+    def _apply(self, value: float) -> None:
+        value = _clamp_crop(self._setting, value)
+        self._attr_native_value = value
+        _camera_view_values(self.coordinator)[self._setting] = value
+
+
+class _WSV2Camera(_CameraDeviceEntity, Camera):
+    """V2 camera: one entity per lens, built from still photos.
+
+    These lasers have no live video (the firmware answers
+    ``/v1/platform/camera/live`` with "camera disabled", and Studio
+    only takes photos), so both the still image
+    (``async_camera_image``) and the live view
+    (``handle_async_mjpeg_stream``, a multipart MJPEG stream) come from
+    ``/v1/camera/snap?name=<n>``. Both share one photo cache, so
+    thumbnails and live viewers do not each ask the laser.
+
+    The state is Streaming only while a live view is open, and Idle
+    otherwise.
     """
 
     _camera_name: str = ""
-    _attr_is_streaming = True
 
     def __init__(
         self,
@@ -1448,42 +1991,227 @@ class _WSV2Camera(XtoolEntity, Camera):
         Camera.__init__(self)
         self._set_unique_id(f"{key}")
         self._attr_translation_key = translation_key or key
+        if self._use_camera_device(camera_name):
+            # The camera is its device: it takes the device's name.
+            self._attr_name = None
         self._camera_name = camera_name
         if icon is not None:
             self._attr_icon = icon
         self._last_snapshot: bytes | None = None
-        self._last_snapshot_time = dt_util.utcnow() - MIN_SNAPSHOT_INTERVAL
+        self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
+        self._live_viewers = 0
+        self._thumbnail_seconds: float = THUMBNAIL_REFRESH_DEFAULT
+        self._cancel_thumbnail_timer: Any = None
+        # Straighten photos with the laser's calibration grid (main
+        # camera of models that store one).
+        self._uses_calibration = camera_name == "main" and bool(
+            getattr(coordinator.model, "has_camera_calibration", False)
+        )
+        self._calibration: CameraCalibration | None = None
+        self._calibration_next_try = 0.0
+        # Fixed perspective of a camera that looks at the bed at an angle.
+        self._perspective = next(
+            (
+                spec[1:]
+                for spec in getattr(coordinator.model, "camera_perspectives", ()) or ()
+                if spec[0] == camera_name
+            ),
+            None,
+        )
+        # The turn that sets the camera upright without the perspective.
+        self._rotation = next(
+            (
+                spec[1]
+                for spec in getattr(coordinator.model, "camera_rotations", ()) or ()
+                if spec[0] == camera_name
+            ),
+            None,
+        )
+
+    @property
+    def is_streaming(self) -> bool:
+        return self._live_viewers > 0
+
+    @callback
+    def async_update_token(self) -> None:
+        """Change the access token only on this camera's own schedule.
+
+        Home Assistant calls this every 5 minutes; the thumbnail
+        refresh interval decides instead. Without a change, HA's
+        following state write sends nothing.
+        """
+        if self.access_tokens and not getattr(self, "_rotating", False):
+            return
+        super().async_update_token()
+
+    async def _refresh_thumbnail(
+        self, _now: Any = None, max_age: timedelta = MIN_SNAPSHOT_INTERVAL,
+    ) -> None:
+        # Take the new photo before changing the token: the picture
+        # request that follows the new state is then answered from the
+        # cache at once, so the thumbnail does not go blank while the
+        # laser takes a photo.
+        await self._image(max_age)
+        self._rotating = True
+        try:
+            self.async_update_token()
+        finally:
+            self._rotating = False
+        self.async_write_ha_state()
+
+    async def refresh_picture(self) -> None:
+        """Take a new photo now and refresh the picture (after a crop change)."""
+        await self._refresh_thumbnail(max_age=timedelta(0))
+
+    @property
+    def supports_crop(self) -> bool:
+        return self._uses_calibration
+
+    async def async_set_crop(
+        self,
+        width: float | None = None,
+        height: float | None = None,
+        center_x: float | None = None,
+        center_y: float | None = None,
+    ) -> None:
+        """Set the crop numbers given (mm), then refresh the picture once."""
+        numbers = _crop_numbers(self.coordinator)
+        values = {
+            "width": width, "height": height,
+            "center_x": center_x, "center_y": center_y,
+        }
+        for setting, value in values.items():
+            if value is None:
+                continue
+            number = numbers.get(setting)
+            if number is not None:
+                number.set_crop(value)
+            else:  # the number entity is disabled
+                _camera_view_values(self.coordinator)[setting] = _clamp_crop(setting, value)
+        await self.refresh_picture()
+
+    @callback
+    def set_thumbnail_refresh(self, seconds: float) -> None:
+        """Start (or restart) the thumbnail refresh timer."""
+        if self._cancel_thumbnail_timer is not None:
+            self._cancel_thumbnail_timer()
+            self._cancel_thumbnail_timer = None
+        self._thumbnail_seconds = seconds
+        if self.hass is None:
+            return
+        self._cancel_thumbnail_timer = async_track_time_interval(
+            self.hass, self._refresh_thumbnail, timedelta(seconds=seconds),
+            name=f"xTool {self._camera_name} thumbnail refresh",
+            # Stop when Home Assistant stops: a photo every few seconds
+            # keeps adding tasks, and Home Assistant waits for them all
+            # before it saves its state and closes
+            cancel_on_shutdown=True,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        thumbnails = _thumbnail_registry(self.coordinator)
+        thumbnails.cameras[self._camera_name] = self
+        self.set_thumbnail_refresh(
+            thumbnails.seconds.get(self._camera_name, THUMBNAIL_REFRESH_DEFAULT)
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._cancel_thumbnail_timer is not None:
+            self._cancel_thumbnail_timer()
+            self._cancel_thumbnail_timer = None
+        _thumbnail_registry(self.coordinator).cameras.pop(self._camera_name, None)
+        await super().async_will_remove_from_hass()
+
+    async def _corrected(self, image: bytes) -> bytes:
+        """Return the photo straightened, as the model needs."""
+        if not self._uses_calibration:
+            if self._perspective is None or self.hass is None:
+                return image
+            option = _perspective_settings(self.coordinator).get(
+                self._camera_name, PERSPECTIVE_STRAIGHTENED,
+            )
+            if option == PERSPECTIVE_UNCORRECTED:
+                return image
+            try:
+                if option == PERSPECTIVE_ROTATED:
+                    if self._rotation is None:
+                        return image
+                    return await self.hass.async_add_executor_job(
+                        rotate_image, image, self._rotation,
+                    )
+                return await self.hass.async_add_executor_job(
+                    perspective_image, image, *self._perspective,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug(
+                    "V2 camera %s: perspective correction failed: %s",
+                    self._camera_name, err,
+                )
+                return image
+        if self._calibration is None and time.monotonic() >= self._calibration_next_try:
+            raw = await self.coordinator.protocol.camera_calibration_file()
+            self._calibration = parse_calibration(raw) if raw else None
+            if self._calibration is None:
+                _LOGGER.debug(
+                    "V2 camera %s: no usable calibration; showing raw photos",
+                    self._camera_name,
+                )
+                self._calibration_next_try = time.monotonic() + CALIBRATION_RETRY
+        if self._calibration is None or self.hass is None:
+            return image
+        try:
+            return await self.hass.async_add_executor_job(
+                correct_image, image, self._calibration,
+                _camera_view(self.coordinator),
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "V2 camera %s: correction failed: %s", self._camera_name, err,
+            )
+            return image
+
+    async def _image(self, max_age: timedelta) -> bytes | None:
+        """Return a photo no older than ``max_age``, taking one if needed.
+
+        When a new photo fails, the last one is returned only while it
+        is younger than ``MAX_SNAPSHOT_AGE``.
+        """
+        now = dt_util.utcnow()
+        age = now - self._last_snapshot_time
+        if self._last_snapshot is not None and age < max_age:
+            return self._last_snapshot
+        try:
+            image = await self.coordinator.protocol.camera_snap(self._camera_name)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
+            image = None
+        if image:
+            image = await self._corrected(image)
+            # Age counts from when the photo was asked for, so a live
+            # view's next frame (one interval later) takes a new photo
+            # instead of reusing this one.
+            self._last_snapshot = image
+            self._last_snapshot_time = now
+            return image
+        if age < MAX_SNAPSHOT_AGE:
+            return self._last_snapshot
+        return None
 
     async def async_camera_image(
         self,
         width: int | None = None,
         height: int | None = None,
     ) -> bytes | None:
-        now = dt_util.utcnow()
-        if (
-            self._last_snapshot is not None
-            and now - self._last_snapshot_time < MIN_SNAPSHOT_INTERVAL
-        ):
-            return self._last_snapshot
-        try:
-            image = await self.coordinator.protocol.camera_snap(self._camera_name)
-        except Exception as err:
-            _LOGGER.debug("V2 camera %s snap failed: %s", self._camera_name, err)
-            return self._last_snapshot
-        if image:
-            self._last_snapshot = image
-            self._last_snapshot_time = now
-        return self._last_snapshot
+        return await self._image(MIN_SNAPSHOT_INTERVAL)
 
     async def handle_async_mjpeg_stream(
         self, request: web.Request,
     ) -> web.StreamResponse | None:
-        """Multipart-MJPEG live preview at ``LIVE_FRAME_INTERVAL``.
+        """Live view: a multipart MJPEG stream of photos.
 
-        Substitute for the unimplemented WebRTC ``media_stream``
-        path (see PROTOCOL.md). HA's Lovelace picture-card renders
-        the resulting ``multipart/x-mixed-replace`` stream as a
-        continuous video feed.
+        A new frame starts every ``LIVE_FRAME_INTERVAL`` (or as soon as
+        the previous photo arrives, if that took longer).
         """
         boundary = "--xtoolframe"
         response = web.StreamResponse(
@@ -1497,31 +2225,48 @@ class _WSV2Camera(XtoolEntity, Camera):
             },
         )
         await response.prepare(request)
+        # Reuse a photo only when another viewer asked for it during
+        # this frame's interval.
+        interval = timedelta(seconds=LIVE_FRAME_INTERVAL / 2)
+        self._set_live_viewers(1)
         try:
             while True:
-                try:
-                    jpeg = await self.coordinator.protocol.camera_snap(
-                        self._camera_name,
-                    )
-                except Exception as err:
-                    _LOGGER.debug(
-                        "V2 live MJPEG %s: snap failed: %s",
-                        self._camera_name, err,
-                    )
-                    jpeg = None
+                started = time.monotonic()
+                jpeg = await self._image(interval)
                 if jpeg:
-                    await response.write(
-                        boundary.encode()
-                        + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
-                        + str(len(jpeg)).encode()
-                        + b"\r\n\r\n"
-                        + jpeg
-                        + b"\r\n"
+                    # A viewer that stops reading (for example the iOS
+                    # app after its view closes) leaves the write
+                    # waiting; end the live view instead.
+                    await asyncio.wait_for(
+                        response.write(
+                            boundary.encode()
+                            + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                            + str(len(jpeg)).encode()
+                            + b"\r\n\r\n"
+                            + jpeg
+                            + b"\r\n"
+                        ),
+                        timeout=LIVE_WRITE_TIMEOUT,
                     )
-                await asyncio.sleep(LIVE_FRAME_INTERVAL)
+                await asyncio.sleep(
+                    max(0.0, LIVE_FRAME_INTERVAL - (time.monotonic() - started))
+                )
         except (asyncio.CancelledError, ConnectionResetError):
             pass
+        except TimeoutError:
+            _LOGGER.debug(
+                "V2 camera %s: live viewer stopped reading; ending it",
+                self._camera_name,
+            )
+        finally:
+            self._set_live_viewers(-1)
         return response
+
+    def _set_live_viewers(self, change: int) -> None:
+        was_streaming = self.is_streaming
+        self._live_viewers = max(0, self._live_viewers + change)
+        if self.is_streaming != was_streaming and self.hass is not None:
+            self.async_write_ha_state()
 
 
 # --- Firmware update ----------------------------------------------------
@@ -1615,6 +2360,50 @@ class WSV2ErrorEvent(XtoolEvent):
 # --- Builders ------------------------------------------------------------
 
 
+class WSV2CalibrationSensor(XtoolEntity, SensorEntity):
+    """When Studio last calibrated the camera, with the stored offsets.
+
+    State: the camera calibration time. Attributes: the Z, focus and
+    laser offsets, as the laser stores them (mm; angles in degrees).
+    Read only; the integration never changes them.
+    """
+
+    entity_description = SensorEntityDescription(
+        key="calibration",
+        translation_key="calibration",
+        icon="mdi:tune-variant",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    )
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("calibration")
+
+    @property
+    def native_value(self) -> Any:
+        return getattr(self.coordinator.protocol, "calibration_time", None)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        info = getattr(self.coordinator.protocol, "calibration_info", None)
+        return dict(info) if info else None
+
+
+class _WSV2FlameAlarmSwitch(_WSV2ConfigSwitch):
+    """Flame alarm, with whether a fire alarm photo is stored.
+
+    ``flame_record`` is Studio's ``flameAlarmRecord``: when it is true,
+    Studio offers the photo the laser took at a fire alarm.
+    """
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        d = self.coordinator.data
+        record = getattr(d, "flame_alarm_record", None) if d is not None else None
+        return None if record is None else {"flame_record": record}
+
+
 def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     entities: list[SensorEntity] = [
         XtoolSensor(coordinator, description)
@@ -1625,6 +2414,8 @@ def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
             entities.append(XtoolSensor(coordinator, description))
     if coordinator.model.has_ink_cartridges:
         entities.extend(_build_dt002_slot_sensors(coordinator))
+    if getattr(coordinator.model, "has_laser_info", False):
+        entities.append(WSV2CalibrationSensor(coordinator))
     return entities
 
 
@@ -1672,7 +2463,14 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.RUNNING,
             )(coordinator)
         )
-    if model.has_smoking_fan:
+    if model.has_smoking_fan_install_state:
+        # The firmware reports whether the exhaust fan is installed,
+        # never whether it runs; the Exhaust fan switch shows that.
+        entities.append(_WSV2ExhaustFanInstallSensor(coordinator))
+        _remove_retired_entity(
+            coordinator, "binary_sensor", "smoking_fan_running",
+        )
+    elif model.has_smoking_fan:
         entities.append(
             _bool_sensor_factory(
                 "smoking_fan_running", "smoking_fan_running",
@@ -1818,7 +2616,7 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # injuries and property damage"). Users who need
         # programmatic control can enable it explicitly.
         entities.append(
-            _WSV2ConfigSwitch(
+            _WSV2FlameAlarmSwitch(
                 coordinator, "flame_alarm_v2", "flameAlarm",
                 "flame_alarm_v2_enabled",
                 enabled_default=False,
@@ -1938,6 +2736,8 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     model = coordinator.model
     if model.is_read_only:
         entities = []
+    if getattr(model, "has_focus_control", False) and not model.is_read_only:
+        entities.append(WSV2FocusHeight(coordinator))
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
     # to the AirPump accessory child device (the per-job-mode default
     # gear is conceptually an AirPump setting even though the wire
@@ -1976,10 +2776,25 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
             ])
     if model.has_display_screen:
         entities.append(WSV2DisplayBrightness(coordinator))
+    entities.extend(
+        _WSV2CameraThumbnailRefresh(coordinator, key, name)
+        for key, name in _camera_keys(coordinator)
+    )
+    if getattr(model, "has_camera_calibration", False) and "main" in model.camera_names:
+        entities.extend(
+            _WSV2CameraViewNumber(coordinator, *setting)
+            for setting in CAMERA_VIEW_SETTINGS
+        )
     return entities
 
 
 def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
+    model = coordinator.model
+    entities: list[SelectEntity] = [
+        _WSV2CameraPerspectiveSelect(coordinator, key, name)
+        for key, name in _camera_keys(coordinator)
+        if any(spec[0] == name for spec in getattr(model, "camera_perspectives", ()) or ())
+    ]
     # ``WSV2FlameAlarmSelect`` removed in v2.5.4 — firmware types
     # ``flameAlarm`` strictly as boolean, the writable switch already
     # covers it. ``WSV2FlameLevelSelect`` removed in v2.5.4 (firmware
@@ -1987,7 +2802,7 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
     # migrated to the Purifier accessory child device — the entity
     # surfaces only when an AP2 / AP2-Large / AP2-Max is currently
     # paired.
-    return []
+    return entities
 
 
 def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
@@ -2026,6 +2841,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
+    if coordinator.model.has_focus_control and not coordinator.model.is_read_only:
+        entities.append(WSV2Autofocus(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the
@@ -2072,6 +2889,56 @@ def build_wsv2_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
                         "mdi:fire-alert")
         )
     return cameras
+
+
+class WSV2CalibrationImage(_CameraDeviceEntity, ImageEntity):
+    """The main camera's raw photo with its calibration grid drawn on it.
+
+    Diagnostic: shows the area Studio's camera calibration covers and
+    how the lens bends it. Made once after Home Assistant starts, from a
+    new photo and the laser's calibration file, when it is first shown.
+    Nothing on the laser changes.
+    """
+
+    _attr_translation_key = "calibration_image"
+    _attr_content_type = "image/jpeg"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        _CameraDeviceEntity.__init__(self, coordinator)
+        ImageEntity.__init__(self, coordinator.hass)
+        self._set_unique_id("camera_main_calibration_image")
+        if not self._use_camera_device("main"):
+            self._attr_translation_key = "camera_main_calibration_image"
+        self._image: bytes | None = None
+        self._attr_image_last_updated = dt_util.utcnow()
+
+    async def async_image(self) -> bytes | None:
+        if self._image is not None:
+            return self._image
+        protocol = self.coordinator.protocol
+        raw = await protocol.camera_calibration_file()
+        calibration = parse_calibration(raw) if raw else None
+        if calibration is None:
+            return None
+        photo = await protocol.camera_snap("main")
+        if not photo:
+            return None
+        self._image = await self.hass.async_add_executor_job(
+            calibration_overlay, photo, calibration,
+        )
+        return self._image
+
+
+def build_wsv2_images(coordinator: XtoolCoordinator) -> list[ImageEntity]:
+    """The main camera's calibration image, where the laser has one."""
+    model = coordinator.model
+    if (
+        getattr(model, "has_camera_calibration", False)
+        and "main" in (getattr(model, "camera_names", ()) or ())
+    ):
+        return [WSV2CalibrationImage(coordinator)]
+    return []
 
 
 def build_wsv2_updates(coordinator: XtoolCoordinator) -> list[UpdateEntity]:

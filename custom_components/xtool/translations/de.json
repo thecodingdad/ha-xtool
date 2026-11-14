@@ -75,6 +75,20 @@
   },
   "entity": {
     "sensor": {
+      "engraving_lens": {
+        "name": "Gravurlinse",
+        "state": {
+          "big": "Oberfläche",
+          "small": "Innen",
+          "none": "Keine"
+        }
+      },
+      "wifi_signal": {
+        "name": "WLAN-Signal"
+      },
+      "calibration": {
+        "name": "Kalibrierung"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -102,6 +116,9 @@
           "working_api": "Auftrag (API)",
           "working_button": "Auftrag (Taste)",
           "measure_area": "Bereich messen",
+          "focusing": "Fokussiert",
+          "warming_up": "Aufwärmen",
+          "laser_overheat": "Laser überhitzt",
           "unknown": "Unbekannt"
         }
       },
@@ -422,6 +439,9 @@
       },
       "filter_installed": {
         "name": "Luftfilter eingesetzt"
+      },
+      "smoking_fan_installation": {
+        "name": "Abluftventilator-Installation"
       }
     },
     "camera": {
@@ -556,6 +576,36 @@
       }
     },
     "number": {
+      "camera_thumbnail_refresh": {
+        "name": "Kamera Vorschaubild-Aktualisierungsintervall"
+      },
+      "thumbnail_refresh": {
+        "name": "Vorschaubild-Aktualisierungsintervall"
+      },
+      "crop_width": {
+        "name": "Bildausschnitt Breite"
+      },
+      "crop_height": {
+        "name": "Bildausschnitt Höhe"
+      },
+      "crop_center_x": {
+        "name": "Bildausschnitt Mitte X"
+      },
+      "crop_center_y": {
+        "name": "Bildausschnitt Mitte Y"
+      },
+      "camera_main_crop_width": {
+        "name": "Hauptkamera Bildausschnitt Breite"
+      },
+      "camera_main_crop_height": {
+        "name": "Hauptkamera Bildausschnitt Höhe"
+      },
+      "camera_main_crop_center_x": {
+        "name": "Hauptkamera Bildausschnitt Mitte X"
+      },
+      "camera_main_crop_center_y": {
+        "name": "Hauptkamera Bildausschnitt Mitte Y"
+      },
       "accessory_ductfan_manual_gear": {
         "name": "Manuelle Stufe"
       },
@@ -648,9 +698,20 @@
       },
       "accessory_largepurifierv3_auto_off_timeout": {
         "name": "Abschalt-Verzögerung"
+      },
+      "focus_height": {
+        "name": "Fokushöhe"
       }
     },
     "select": {
+      "perspective": {
+        "name": "Perspektive",
+        "state": {
+          "uncorrected": "Unkorrigiert",
+          "rotated": "Gedreht",
+          "straightened": "Begradigt"
+        }
+      },
       "flame_alarm_sensitivity": {
         "name": "Feueralarm-Empfindlichkeit",
         "state": {
@@ -796,6 +857,17 @@
       },
       "time_sync": {
         "name": "Zeit synchronisieren"
+      },
+      "autofocus": {
+        "name": "Autofokus"
+      }
+    },
+    "image": {
+      "calibration_image": {
+        "name": "Kalibrierung"
+      },
+      "camera_main_calibration_image": {
+        "name": "Kalibrierung der Hauptkamera"
       }
     },
     "event": {
@@ -864,6 +936,85 @@
           }
         }
       }
+    }
+  },
+  "device": {
+    "camera_main": {
+      "name": "{laser} Hauptkamera"
+    },
+    "camera_deep": {
+      "name": "{laser} Tiefenkamera"
+    },
+    "camera_overview": {
+      "name": "{laser} Übersichtskamera"
+    },
+    "camera_closeup": {
+      "name": "{laser} Nahkamera"
+    },
+    "camera_far": {
+      "name": "{laser} Übersichtskamera"
+    },
+    "camera_near": {
+      "name": "{laser} Nahkamera"
+    },
+    "camera_side": {
+      "name": "{laser} Seitenkamera"
+    }
+  },
+  "services": {
+    "focus": {
+      "name": "Fokus",
+      "description": "Bewegt den Fokus des Lasers wie die manuelle Fokussierung in xTool Studio: um einen Schritt mit Vorzeichen (mehrfach wiederholt) oder direkt auf eine Materialstärke. Hält bei 0 oder 150 mm an. Abgelehnt, während ein Auftrag läuft, der Laser fokussiert oder misst, oder wenn er einen Fehler meldet.",
+      "fields": {
+        "step": {
+          "name": "Schritt",
+          "description": "Schritt in mm mit Vorzeichen: positiv nach oben, negativ nach unten."
+        },
+        "steps": {
+          "name": "Schritte",
+          "description": "Wie oft der Schritt angewendet wird."
+        },
+        "thickness": {
+          "name": "Materialstärke",
+          "description": "Materialstärke für den Fokus in mm (0-150), wie Studio sie anzeigt."
+        }
+      }
+    },
+    "camera": {
+      "name": "Kamera-Bildausschnitt",
+      "description": "Legt den Teil der Arbeitsfläche fest, den die entzerrte Hauptkamera zeigt (in mm), und aktualisiert ihr Bild. Einer der vier Werte genügt; die anderen bleiben. Eine Breite oder Höhe von 0 zeigt das ganze Foto in dieser Richtung.",
+      "fields": {
+        "crop_width": {
+          "name": "Bildausschnitt Breite",
+          "description": "Breite des Bereichs in mm (20-460) oder 0 für das ganze Foto quer."
+        },
+        "crop_height": {
+          "name": "Bildausschnitt Höhe",
+          "description": "Höhe des Bereichs in mm (20-460) oder 0 für das ganze Foto hoch."
+        },
+        "crop_center_x": {
+          "name": "Bildausschnitt Mitte X",
+          "description": "Mitte des Bereichs in mm von der Mitte des kalibrierten Bereichs; positiv nach rechts."
+        },
+        "crop_center_y": {
+          "name": "Bildausschnitt Mitte Y",
+          "description": "Mitte des Bereichs in mm von der Mitte des kalibrierten Bereichs; positiv nach unten."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "focus_wrong_entity": {
+      "message": "Diese Entität ist keine xTool-Fokushöhe."
+    },
+    "focus_needs_step_or_thickness": {
+      "message": "Gib entweder einen Schritt oder eine Materialstärke an."
+    },
+    "camera_wrong_entity": {
+      "message": "Diese Kamera kann nicht zugeschnitten werden. Wähle eine xTool-Hauptkamera, die der Laser kalibriert."
+    },
+    "camera_needs_a_value": {
+      "message": "Gib mindestens einen Wert für den Bildausschnitt an."
     }
   }
 }

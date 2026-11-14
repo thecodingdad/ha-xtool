@@ -102,10 +102,10 @@ The available options are gated by the device's protocol family — only relevan
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when device is unreachable. **F2 Ultra UV** also shows, as Studio does: Focusing (autofocus), Warming up (the UV laser is not ready yet) and Laser overheat |
 | Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
 | Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
-| Last job time | Last completed job duration |
+| Last job time | Last completed job duration. **F2 Ultra UV:** from the laser's job result, after each job; kept across Home Assistant restarts |
 | Working mode | Current working mode (cut / engrave / knife / inkjet / …). REST V1 + D-series only — V2 firmware uses this field as a `HANDLE`/`NORMAL` enum surfaced through the *Stops when moved* switch instead |
 | Working time | Lifetime working hours |
 | Session count | Lifetime job-start count |
@@ -132,11 +132,14 @@ The available options are gated by the device's protocol family — only relevan
 | Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni only.** Active print job and queue length |
 | Active alarms | **O1 Omni only.** Number of active alarms; the `alarms` attribute lists code / level / message (codes match xTool Studio) |
 | UV lamp runtime / Air purifier runtime | **O1 Omni only.** Lifetime counters (diagnostic) |
+| Engraving lens | **F2 Ultra UV**: the fitted lens: Surface, Inner, or None (Studio's Surface engraving lens, Inner engraving lens, or no lens detected) |
 
 #### Diagnostic Sensors
 
 | Entity | Description |
 |---|---|
+| Wi-Fi signal | **F2 Ultra UV**: Wi-Fi signal strength in dBm |
+| Calibration | **F2 Ultra UV**: when Studio last calibrated the camera. Attributes: the stored Z, focus and laser offsets (read only; the integration never changes them) |
 | IP address | Device IP address |
 | Laser power | Laser-module power in watts |
 | Laser module | Laser-module type (e.g. "Diode", "IR") |
@@ -161,7 +164,8 @@ The available options are gated by the device's protocol family — only relevan
 | Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |
 | Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
 | Cooling fan | Cooling fan currently running |
-| Exhaust fan | Smoke-extraction fan currently running |
+| Exhaust fan | Smoke-extraction fan currently running (not on the F2 Ultra UV) |
+| Exhaust fan installation | **F2 Ultra UV only.** OK, or Problem when the laser reports no exhaust fan installed (Studio warns "Exhaust fan installation abnormal" before a job) |
 | CPU fan | CPU cooling fan currently running |
 | UV fire sensor | UV-based flame-detector trip |
 | Water pump | Water-cooling pump running |
@@ -183,14 +187,14 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Power | Linked smart plug (only when configured in integration options) |
 | Buzzer reminders / Beep | Audio feedback enable |
 | Move stop | Emergency-movement-stop toggle |
-| Exhaust fan | Manual smoke-extraction fan toggle |
+| Exhaust fan | Manual smoke-extraction fan toggle. The F2 Ultra UV never reports whether the fan runs, so it shows off after the laser connects and then follows HA's own commands |
 | Cooling fan | Manual cooling-fan toggle |
 | Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
 | Purifier auto-continue | Keep purifier running after job ends |
-| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED |
+| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED. On V2 lasers the red dot shows on after the laser connects (it is always on when the laser powers on), unless the laser reports otherwise, and then follows HA's own commands |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
-| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control |
+| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control. Attribute `flame_record` (**F2 Ultra UV**): true while the laser stores a photo from a fire alarm (Studio offers it) |
 | Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
 | Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
 | Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |
@@ -206,16 +210,46 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | IR-light auto-off | IR illumination auto-off (0-3600 s) |
 | Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
 | Camera exposure (overview / close-up) | Camera exposure values (0-255) |
+| Camera thumbnail refresh interval | WS-V2 cameras, one per camera (on the camera's own device as "Thumbnail refresh interval" when the laser has several cameras). How often the camera's picture on the device page refreshes, 5 s to 10 min (Home Assistant's standard is 5 min). Each refresh is a new camera state sent to every open Home Assistant screen, and a photo from the laser for each screen showing it |
+| Crop width / height / center X / center Y | **F2 Ultra UV**, on the Main camera device. The part of the work surface the straightened main camera shows, in mm. Default: the 200 × 200 mm calibrated area. A width or height of 0 shows the widest area the photo fills that way. The centre moves from the centre of that area (X right, Y down). Areas outside the calibrated area are extended from its edge and are less accurate. A wider shape (for example 267 × 200 mm) fits camera dialogs without scrolling |
 | Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
 | Display brightness | Built-in touchscreen brightness (0-100 %) |
 | Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
 | Work area limit (left / right / up / down) | M311 work-area limits (mm) |
+| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Only with the surface lens, as in Studio: with the inner engraving lens the job sets the height from the material's size, so Focus height is Unknown and moves and Autofocus are refused. Nothing is stored on the laser |
+
+#### Action `xtool.camera`
+
+Sets the crop of a straightened main camera (F2 Ultra UV) and refreshes its picture. Give any of `crop_width`, `crop_height`, `crop_center_x` and `crop_center_y` in mm; the others stay. A width or height of 0 shows the whole photo that way. The Crop numbers show the new values.
+
+```yaml
+action: xtool.camera
+target:
+  entity_id: camera.xtool_f2_ultra_uv_main_camera
+data:
+  crop_width: 267
+  crop_height: 200
+```
+
+#### Action `xtool.focus`
+
+Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to. When a step move stops at a limit, the head moves there and the action then reports an error that says so (for example "Focus moved to 0.0 mm, the lower limit. 35 steps of -1.0 mm from 34.0 mm would have gone to -1.0 mm."), so Home Assistant shows it; an automation stops at that action unless it continues on error.
+
+```yaml
+action: xtool.focus
+target:
+  entity_id: number.xtool_f2_ultra_uv_focus_height
+data:
+  step: -0.5
+  steps: 2
+```
 
 ### Select
 
 | Entity | Description |
 |---|---|
 | Purifier speed | Off / Low / Medium / High — AP2 / external purifier speed |
+| Perspective | **F2 Ultra UV**, on the Deep camera device. Uncorrected: the photo as the camera takes it (upside down and at an angle). Rotated: turned upright. Straightened (default): turned upright and its perspective corrected, so a flat surface looks straight and square from above. Kept by Home Assistant; the laser is not involved |
 | Flame alarm mode | Mode 1-4 — flame-detection mode preset |
 | Red-cross mode | Cross-laser pointer / Low-light mode |
 
@@ -228,15 +262,18 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 ### Camera
 
+On a laser with several cameras, each camera and its settings are on their own device, connected to the laser (for example "xTool F2 Ultra UV Main camera"). Entity IDs are the same as when they were on the laser's device.
+
 | Entity | Description |
 |---|---|
-| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Streams live MJPEG with snapshot fallback |
-| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). Streams live MJPEG with snapshot fallback |
+| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
+| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle; its Perspective select turns the photos upright and, by default, also straightens them, so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
 | Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
 | Flame record | Snapshot of the most recent flame-detection event |
+| Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
 
 ### Button
 
@@ -251,6 +288,7 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 | Home laser head | Move laser head back to (0, 0) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
+| Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |
 | Reboot | Soft reboot |
 | Sync time | Push HA local time to device |
 | Quit LightBurn | Leave LightBurn standby mode |

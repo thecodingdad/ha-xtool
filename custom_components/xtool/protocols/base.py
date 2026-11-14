@@ -124,6 +124,14 @@ class XtoolDeviceModel:
     has_flame_alarm: bool = False
     has_air_assist_state: bool = False  # REST: poll /peripheral/airassist for connect state
     has_smoking_fan: bool = False
+    # The firmware answers ``/v1/peripheral/param?type=smoking_fan``
+    # with whether the exhaust fan is installed (``install`` or
+    # ``uninstall``), as Studio's GS009-CLASS-4 bundle reads it. The
+    # fan's on/off state is never reported.
+    has_smoking_fan_install_state: bool = False
+    # machineInfo's ``mac`` is not the laser's Wi-Fi MAC on this
+    # firmware, and no reply carries the real one: show no MAC.
+    has_wrong_machine_info_mac: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
     # Some V2 firmwares only drive the fill-light LED array above a
@@ -152,6 +160,22 @@ class XtoolDeviceModel:
     # - P2 / P2S / P3                → ``("overview", "closeup")``
     #   (V1 legacy naming carried through to their V2 variant).
     camera_names: tuple[str, ...] = ()
+    # The laser stores a calibration grid for its ``main`` camera
+    # (``global_calib.json``); photos are straightened with it, as
+    # Studio does (F2 Ultra UV).
+    has_camera_calibration: bool = False
+    # Cameras that look at the bed at an angle: ``(camera name,
+    # perspective coefficients, photo size, result size)``. The eight
+    # Pillow perspective coefficients map the result to the photo and
+    # were measured on a cutting mat so its grid is straight, square
+    # and upright.
+    camera_perspectives: tuple[
+        tuple[str, tuple[float, ...], tuple[int, int], tuple[int, int]], ...
+    ] = ()
+    # ``(camera name, degrees)``: the turn (counter-clockwise) that sets
+    # such a camera upright, used when its perspective correction is
+    # switched off.
+    camera_rotations: tuple[tuple[str, float], ...] = ()
     has_tilt_sensor: bool = False
     has_moving_sensor: bool = False
     has_limit_switch: bool = False
@@ -163,6 +187,9 @@ class XtoolDeviceModel:
     has_camera_exposure: bool = False
     has_fire_record: bool = False
     has_laser_head_position: bool = False
+    # Focus height read and moved as Studio's manual focus does
+    # (``/v1/laser-head/focus/control``; F2 Ultra UV).
+    has_focus_control: bool = False
     has_mode_switch: bool = False
     has_purifier_timeout: bool = False
     has_water_cooling: bool = False  # REST: F1 Ultra fiber-laser water loop
@@ -170,11 +197,21 @@ class XtoolDeviceModel:
     has_workhead_id: bool = False  # REST: M1 Ultra detects mounted tool head
     has_cpu_fan: bool = False  # REST: M1 Ultra CPU fan
     has_uv_fire: bool = False  # REST: F1U / M1U / P2S UV-based fire sensor
+    # WS-V2 F2 Ultra UV: Status shows Focusing, Warming up (UV laser not
+    # ready) and Laser overheat, read and pushed as Studio does.
+    has_uv_laser_status: bool = False
+    # WS-V2 F2 Ultra UV: Engraving lens and Wi-Fi signal sensors, the
+    # Calibration sensor (read only) and the flame record, read as
+    # Studio reads them.
+    has_laser_info: bool = False
     has_gyro: bool = False  # REST: P2 / P2S / F1U / M1U accelerometer
     has_display_screen: bool = False  # REST: F1 Ultra touchscreen brightness
     has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral
     has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
     # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
+    # WS-V2: Last job time only, from the job result push's ``timeUse``
+    # (F2 Ultra UV; its statistics carry no time)
+    has_job_result_time: bool = False
     # WS-V2: xTool "Auto mode" / Material-Detection access control
     # (config key ``mdMode``). Studio bundle labels the toggle
     # ``enable_access_control`` and gates it per-model via an
@@ -192,6 +229,9 @@ class XtoolDeviceModel:
     has_ambient_sensors: bool = False  # enclosure temperature + humidity
     # Last job time, working / standby time, UV lamp + air purifier runtime
     has_lifetime_counters: bool = False
+    # WS-V2: working time only, from machineInfo's ``worktime`` (F2
+    # Ultra UV; its statistics carry no time)
+    has_machine_info_worktime: bool = False
     # Hides the shared WS-V2 controls (Beep + Cover-check switches,
     # exhaust post-run Number, Pause / Resume / Cancel buttons) on
     # models whose write surface differs and isn't verified yet.
@@ -251,6 +291,9 @@ class XtoolDeviceState:
     position_x: float = 0.0
     position_y: float = 0.0
     position_z: float = 0.0
+    # Material thickness the laser is focused on, in mm, as Studio
+    # shows it (laser-head Z minus 6). None until the laser reports it.
+    focus_thickness: float | None = None
 
     # Settings
     # ``flame_alarm`` carries the legacy 3-state sensitivity int
@@ -285,6 +328,9 @@ class XtoolDeviceState:
     hardware_type: str = ""  # /gethardwaretype
     # DT001 inkjet-specific
     cpu_temp: int | None = None
+    engraving_lens: str | None = None  # WS-V2: none / small / big
+    wifi_signal: int | None = None  # WS-V2: dBm
+    flame_alarm_record: bool | None = None  # WS-V2: a fire photo is stored
     ambient_temp: float | None = None
     ambient_humidity: float | None = None
     heating_status: int | None = None
@@ -310,6 +356,7 @@ class XtoolDeviceState:
     drawer_open: bool | None = None  # /peripheral/drawer
     cooling_fan_running: bool | None = None  # /peripheral/cooling_fan
     smoking_fan_running: bool | None = None  # /peripheral/smoking_fan (REST)
+    smoking_fan_installed: bool | None = None  # V2 smoking_fan install state
     cpu_fan_running: bool | None = None  # /peripheral/cpu_fan (M1U)
     uv_fire_alarm: bool | None = None  # /peripheral/uv_fire_sensor
     water_pump_running: bool | None = None  # /peripheral/water_pump (F1U)

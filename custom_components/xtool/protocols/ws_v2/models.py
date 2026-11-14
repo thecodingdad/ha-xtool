@@ -210,19 +210,42 @@ XTOOL_F2_ULTRA_SINGLE_WSV2 = XtoolDeviceModel(
 )
 
 
+# Upright only (perspective correction off): upside down and about
+# 28.5 degrees off the work-surface axes.
+F2_ULTRA_UV_DEEP_ROTATION = ("deep", 151.5)
+
+F2_ULTRA_UV_DEEP_PERSPECTIVE = (
+    "deep",
+    (-2.48556, -1.1963, 3669.39, 1.2289, -2.13509, 1629.09, -4.62593e-05, 8.62153e-05),
+    (4000, 3000),
+    (1000, 750),
+)
+
 XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     model_id="F2UltraUV",
     name="xTool F2 Ultra UV",
+    has_job_result_time=True,
     protocol_class=WSV2Protocol,
     coordinator_class=WSV2Coordinator,
     has_beeper=True,
     has_flame_alarm=True,
     has_move_stop=True,
     has_smoking_fan=True,
+    has_smoking_fan_install_state=True,  # Studio GS009-CLASS-4 addonStatus
+    has_machine_info_worktime=True,  # machineInfo worktime, as Studio shows
+    has_wrong_machine_info_mac=True,  # machineInfo mac is not the Wi-Fi MAC
     has_machine_lock=True,
     has_mode_switch=True,
+    has_focus_control=True,  # Studio's manual focus (focus/control goTo)
     has_camera=True,
     camera_names=("main", "deep"),  # GS006 cameraMediaManager exposes main + deep
+    has_camera_calibration=True,  # global_calib.json, as Studio
+    # The deep camera sits upside down, about 28.5 degrees off the
+    # work-surface axes, and looks at the bed at an angle. This maps a
+    # 1000 x 750 result onto its 4000 x 3000 photo (measured from the
+    # grid lines of a cutting mat).
+    camera_perspectives=(F2_ULTRA_UV_DEEP_PERSPECTIVE,),
+    camera_rotations=(F2_ULTRA_UV_DEEP_ROTATION,),
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,  # GS009-CLASS-4 ships front + back channels
@@ -237,6 +260,8 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
     # would stay Unknown if the flags were set.
     firmware_content_id="xTool-f2-ultra-uv-firmware",
     firmware_machine_type="MXF",
+    has_uv_laser_status=True,
+    has_laser_info=True,
     protocol_version="V2",
     discovery_match=("F2UltraUV",),
 )
@@ -253,16 +278,28 @@ XTOOL_F2_ULTRA_UV_WSV2 = XtoolDeviceModel(
 XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     model_id="F2UltraUVClass1",
     name="xTool F2 Ultra UV (Class 1)",
+    has_job_result_time=True,
     protocol_class=WSV2Protocol,
     coordinator_class=WSV2Coordinator,
     has_beeper=True,
     has_flame_alarm=True,
     has_move_stop=True,
     has_smoking_fan=True,
+    has_smoking_fan_install_state=True,  # Studio GS009-CLASS-4 addonStatus
+    has_machine_info_worktime=True,  # machineInfo worktime, as Studio shows
+    has_wrong_machine_info_mac=True,  # machineInfo mac is not the Wi-Fi MAC
     has_machine_lock=True,
     has_mode_switch=True,
+    has_focus_control=True,  # Studio's manual focus (focus/control goTo)
     has_camera=True,
     camera_names=("main", "deep"),
+    has_camera_calibration=True,  # global_calib.json, as Studio
+    # The deep camera sits upside down, about 28.5 degrees off the
+    # work-surface axes, and looks at the bed at an angle. This maps a
+    # 1000 x 750 result onto its 4000 x 3000 photo (measured from the
+    # grid lines of a cutting mat).
+    camera_perspectives=(F2_ULTRA_UV_DEEP_PERSPECTIVE,),
+    camera_rotations=(F2_ULTRA_UV_DEEP_ROTATION,),
     has_camera_exposure=True,
     has_fill_light=True,
     has_fill_light_dual=True,
@@ -273,6 +310,8 @@ XTOOL_F2_ULTRA_UV_CLASS1_WSV2 = XtoolDeviceModel(
     has_md_mode=True,
     firmware_content_id="xTool-f2-ultra-uv-class1-firmware",
     firmware_machine_type="MXF",
+    has_uv_laser_status=True,
+    has_laser_info=True,
     protocol_version="V2",
     discovery_match=("F2UltraUVClass1",),
 )

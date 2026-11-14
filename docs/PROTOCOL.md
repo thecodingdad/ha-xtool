@@ -1207,7 +1207,7 @@ Standalone peripheral paths (mostly carried over from V1):
 | `/v1/wifi/ap-list` | `GET` | — | — | Array of visible APs (de-duplicated by SSID, kept by highest `level`). |
 | `/v1/wifi/connected-ssid` | `GET` | — | — | `{ssid}` — currently-joined SSID. |
 | `/v1/wifi/credentials` | `PUT` | — | `{ssid, psk}` | Set credentials (replaces V1 `M2001`). |
-| `/v1/wifi/interfaces` | `GET` | — | — | Array of interfaces (`[{iface:"wlan0", ip, …}]`). |
+| `/v1/wifi/interfaces` | `GET` | — | — | Array of interfaces (`[{iface:"wlan0", ip, …}]`). No MAC: the F2 Ultra UV (40.130.023.00.ht5) answers `[{iface:"lo", ip}, {iface:"usb0", ip}, {iface:"usb1", ip}, {iface:"wlan0", ip}]`. |
 | `/v1/net/wifi_signal_strength` | `POST` | — | `{name:"wlan0"}` | `{wifi_signal_strength:<rssi-int>}` |
 
 #### BLE accessories (parts / dongle)
@@ -1319,10 +1319,33 @@ class).
 
 Studio uses this on demand only — there is no Studio-driven
 camera-refresh interval. Implementations that want a "live preview"
-have to drive their own poll loop. Empirically a 1 Hz cadence is
-the lowest the device firmware tolerates without bunching the JPEG
-encoder; faster than ~2 Hz starts to drop frames or queue snaps
-behind unfinished `file_stream` transfers.
+have to drive their own poll loop. Measured on an F2 Ultra UV
+(firmware 40.130.023.00.ht5): the snap request answers in about
+0.13 s and the ~200 KB download takes about 0.16 s, so one photo
+takes about 0.3 s. The integration takes one photo at a time (the
+transfers of two lenses would otherwise overlap) and starts a
+live-view frame every 0.4 s.
+
+Main-camera calibration (F2 Ultra UV, GS009). Studio straightens
+every main-camera photo before showing it. Its base extension's
+`downLoadConfig()` downloads `global_calib.json` from the laser with
+the file transfer above (`fileType` 3, `filename:"global_calib.json"`),
+and `correctGlobalPhoto` runs the native `GS009_CORRECT_IMAGE_WITH_Z`
+algorithm with it and the material height. The file:
+
+| Key | Example | Meaning |
+|---|---|---|
+| `grid_num_w`, `grid_num_h` | 21, 21 | Grid points across and down |
+| `data0` | `"[1084,644][1170,646]..."` | Grid points in the raw photo, row by row from the top |
+| `image_src_w`, `image_src_h` | 4000, 3000 | Raw photo size |
+| `image_dst_w`, `image_dst_h` | 2000, 2000 | Straightened image size; the grid spreads evenly over it |
+| `thick_num`, `thick0` | 1, 0.0 | Calibrated material heights |
+| `calib_time` | `"2025-11-09 09:41:58"` | When the laser was calibrated |
+
+Mapping each grid cell (a quadrilateral in the photo) onto its
+rectangle in the result corrects the keystone and the lens
+distortion together. The integration does this with Pillow's mesh
+transform for the calibrated plane only (no material height).
 
 Per-model step-1 variants (audited from each Studio bundle):
 
@@ -1342,6 +1365,14 @@ The third WS channel (`function=media_stream`) carries the live
 camera video over **WebRTC**, not a simple WS-MJPEG stream.
 Signaling rides the `/v1/signaling/*` and `/v1/platform/camera/*`
 endpoints (see below).
+
+On the F2 Ultra UV (firmware 40.130.023.00.ht5) the live video is not
+available: `POST /v1/platform/camera/live` with `{name, action:"start"}`
+answers code -1 `camera disabled` for `main`, `deep`, `far`, `upside`
+and `0`, and `GET /v1/platform/camera/list` answers code -1
+`getCameraList failed`. Studio's GS009 bundles never call these; they
+only take photos. Only the P3 bundle calls `/v1/platform/camera/live`
+(see upstream PR #14).
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -1533,7 +1564,7 @@ device model exposes the peripheral):
 | `drawer` | Drawer state. Same polarity as `gap`: `state:"on"` = closed (drawer in slot), `state:"off"` = open / pulled out. |
 | `airassistV2` | Air-Assist BLE connect state. **Not exposed on V2 firmware** — HJ003 / GS003 reject the GET with `code -3: error action type !`. |
 | `cooling_fan` | Cooling-fan run state. **Not exposed on HJ003** — same `code -3`. |
-| `smoking_fan` | Exhaust-fan run state. **Not exposed on HJ003** — same `code -3`. |
+| `smoking_fan` | Exhaust-fan run state. **Not exposed on HJ003** — same `code -3`. On the F2 Ultra UV (GS009-CLASS-4) it answers whether the fan is installed instead: `state:"install"` or `"uninstall"` (Studio's `addonStatus` → `smokingFanStatus`). The run state is never reported; pushes with `module:"SMOKING_FAN"`, `type:"DEVICE_ADD"` / `"DEVICE_REMOVE"` announce the fan being plugged in or removed. |
 | `cpu_fan` | CPU-fan run state. |
 | `uv_fire_sensor` | UV flame-detector trip. |
 | `water_pump` / `water_line` | Water-loop pump + flow OK. Returns `code 10: device not support` on models without water cooling. |
@@ -1662,6 +1693,10 @@ subsequent polls.
 |---|---|
 | F1 Ultra V2 / GS003 / P3 | `timeModeWorking`, `timeSystemWork`, `numOnlineWorking`, `numOfflineWorking`, `toolRuntime` |
 | MetalFab / HJ003 | `clickFlashDrive`, `clickLocalFile`, `fireboxV1_5Used`, `flashDriveGoProcessing`, `insertFlashDrive`, `lastProcessed`, `localFileGoProcessing`, `numOfflineWorking`, `numOnlineWorking` (no time-based counters) |
+| F2 Ultra UV / GS009-CLASS-4 | `numOnlineWorking`, `numOfflineWorking` and other counts, no time. Its working time is `worktime` (seconds) in `/v1/device/machineInfo` and the `/device/info` push; `worktimes` there is the job count. |
+
+When statistics carries no time, the integration uses machineInfo's
+`worktime` for the Working time sensor.
 
 Consumers should treat the absence of any key as "this firmware
 doesn't track that counter" — the corresponding sensor stays

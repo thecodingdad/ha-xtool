@@ -378,6 +378,10 @@ class WSV2Coordinator(XtoolCoordinator):
         from .entities import build_wsv2_cameras
         return build_wsv2_cameras(self)
 
+    def build_images(self) -> list["ImageEntity"]:
+        from .entities import build_wsv2_images
+        return build_wsv2_images(self)
+
     def build_events(self) -> list["EventEntity"]:
         from .entities import build_wsv2_events
         return build_wsv2_events(self)
@@ -411,6 +415,8 @@ class WSV2Coordinator(XtoolCoordinator):
             XtoolStatus.SLEEPING,
             XtoolStatus.INITIALIZING,
             XtoolStatus.PROCESSING_READY,
+            XtoolStatus.FOCUSING,
+            XtoolStatus.WARMING_UP,
         }
         framing = {XtoolStatus.FRAMING}
         errors = {
