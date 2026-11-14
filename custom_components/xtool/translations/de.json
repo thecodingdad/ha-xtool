@@ -75,6 +75,9 @@
   },
   "entity": {
     "sensor": {
+      "accessory_ductfanv3_post_run": {
+        "name": "Zeit, die der Inline-Lüfter weiterläuft"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -182,9 +185,6 @@
         "name": "Reiniger-Stufe"
       },
       "accessory_ductfan_current_speed": {
-        "name": "Aktuelle Drehzahl"
-      },
-      "accessory_ductfanv3_current_speed": {
         "name": "Aktuelle Drehzahl"
       },
       "accessory_purifier_filter_pre": {
@@ -562,9 +562,6 @@
       "accessory_ductfanv3_manual_gear": {
         "name": "Manuelle Stufe"
       },
-      "accessory_ductfanv3_post_run": {
-        "name": "Zeit, die der Inline-Lüfter weiterläuft"
-      },
       "accessory_ductfan_post_run": {
         "name": "Zeit, die der Inline-Lüfter weiterläuft"
       },
@@ -676,9 +673,6 @@
           "medium": "Mittel",
           "high": "Hoch"
         }
-      },
-      "accessory_ductfanv3_mode_speed": {
-        "name": "Lüfter"
       },
       "accessory_purifier_gear_select": {
         "name": "Reiniger-Stufe einstellen"
@@ -799,6 +793,17 @@
       }
     },
     "event": {
+      "accessory_ductfanv3_alert": {
+        "name": "Warnung",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fan_stall": "Lüfter blockiert",
+              "cleaning_needed": "Reinigung erforderlich"
+            }
+          }
+        }
+      },
       "button": {
         "name": "Taste",
         "state_attributes": {

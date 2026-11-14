@@ -75,6 +75,9 @@
   },
   "entity": {
     "sensor": {
+      "accessory_ductfanv3_post_run": {
+        "name": "Time the inline fan continues to work"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -182,9 +185,6 @@
         "name": "Purifier speed"
       },
       "accessory_ductfan_current_speed": {
-        "name": "Current speed"
-      },
-      "accessory_ductfanv3_current_speed": {
         "name": "Current speed"
       },
       "accessory_purifier_filter_pre": {
@@ -607,9 +607,6 @@
       "accessory_ductfanv3_manual_gear": {
         "name": "Manual gear"
       },
-      "accessory_ductfanv3_post_run": {
-        "name": "Time the inline fan continues to work"
-      },
       "accessory_ductfan_post_run": {
         "name": "Time the inline fan continues to work"
       },
@@ -718,9 +715,6 @@
           "medium": "Medium",
           "high": "High"
         }
-      },
-      "accessory_ductfanv3_mode_speed": {
-        "name": "Fan"
       },
       "accessory_purifier_gear_select": {
         "name": "Set purifier speed"
@@ -841,6 +835,17 @@
       }
     },
     "event": {
+      "accessory_ductfanv3_alert": {
+        "name": "Alert",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "fan_stall": "Fan stall",
+              "cleaning_needed": "Cleaning needed"
+            }
+          }
+        }
+      },
       "button": {
         "name": "Button",
         "state_attributes": {
