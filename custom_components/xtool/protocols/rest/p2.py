@@ -65,9 +65,10 @@ SLOW_READ_SECONDS = 60.0
 # Studio's laser head moves: speed (mm/min) and how long the P2 may take
 P2_HEAD_SPEED = 9600
 P2_HEAD_WAIT_MS = 30000
-# Studio's limits for laser head moves, mm from home
-P2_HEAD_MAX_X = 620.0
-P2_HEAD_MAX_Y = 308.0
+# How far the laser head travels, mm from home. Studio allows 620 x 308,
+# but the P2 stops at 610 x 305 (a move further ends there)
+P2_HEAD_MAX_X = 610.0
+P2_HEAD_MAX_Y = 305.0
 
 # Studio's config keys for the P2 (its deviceInfo read), plus Baseplate detection
 P2_CONFIG_KEYS: tuple[str, ...] = (

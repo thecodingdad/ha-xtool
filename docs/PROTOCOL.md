@@ -2337,7 +2337,7 @@ cutting mat and the red dots):
 | Actual work bed | -20.5 | -40.5 | 684 | 376 |
 | Process on slats, Honeycomb panel | 0 | 0 | 600 | 305 |
 | Slats removed | 50 | 0 | 500 | 250 |
-| Head travel (Studio's limits) | 0 | 0 | 620 | 308 |
+| Head travel (the P2 stops there; Studio's limits are 620 x 308) | 0 | 0 | 610 | 305 |
 | Close camera picture | head + 55 | head - 30 | 140 | 100 |
 | IR measuring spot (`laserMeasureOffset`) | head + 64.3 | head + 0.9 | | |
 | Slat 0 reference (348 from the left wall) | 327.5 | | | |

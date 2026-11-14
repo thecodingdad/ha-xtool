@@ -1363,11 +1363,11 @@
       "fields": {
         "x": {
           "name": "X",
-          "description": "Zielposition in mm von der Grundstellung (0-620); X wächst nach rechts."
+          "description": "Zielposition in mm von der Grundstellung (0-610); X wächst nach rechts."
         },
         "y": {
           "name": "Y",
-          "description": "Zielposition in mm von der Grundstellung (0-308); Y wächst nach vorne."
+          "description": "Zielposition in mm von der Grundstellung (0-305); Y wächst nach vorne."
         },
         "step_x": {
           "name": "Schritt X",
