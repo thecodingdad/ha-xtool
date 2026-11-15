@@ -16,6 +16,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.selector import (
     ColorRGBSelector,
     EntitySelector,
@@ -91,7 +92,48 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: Any
     ) -> ConfigFlowResult:
         """Handle DHCP discovery of an xTool device."""
+        entry = self._entry_with_mac(discovery_info.macaddress)
+        if entry is not None:
+            return await self._async_follow_address(entry, discovery_info.ip)
         return await self._async_handle_discovery(discovery_info.ip)
+
+    @callback
+    def _entry_with_mac(self, mac: str) -> ConfigEntry | None:
+        """The laser already set up whose device has this MAC address."""
+        connection = (dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))
+        dev_reg = dr.async_get(self.hass)
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.unique_id and any(
+                connection in device.connections
+                for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+            ):
+                return entry
+        return None
+
+    async def _async_follow_address(self, entry: ConfigEntry, host: str) -> ConfigFlowResult:
+        """A configured laser asked for an address (DHCP).
+
+        The MAC address says which laser it is, so the new address is not
+        asked first: the laser asks for its address while it starts, before
+        it answers. The address in use is kept while it answers, unless the
+        new one is the laser's own preferred one (such as its Ethernet).
+        """
+        await self.async_set_unique_id(entry.unique_id)
+        current = entry.data.get(CONF_HOST)
+        if host != current:
+            coordinator = getattr(entry, "runtime_data", None)
+            prefers = getattr(coordinator, "prefers_host", None)
+            if not (prefers is not None and prefers(host)) and await self._configured_host_answers(
+                entry.unique_id, host,
+            ):
+                return self.async_abort(reason="already_configured")
+            move_to = getattr(coordinator, "async_move_to", None)
+            if move_to is not None:
+                # Used at once and saved, without reloading the entry
+                await move_to(host)
+                return self.async_abort(reason="already_configured")
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        return self.async_abort(reason="already_configured")
 
     async def async_step_discovery(
         self, discovery_info: dict[str, Any]

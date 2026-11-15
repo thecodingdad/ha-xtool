@@ -278,9 +278,9 @@ class P2Coordinator(RestCoordinator):
         self.protocol._push_notify = self._on_push
         # Error codes already sent as events from a push
         self._announced: set[str] = set()
-        # The laser's addresses seen so far (Wi-Fi and Ethernet), kept
-        # across restarts; when the configured one stops answering, the
-        # others are tried
+        # The laser's addresses as it last reported them (Wi-Fi and
+        # Ethernet), kept across restarts; when the configured one stops
+        # answering, the others are tried
         self._hosts_store: Store | None = None
         self._known_hosts: list[str] = []
         self._next_host_search = 0.0
@@ -295,8 +295,12 @@ class P2Coordinator(RestCoordinator):
         mac = await self.hass.async_add_executor_job(_arp_mac, protocol.host)
         if mac and format_mac(mac) != format_mac(self.mac_address or ""):
             self.other_mac_addresses.add(format_mac(mac))
-        await self._remember_hosts([protocol.host, *protocol.addresses()])
+        await self._save_hosts([protocol.host, *protocol.addresses()])
         await self._prefer_ethernet()
+
+    def prefers_host(self, host: str) -> bool:
+        """The laser's Ethernet address, while Home Assistant uses another one."""
+        return bool(host) and host == self.protocol.ethernet_address() != self.protocol.host
 
     async def _prefer_ethernet(self) -> None:
         """Move to the Ethernet address when a cable is connected and it answers."""
@@ -308,6 +312,10 @@ class P2Coordinator(RestCoordinator):
         _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
                      self.device_name, ethernet, self.protocol.host)
         await self._move_to(ethernet)
+
+    async def async_move_to(self, host: str) -> None:
+        """Use the address a DHCP sighting found (see config_flow)."""
+        await self._move_to(host)
 
     async def _move_to(self, host: str) -> None:
         """Use the new address at once and save it, without reloading the entry."""
@@ -336,12 +344,16 @@ class P2Coordinator(RestCoordinator):
                 self._known_hosts = [str(h) for h in stored["hosts"]]
         return self._known_hosts
 
-    async def _remember_hosts(self, hosts: list[str]) -> None:
-        known = await self._load_hosts()
-        new = [h for h in dict.fromkeys(hosts) if h and h not in known]
-        if new:
-            self._known_hosts = [*known, *new]
-            await self._store().async_save({"hosts": self._known_hosts})
+    async def _save_hosts(self, hosts: list[str]) -> None:
+        """Keep only the addresses the laser reports now.
+
+        An address a DHCP server gave out earlier may belong to another
+        device by now, so old ones are not kept.
+        """
+        hosts = [h for h in dict.fromkeys(hosts) if h]
+        if hosts != await self._load_hosts():
+            self._known_hosts = hosts
+            await self._store().async_save({"hosts": hosts})
 
     async def _find_on_other_address(self) -> None:
         """When the laser stops answering, look for it at its other address."""

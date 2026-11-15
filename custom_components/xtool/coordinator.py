@@ -316,6 +316,10 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
     # WS / REST connection stayed up across the swap.
     DEVICE_INFO_REFRESH_EVERY_POLLS = 60
 
+    def prefers_host(self, host: str) -> bool:
+        """True when ``host`` is an address the laser is better reached at."""
+        return False
+
     def _should_fetch_device_info(self) -> bool:
         """Return True when the poll loop should re-fetch identity info.
 
