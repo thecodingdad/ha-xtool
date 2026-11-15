@@ -2438,7 +2438,8 @@ the cooling fan switch (the water cooling's fans), Time sync, the
 Left out because they tell nothing on the P2: Tool type and Working mode
 (never reported), Gyro X/Y/Z (`/peripheral/gyro` reads 0 rotation while
 the laser stands still; it also has `acc_*`, `pitch`, `roll`, `yaw`),
-Laser power and Laser module (fixed for the model). Task ID, CPU
+Laser power and Laser module (fixed for the model), Last distance (the
+Measured sensor has it as the attribute `sensor_distance`). Task ID, CPU
 temperature, Cooling fan running and Water pump running are created
 turned off.
 

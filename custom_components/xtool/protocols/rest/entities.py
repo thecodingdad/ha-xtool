@@ -1282,6 +1282,8 @@ _P2_LEFT_OUT = {
     "gyro_x", "gyro_y", "gyro_z", "laser_power", "laser_module",
     # Numbers that also move the head
     "laser_position_x", "laser_position_y",
+    # The Measured sensor has it as the attribute sensor_distance
+    "last_distance",
 }
 # Kept, but off until turned on
 _P2_OFF_BY_DEFAULT = {"task_id", "cpu_temp"}

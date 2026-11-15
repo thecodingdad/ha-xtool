@@ -215,11 +215,15 @@ class P2Camera(_WSV2Camera):
         )
 
 
-class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure):
+class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure, RestoreNumber):
     """A camera's exposure, on that camera's device.
 
     Studio sets 80-1000 (overview 100, or 1000 with Background brightness
     increase; close camera 150, or 500) and waits a second before the photo.
+
+    The exposure is not read while the P2 sleeps (the cameras' port is left
+    alone), so a P2 asleep when Home Assistant starts shows the last known
+    value until it wakes.
     """
 
     _attr_native_max_value = P2_EXPOSURE_MAX
@@ -230,6 +234,19 @@ class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure):
         super().__init__(coordinator, stream)
         if self._use_camera_device(stream):
             self._attr_translation_key = "exposure"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        data = self.coordinator.data
+        field = f"camera_exposure_{self._stream_name}"
+        if (
+            last is not None
+            and last.native_value
+            and data is not None
+            and not getattr(data, field)
+        ):
+            setattr(data, field, int(last.native_value))
 
     async def async_set_native_value(self, value: float) -> None:
         if not math.isfinite(value):

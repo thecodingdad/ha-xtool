@@ -229,6 +229,9 @@ class P2Protocol(RestProtocol):
         self._push_notify: Callable[[], None] | None = None
         self._http: aiohttp.ClientSession | None = None
         self._next_slow_read = 0.0
+        # Asleep at the last poll: the first poll after it wakes reads the
+        # values that are not read while it sleeps
+        self._was_asleep = False
         self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
@@ -420,6 +423,11 @@ class P2Protocol(RestProtocol):
         # Where the head is, on every poll: it moves while the P2 homes
         # after power on, and with Studio's moves
         await self._read_head_position(state)
+        asleep = state.status == XtoolStatus.SLEEPING
+        if self._was_asleep and not asleep:
+            # Just woke: the cameras' exposure was not read while it slept
+            self._next_slow_read = 0.0
+        self._was_asleep = asleep
         if started >= self._next_slow_read:
             await self._read_slow(state)
             if not self._is_offline():
