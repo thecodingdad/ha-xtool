@@ -242,9 +242,9 @@ Connected BT accessories surface as their own **child devices** hanging off the 
 
 | Entity | Description |
 |---|---|
-| Pause job | Pause the current processing job |
+| Pause | Pause the current processing job |
 | Resume job | Resume a paused job |
-| Cancel job | Cancel and stop the current job |
+| Cancel | Cancel and stop the current job |
 | Home all axes | Move laser head to home position (all axes) |
 | Home XY | Move laser head to XY home |
 | Home Z | Move laser head to Z home |

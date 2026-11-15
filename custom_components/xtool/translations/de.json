@@ -765,13 +765,13 @@
     },
     "button": {
       "pause_job": {
-        "name": "Auftrag pausieren"
+        "name": "Pausieren"
       },
       "resume_job": {
         "name": "Auftrag starten / fortsetzen"
       },
       "cancel_job": {
-        "name": "Auftrag abbrechen"
+        "name": "Abbrechen"
       },
       "home_all": {
         "name": "Alle Achsen homen"
