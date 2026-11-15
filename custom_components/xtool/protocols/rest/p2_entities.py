@@ -1199,7 +1199,7 @@ def p2_can_move(coordinator: Any) -> bool:
     return isinstance(getattr(coordinator, "protocol", None), P2Protocol)
 
 
-class P2MeasureDistance(XtoolMeasureDistance):
+class P2MeasureDistance(_CameraDeviceEntity, XtoolMeasureDistance):
     """Reads the material under the IR sensor, beside the laser.
 
     The thickness is the P2's own reading at thickness 0 (its
@@ -1207,9 +1207,16 @@ class P2MeasureDistance(XtoolMeasureDistance):
     The result, as the selected Mode takes it, goes into Thickness or
     distance (which can be changed after); a result the Mode cannot take
     is refused.
+
+    On the Overview camera's device: the result sets that camera's
+    picture only (the P2 and Studio do not take it).
     """
 
     _attr_translation_key = "measure_thickness_or_distance"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._use_camera_device("overview")
 
     async def async_press(self) -> None:
         protocol = self.coordinator.protocol
@@ -1275,7 +1282,7 @@ class P2MeasureDistance(XtoolMeasureDistance):
         )
 
 
-class P2Measured(XtoolRestoringSensor, SensorEntity):
+class P2Measured(_CameraDeviceEntity, XtoolRestoringSensor, SensorEntity):
     """The last Measure distance, as Studio enters it in the selected Mode.
 
     Process on slats: the material's thickness (its top above the
@@ -1295,6 +1302,8 @@ class P2Measured(XtoolRestoringSensor, SensorEntity):
         super().__init__(coordinator)
         self._attr_translation_key = "measured_thickness_or_distance"
         self._set_unique_id("measured_thickness_or_distance")
+        # With Measure thickness or distance, on the Overview camera's device
+        self._use_camera_device("overview")
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
