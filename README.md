@@ -328,6 +328,8 @@ Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop
 
 **Mode and Thickness or distance.** Mode (Process on slats, Honeycomb panel, Slats removed) and one Thickness or distance number, read as Studio reads it in that Mode: the material's thickness on the slats, otherwise the distance down from 25 mm above the slats. The overview picture is straightened for that height. **Measure thickness or distance** (with the Measured sensor, on the Overview camera's device, since the result only sets that camera's picture) reads the IR sensor under the close red dot (turning the dot on for the reading if needed) and fills in Thickness or distance; it can be changed after. A reading the selected Mode cannot take (for example with nothing under the red dot) is refused with a message, and Thickness or distance keeps its value.
 
+**Exposure.** Each camera's Exposure is 10 to 1000; higher is brighter. The P2 does not report its exposure, so the number shows the value Home Assistant set last. When the Power switch turns the P2 on, Home Assistant sets Studio's values (Overview camera 100, Close camera 150). The number is unknown when the P2 was turned on any other way, until a value is set here; a value Studio sets is not shown. The camera takes a new photo two seconds after a change.
+
 **Moving the laser.** Set Laser position X and Y (the numbers show the values set, with the attribute `waiting` until the laser moves), then press **Move laser**. The `xtool.move` action takes the P2 device and moves to X and Y, or by signed steps. The P2 moves the laser while it sleeps too; it moves the laser home a minute before it sleeps and when it wakes.
 
 ### Button

@@ -2387,7 +2387,13 @@ not. The integration takes no photo while the P2 sleeps.
 **Cameras.** `GET :8329/camera/snap?stream=0` is the overview camera and
 `stream=1` the close camera; both give 4656 x 3496 JPEGs. Exposure is
 `POST :8329/camera/exposure?stream=<n>` `{value}` (Studio sets 80 and
-100 before its photos); `GET` reads `{mode: "auto", value}`. Each camera
+100 before its photos). A higher value is brighter; 1 to 2000 are
+accepted and 0 is refused (`code` 1). A photo taken 0.3 s after the
+change still has the old exposure; one taken 2 s after has the new one.
+The exposure cannot be read back: `GET` always answers
+`{mode: "auto", value: 0}`, also right after a value was set and after
+a photo. After power on the overview photo looks the same as at 100.
+Each camera
 has a calibration grid, downloaded as Studio does with
 `GET :8080/file?action=download&filename=<name>`:
 `global_calib.json` (overview, 62 x 32 points, straightened to

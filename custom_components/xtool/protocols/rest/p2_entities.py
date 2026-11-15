@@ -22,7 +22,9 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfLength, UnitOfTime
+from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
@@ -63,9 +65,15 @@ from .protocol import REST_BRIGHTNESS_MAX
 
 _LOGGER = logging.getLogger(__name__)
 
+P2_EXPOSURE_MIN = 10
 P2_EXPOSURE_MAX = 1000
+# What Studio sets before its photos (Background brightness increase off)
+P2_STUDIO_EXPOSURE = {"overview": 100, "closeup": 150}
+# The P2 is up and its cameras answer
+P2_EXPOSURE_READY_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED)
 P2_EXPOSURE_STEP = 10
-P2_EXPOSURE_SETTLE_SECONDS = 1.0
+# A photo taken 0.3 s after the change still has the old exposure
+P2_EXPOSURE_SETTLE_SECONDS = 2.0
 
 # The P2's fill lights by /peripheral/fill_light index
 P2_FILL_LIGHTS = (1, 2, 3)
@@ -221,41 +229,88 @@ class P2CameraExposure(_CameraDeviceEntity, XtoolCameraExposure, RestoreNumber):
     Studio sets 80-1000 (overview 100, or 1000 with Background brightness
     increase; close camera 150, or 500) and waits a second before the photo.
 
-    The exposure is not read while the P2 sleeps (the cameras' port is left
-    alone), so a P2 asleep when Home Assistant starts shows the last known
-    value until it wakes.
+    The P2 does not report its exposure, so the value is the one last set
+    here: Studio's value, set when the Power switch turns the P2 on, or
+    the one entered. It is unknown after the Power switch turns off, and
+    when Home Assistant never set one. Kept over a restart of Home
+    Assistant while the Power switch stays on.
     """
 
+    _attr_native_min_value = P2_EXPOSURE_MIN
     _attr_native_max_value = P2_EXPOSURE_MAX
     _attr_native_step = P2_EXPOSURE_STEP
     _attr_mode = NumberMode.SLIDER
+    # The Power switch turned on: Studio's value is set once the P2 is up
+    _studio_value_due = False
 
     def __init__(self, coordinator: XtoolCoordinator, stream: str) -> None:
         super().__init__(coordinator, stream)
+        self._field = f"camera_exposure_{stream}"
         if self._use_camera_device(stream):
             self._attr_translation_key = "exposure"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        switch = self.coordinator.power_switch_entity_id
+        if switch:
+            self.async_on_remove(
+                async_track_state_change_event(self.hass, [switch], self._on_power_switch)
+            )
         last = await self.async_get_last_number_data()
         data = self.coordinator.data
-        field = f"camera_exposure_{self._stream_name}"
         if (
             last is not None
             and last.native_value
             and data is not None
-            and not getattr(data, field)
+            and not getattr(data, self._field)
+            and not self.coordinator.power_switch_is_off
         ):
-            setattr(data, field, int(last.native_value))
+            setattr(data, self._field, int(last.native_value))
+
+    @callback
+    def _on_power_switch(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if old is None or new is None or old.state == new.state:
+            return
+        if new.state == "off":
+            # The P2 forgets the exposure with its power
+            self._studio_value_due = False
+            if self.coordinator.data is not None:
+                setattr(self.coordinator.data, self._field, 0)
+        elif old.state == "off" and new.state == "on":
+            self._studio_value_due = True
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if (
+            self._studio_value_due
+            and self.available
+            and self.coordinator.data.status in P2_EXPOSURE_READY_STATUSES
+        ):
+            self._studio_value_due = False
+            self.hass.async_create_task(self._set_studio_value())
+        super()._handle_coordinator_update()
+
+    async def _set_studio_value(self) -> None:
+        try:
+            await self.async_set_native_value(P2_STUDIO_EXPOSURE[self._stream_name])
+        except HomeAssistantError as err:
+            _LOGGER.debug("P2 %s exposure not set after power on: %s", self._stream_name, err)
+            # Tried again with the next poll
+            self._studio_value_due = True
 
     async def async_set_native_value(self, value: float) -> None:
         if not math.isfinite(value):
             # The slider sends no number while the exposure is unknown
             raise HomeAssistantError(f"Exposure {value} is not a number")
-        await super().async_set_native_value(value)
+        self._studio_value_due = False
+        try:
+            await super().async_set_native_value(value)
+        except ConnectionError as err:
+            raise HomeAssistantError(f"The P2 did not take exposure {value:g}") from err
         camera = _thumbnail_registry(self.coordinator).cameras.get(self._stream_name)
         if camera is not None:
-            # The P2 takes the new exposure about a second later
+            # The P2 takes the new exposure a moment later
             await asyncio.sleep(P2_EXPOSURE_SETTLE_SECONDS)
             await camera.refresh_picture()
 
