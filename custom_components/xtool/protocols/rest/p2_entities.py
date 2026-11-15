@@ -191,6 +191,18 @@ class P2Camera(_WSV2Camera):
         self._redraw = True
         await super().refresh_picture()
 
+    async def async_set_crop(
+        self,
+        width: float | None = None,
+        height: float | None = None,
+        center_x: float | None = None,
+        center_y: float | None = None,
+    ) -> None:
+        """Set crop numbers as the crop numbers themselves do: Crop becomes Custom."""
+        if any(value is not None for value in (width, height, center_x, center_y)):
+            _use_custom_crop(self.coordinator, self._camera_name)
+        await super().async_set_crop(width, height, center_x, center_y)
+
     async def _image(self, max_age: Any) -> bytes | None:
         data = self.coordinator.data
         if data is not None and data.status == XtoolStatus.SLEEPING:
@@ -1029,12 +1041,17 @@ class P2CropNumber(_WSV2CameraViewNumber):
     _attr_entity_category = None
 
     async def async_set_native_value(self, value: float) -> None:
-        settings = _p2_view(self.coordinator)
-        key = _key(self._camera_name, "crop_preset")
-        if settings[key] != VIEW_CUSTOM:
-            settings[key] = VIEW_CUSTOM
-            self.coordinator.async_update_listeners()
+        _use_custom_crop(self.coordinator, self._camera_name)
         await super().async_set_native_value(value)
+
+
+def _use_custom_crop(coordinator: XtoolCoordinator, camera_name: str) -> None:
+    """Switch the camera's Crop to Custom, so a preset does not put its crop back."""
+    settings = _p2_view(coordinator)
+    key = _key(camera_name, "crop_preset")
+    if settings[key] != VIEW_CUSTOM:
+        settings[key] = VIEW_CUSTOM
+        coordinator.async_update_listeners()
 
 
 def _view_cameras(coordinator: XtoolCoordinator) -> list[str]:
