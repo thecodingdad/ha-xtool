@@ -76,6 +76,10 @@
         }
       },
       "wifi_signal": { "name": "Wi-Fi signal" },
+      "connection": {
+        "name": "Connection",
+        "state": { "ethernet": "Ethernet", "wifi": "Wi-Fi" }
+      },
       "calibration": { "name": "Calibration" },
       "status": {
         "name": "Status",

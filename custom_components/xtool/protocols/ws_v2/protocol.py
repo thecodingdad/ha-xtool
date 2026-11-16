@@ -422,6 +422,20 @@ def _parse_accessory_push(head: str, body: str) -> dict[str, Any]:
 _LOGGER = logging.getLogger(__name__)
 
 
+def connection_of_interface(iface: str) -> str | None:
+    """The Connection state for one of the laser's interfaces.
+
+    ``wlan*`` is Wi-Fi and ``eth*`` is Ethernet. Other interfaces (the
+    USB network link ``usb*``, loopback) are not a way Home Assistant
+    reaches a laser, so they give no state.
+    """
+    if iface.startswith("wlan"):
+        return "wifi"
+    if iface.startswith("eth"):
+        return "ethernet"
+    return None
+
+
 def _ssl_context() -> ssl.SSLContext:
     """SSL context that accepts self-signed device certs.
 
@@ -585,7 +599,7 @@ class WSV2Protocol(XtoolProtocol):
     _LATEST_STATE_FIELDS: tuple[str, ...] = (
         "status", "task_id", "task_time", "cover_open", "machine_lock",
         "last_job_time_seconds", "focus_thickness", "engraving_lens",
-        "wifi_signal", "flame_alarm_record",
+        "wifi_signal", "connection", "flame_alarm_record",
         "cooling_fan_running", "smoking_fan_running", "smoking_fan_installed",
         "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
@@ -2250,8 +2264,35 @@ class WSV2Protocol(XtoolProtocol):
             dbm = r.get("wifi_signal_strength") if isinstance(r, dict) else None
             if isinstance(dbm, (int, float)) and not isinstance(dbm, bool):
                 self._latest["wifi_signal"] = int(dbm)
+        await self._read_connection()
         await self._read_calibration_info()
         self._laser_info_known = True
+
+    async def _read_connection(self) -> None:
+        """Read which of the laser's interfaces has the address in use.
+
+        ``/v1/wifi/interfaces`` lists each interface with its address
+        (``[{iface: "wlan0", ip}, {iface: "usb0", ip}, ...]``). The one
+        whose address Home Assistant connects to tells how it reaches
+        the laser. Nothing is stored when no interface has that address.
+        """
+        try:
+            r = await self.request("/v1/wifi/interfaces", "GET", timeout=8.0)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("V2 interface read failed: %s", err)
+            return
+        _LOGGER.debug("V2 interfaces: %r", r)
+        if isinstance(r, dict):
+            r = r.get("interfaces")
+        if not isinstance(r, list):
+            return
+        for item in r:
+            if not isinstance(item, dict) or str(item.get("ip") or "") != self.host:
+                continue
+            connection = connection_of_interface(str(item.get("iface") or ""))
+            if connection is not None:
+                self._latest["connection"] = connection
+            return
 
     async def _read_calibration_info(self) -> None:
         """Read, never write, what Studio calibrated on the laser.

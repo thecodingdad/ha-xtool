@@ -86,6 +86,13 @@
       "wifi_signal": {
         "name": "WLAN-Signal"
       },
+      "connection": {
+        "name": "Verbindung",
+        "state": {
+          "ethernet": "Ethernet",
+          "wifi": "WLAN"
+        }
+      },
       "calibration": {
         "name": "Kalibrierung"
       },

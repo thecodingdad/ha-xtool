@@ -314,6 +314,9 @@ class XtoolDeviceState:
     cpu_temp: int | None = None
     engraving_lens: str | None = None  # WS-V2: none / small / big
     wifi_signal: int | None = None  # WS-V2: dBm
+    # How Home Assistant reaches the laser ("ethernet" or "wifi"), from
+    # the laser's own interface report; None while unknown
+    connection: str | None = None
     flame_alarm_record: bool | None = None  # WS-V2: a fire photo is stored
     ambient_temp: float | None = None
     ambient_humidity: float | None = None

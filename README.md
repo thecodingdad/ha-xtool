@@ -139,6 +139,7 @@ The available options are gated by the device's protocol family — only relevan
 | Entity | Description |
 |---|---|
 | Wi-Fi signal | **F2 Ultra UV**: Wi-Fi signal strength in dBm |
+| Connection | **F2 Ultra UV**: how Home Assistant reaches the laser (Ethernet or Wi-Fi), from the laser's own interface list (the interface with the address in use). Diagnostic. No state while no interface has that address |
 | Calibration | **F2 Ultra UV**: when Studio last calibrated the camera. Attributes: the stored Z, focus and laser offsets (read only; the integration never changes them) |
 | IP address | Device IP address |
 | Laser power | Laser-module power in watts |

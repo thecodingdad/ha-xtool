@@ -1855,6 +1855,29 @@ class _WSV2FlameAlarmSwitch(_WSV2ConfigSwitch):
         return None if record is None else {"flame_record": record}
 
 
+class WSV2Connection(XtoolEntity, SensorEntity):
+    """How Home Assistant reaches the laser: Ethernet or Wi-Fi.
+
+    From the laser's own interface list (the interface with the address
+    in use). Like the controls, it is unavailable while the laser cannot
+    be reached: the connection is not known then.
+    """
+
+    _attr_translation_key = "connection"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["ethernet", "wifi"]
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("connection")
+
+    @property
+    def native_value(self) -> str | None:
+        d = self.coordinator.data
+        return d.connection if d is not None else None
+
+
 def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     entities: list[SensorEntity] = [
         XtoolSensor(coordinator, description)
@@ -1863,6 +1886,8 @@ def build_wsv2_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
     for description, flag in _GATED_SENSOR_DESCRIPTIONS:
         if getattr(coordinator.model, flag, False):
             entities.append(XtoolSensor(coordinator, description))
+    if getattr(coordinator.model, "has_laser_info", False):
+        entities.append(WSV2Connection(coordinator))
     if coordinator.model.has_ink_cartridges:
         entities.extend(_build_dt002_slot_sensors(coordinator))
     if getattr(coordinator.model, "has_laser_info", False):
