@@ -2038,6 +2038,8 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
 
     # When the last photo finished (monotonic seconds)
     _snapshot_done = float("-inf")
+    # The photo a picture request started without waiting for it
+    _background_photo: asyncio.Task[bytes | None] | None = None
     # Time from the start of one live-view frame to the next
     _live_frame_interval = LIVE_FRAME_INTERVAL
 
@@ -2262,9 +2264,22 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         # Dashboard pictures reload every few seconds; they reuse a photo
         # younger than the thumbnail refresh interval, so the refresh
         # alone sets how often the laser takes photos.
-        return await self._image(
-            max(MIN_SNAPSHOT_INTERVAL, timedelta(seconds=self._thumbnail_seconds))
-        )
+        max_age = max(MIN_SNAPSHOT_INTERVAL, timedelta(seconds=self._thumbnail_seconds))
+        age = dt_util.utcnow() - self._last_snapshot_time
+        if (
+            self._last_snapshot is not None
+            and max_age <= age < max_age + MAX_SNAPSHOT_AGE
+            and self.hass is not None
+        ):
+            # A photo can take many seconds and the browser gives up on a
+            # picture after 10: answer with the last photo now and take
+            # the new one meanwhile, for the next reload.
+            if self._background_photo is None or self._background_photo.done():
+                self._background_photo = self.hass.async_create_background_task(
+                    self._image(max_age), f"xTool {self._camera_name} photo",
+                )
+            return self._last_snapshot
+        return await self._image(max_age)
 
     async def handle_async_mjpeg_stream(
         self, request: web.Request,
