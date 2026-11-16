@@ -833,13 +833,29 @@ def _area_color(coordinator: XtoolCoordinator, name: str) -> tuple[int, int, int
     return _color(coordinator, name.removeprefix(MODE_PREFIX))
 
 
+# The names of each position row's values (angle: degrees from X toward Y)
+POSITION_FIELDS: dict[str, tuple[str, ...]] = {
+    "areas": ("x", "y", "width", "height"),
+    "slats": ("x0", "y0", "x1", "y1", "label"),
+    "target": ("x", "y"),
+    "close": ("x", "y", "diameter"),
+    "quick": ("x", "y", "length", "width", "angle"),
+}
+
+
+def _named(marks: dict[str, list]) -> dict[str, list[dict[str, Any]]]:
+    """Each row as its named values."""
+    return {
+        kind: [dict(zip(POSITION_FIELDS[kind], row, strict=True)) for row in rows]
+        for kind, rows in marks.items()
+    }
+
+
 def _overlay(coordinator: XtoolCoordinator, camera_name: str, name: str) -> dict[str, list]:
     """One overlay's marks, in the laser's mm (empty: nothing to draw).
 
-    Keys as in the overlay switch's ``position`` attribute: ``areas``
-    (x, y, width, height), ``slats`` (x0, y0, x1, y1, label), ``target``
-    (x, y), ``close`` (x, y, diameter), ``quick`` (x, y, length, width,
-    angle).
+    Keys as in the overlay switch's ``position`` attribute; each row's
+    values are named in ``POSITION_FIELDS``.
     """
     if name == "slat_lines":
         _, top, _, height = p2_geometry.AREAS["work_bed"]
@@ -955,7 +971,7 @@ def _set_overlay_attributes(
     for name, overlay_marks in marks.items():
         key = _overlay_key(camera_name, name)
         value = {
-            "position": _moved(overlay_marks, dx, dy, 1) if overlay_marks else None,
+            "position": _named(_moved(overlay_marks, dx, dy, 1)) if overlay_marks else None,
             "style": _overlay_style(coordinator, name, width, px_per_mm),
         }
         if attributes.get(key) == value:
