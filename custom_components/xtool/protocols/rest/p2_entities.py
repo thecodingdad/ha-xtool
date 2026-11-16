@@ -216,6 +216,9 @@ class P2Camera(_WSV2Camera):
                 self._redraw = False
                 self._last_snapshot = await self._corrected(self._last_photo)
             return self._last_snapshot
+        # A request answered with the last photo needs nothing new
+        if self._last_snapshot is not None and dt_util.utcnow() - self._last_snapshot_time < max_age:
+            return self._last_snapshot
         if data is not None and p2_view_needs_head(self.coordinator, self._camera_name):
             # Overlays and the close camera preset follow the head
             position = await self.coordinator.protocol.read_head_position()
@@ -224,8 +227,6 @@ class P2Camera(_WSV2Camera):
         if (
             self._camera_name == "overview"
             and _p2_view(self.coordinator)[_overlay_key("overview", CLOSE_CAMERA_IMAGE)]
-            and (self._last_snapshot is None
-                 or dt_util.utcnow() - self._last_snapshot_time >= max_age)
         ):
             # The close camera's picture, as new as this one
             close = _thumbnail_registry(self.coordinator).cameras.get("closeup")
