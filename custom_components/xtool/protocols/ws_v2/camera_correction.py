@@ -191,13 +191,40 @@ OVERLAY_LABEL_BACKGROUND = (0, 0, 0)
 OVERLAY_RING_WIDTH = 3
 
 
+@dataclass(frozen=True)
+class OverlaySizes:
+    """How large the overlay marks are drawn on a picture (pixels).
+
+    ``line``: area outlines and the laser target's circle. ``thin``: slat
+    lines and the laser target's cross. ``dot``: the radius of an area's
+    origin and centre dots. ``target``: the radius of the laser target's
+    circle (its cross reaches twice as far).
+    """
+
+    line: int
+    thin: int
+    dot: float
+    target: float
+
+
+def overlay_sizes(image_width: int, px_per_mm: float) -> OverlaySizes:
+    """The overlay sizes on a picture this wide, at this scale."""
+    line = max(2, round(image_width / 500))
+    return OverlaySizes(
+        line=line,
+        thin=max(1, line // 2),
+        dot=max(4.0, 1.2 * px_per_mm),
+        target=max(6.0, 2.5 * px_per_mm),
+    )
+
+
 def _draw_overlay(
     image: Any, overlay: Overlay, left_mm: float, top_mm: float, px_per_mm: float,
 ) -> None:
     from PIL import Image, ImageDraw, ImageFont  # Home Assistant ships Pillow
 
     draw = ImageDraw.Draw(image)
-    width = max(2, round(image.width / 500))
+    sizes = overlay_sizes(image.width, px_per_mm)
 
     def px(x_mm: float, y_mm: float) -> tuple[float, float]:
         return (x_mm - left_mm) * px_per_mm, (y_mm - top_mm) * px_per_mm
@@ -250,7 +277,7 @@ def _draw_overlay(
     labels = []
     for x0, y0, x1, y1, label in overlay.lines:
         start, end = px(x0, y0), px(x1, y1)
-        draw.line((start, end), fill=overlay.line_color, width=max(1, width // 2))
+        draw.line((start, end), fill=overlay.line_color, width=sizes.thin)
         if label and -size < end[0] < image.width + size:
             labels.append(((end[0], min(end[1], image.height) - 2), label))
     for at, label in labels:
@@ -265,21 +292,21 @@ def _draw_overlay(
             at, label, fill=(255, 255, 255), font=font, anchor="md",
             stroke_width=max(1, size // 14), stroke_fill=(255, 255, 255),
         )
-    dot = max(4.0, 1.2 * px_per_mm)
+    dot = sizes.dot
     for x, y, w, h, color in overlay.areas:
         (a, b), (c, d) = px(x, y), px(x + w, y + h)
-        draw.rectangle((a, b, c, d), outline=color, width=width)
+        draw.rectangle((a, b, c, d), outline=color, width=sizes.line)
         for cx, cy in ((a, b), ((a + c) / 2, (b + d) / 2)):
             draw.ellipse(
                 (cx - dot, cy - dot, cx + dot, cy + dot), fill=color, outline=(0, 0, 0),
-                width=max(1, width // 2),
+                width=sizes.thin,
             )
     for x, y in overlay.markers:
         cx, cy = px(x, y)
-        r = max(6.0, 2.5 * px_per_mm)
-        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=overlay.marker_color, width=width)
-        draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=overlay.marker_color, width=max(1, width // 2))
-        draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=overlay.marker_color, width=max(1, width // 2))
+        r = sizes.target
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=overlay.marker_color, width=sizes.line)
+        draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=overlay.marker_color, width=sizes.thin)
+        draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=overlay.marker_color, width=sizes.thin)
 
 
 # A camera seen as a lens: rotation (3), translation (3), focal length,
@@ -622,6 +649,37 @@ def photo_size_mm(
     return _surface_map(calibration, lens).photo_size_mm()
 
 
+def output_frame(
+    calibration: CameraCalibration,
+    view: CameraView | None = None,
+    lens: tuple[float, ...] | None = None,
+) -> tuple[CameraView, float, float, int, int]:
+    """The picture ``correct_image`` makes for a view.
+
+    Returns the view with any side of 0 filled in (the whole photo that
+    way), the picture's left and top edges in the calibrated area's mm
+    (the view is centred on that area's centre), and its width and
+    height in pixels.
+    """
+    view = view or CameraView()
+    if view.width_mm <= 0 or view.height_mm <= 0:
+        photo_w, photo_h = photo_size_mm(calibration, lens)
+        view = CameraView(
+            view.width_mm if view.width_mm > 0 else photo_w,
+            view.height_mm if view.height_mm > 0 else photo_h,
+            view.center_x_mm,
+            view.center_y_mm,
+        )
+    px_per_mm = min(
+        PIXELS_PER_MM, MAX_OUTPUT_SIDE / max(view.width_mm, view.height_mm),
+    )
+    width = max(1, round(view.width_mm * px_per_mm))
+    height = max(1, round(view.height_mm * px_per_mm))
+    left_mm = calibration.area_mm / 2 + view.center_x_mm - view.width_mm / 2
+    top_mm = calibration.area_h_mm / 2 + view.center_y_mm - view.height_mm / 2
+    return view, left_mm, top_mm, width, height
+
+
 def correct_image(
     jpeg: bytes,
     calibration: CameraCalibration,
@@ -642,15 +700,7 @@ def correct_image(
     """
     from PIL import Image  # Home Assistant ships Pillow
 
-    view = view or CameraView()
-    if view.width_mm <= 0 or view.height_mm <= 0:
-        photo_w, photo_h = photo_size_mm(calibration, lens)
-        view = CameraView(
-            view.width_mm if view.width_mm > 0 else photo_w,
-            view.height_mm if view.height_mm > 0 else photo_h,
-            view.center_x_mm,
-            view.center_y_mm,
-        )
+    view, left_mm, top_mm, width, height = output_frame(calibration, view, lens)
     image = Image.open(io.BytesIO(jpeg))
     # Decode at reduced size when the result needs fewer pixels than
     # the photo has (JPEG can skip detail while decoding).
@@ -662,17 +712,6 @@ def correct_image(
     cells_y = calibration.grid_h - 1
     # Millimetres per grid cell across and down.
     cell_mm_x, cell_mm_y = calibration.cell_mm
-    # The view is centred on the straightened image's area
-    area_h_mm = calibration.area_h_mm
-
-    px_per_mm = min(
-        PIXELS_PER_MM, MAX_OUTPUT_SIDE / max(view.width_mm, view.height_mm),
-    )
-    width = max(1, round(view.width_mm * px_per_mm))
-    height = max(1, round(view.height_mm * px_per_mm))
-    left_mm = calibration.area_mm / 2 + view.center_x_mm - view.width_mm / 2
-    top_mm = area_h_mm / 2 + view.center_y_mm - view.height_mm / 2
-
     surface = _surface_map(calibration, lens)
 
     # Mesh boxes of about one grid cell, aligned with the grid.

@@ -34,8 +34,11 @@ from ...entity import XtoolEntity, XtoolReadOnlyEntity, XtoolRestoringSensor
 from ..ws_v2.camera_correction import (
     CameraCalibration,
     CameraView,
+    OVERLAY_RING_WIDTH,
     Overlay,
     SurfaceLift,
+    output_frame,
+    overlay_sizes,
     photo_size_mm,
 )
 from ..ws_v2.entities import (
@@ -233,6 +236,14 @@ class P2Camera(_WSV2Camera):
             if close is not None:
                 await close._image(MIN_SNAPSHOT_INTERVAL)
         return await super()._image(max_age)
+
+    async def _corrected(self, image: bytes) -> bytes:
+        if self._calibration is not None:
+            # The overlay switches' attributes need the photo's size, which
+            # takes a lens fit the first time: done here, not in the event loop
+            lens = p2_geometry.OVERVIEW_LENS if self._camera_name == "overview" else None
+            await self.hass.async_add_executor_job(photo_size_mm, self._calibration, lens)
+        return await super()._corrected(image)
 
     def _correction(self) -> dict[str, Any]:
         """The crop preset, the material's height and the overlays."""
@@ -620,6 +631,11 @@ P2_OVERLAYS: dict[str, list[str]] = {
     ],
 }
 P2_MODE_OPTIONS = list(p2_geometry.MODES)
+# Who draws a camera's overlays: the integration on the picture, or the
+# dashboard card from each overlay switch's position and style
+OVERLAYS_INTEGRATION = "integration"
+OVERLAYS_CARD = "card"
+P2_OVERLAYS_OPTIONS = [OVERLAYS_INTEGRATION, OVERLAYS_CARD]
 # Settings changed while working: on the device page's Controls
 P2_CONTROL_SETTINGS = ("crop_preset", "processing_mode", "thickness_or_distance")
 P2_VIEW_CAMERAS = ("overview", "closeup")
@@ -644,6 +660,7 @@ def _p2_view(coordinator: XtoolCoordinator) -> dict[str, Any]:
         }
         for camera_name in P2_VIEW_CAMERAS:
             view[_key(camera_name, "crop_preset")] = VIEW_CUSTOM
+            view[_key(camera_name, "overlays")] = OVERLAYS_INTEGRATION
             for overlay in P2_OVERLAYS[camera_name]:
                 view[_overlay_key(camera_name, overlay)] = False
         coordinator._p2_view = view
@@ -816,11 +833,148 @@ def _area_color(coordinator: XtoolCoordinator, name: str) -> tuple[int, int, int
     return _color(coordinator, name.removeprefix(MODE_PREFIX))
 
 
+def _overlay(coordinator: XtoolCoordinator, camera_name: str, name: str) -> dict[str, list]:
+    """One overlay's marks, in the laser's mm (empty: nothing to draw).
+
+    Keys as in the overlay switch's ``position`` attribute: ``areas``
+    (x, y, width, height), ``slats`` (x0, y0, x1, y1, label), ``target``
+    (x, y), ``close`` (x, y, diameter), ``quick`` (x, y, length, width,
+    angle).
+    """
+    if name == "slat_lines":
+        _, top, _, height = p2_geometry.AREAS["work_bed"]
+        # Every slat's line; the odd numbers written
+        return {"slats": [
+            [x, top, x, top + height, label if int(label) % 2 else ""]
+            for x, label in p2_geometry.slats()
+        ]}
+    head_x, head_y = _head(coordinator)
+    if name == "laser_target":
+        return {"target": [[head_x, head_y]]}
+    if name == "red_dot_close":
+        # A ring the dot sits just inside, so the dot itself stays visible
+        dx, dy = p2_geometry.CLOSE_RED_DOT_OFFSET
+        return {"close": [[head_x + dx, head_y + dy, p2_geometry.CLOSE_RED_DOT_DIAMETER]]}
+    if name == "red_dot_quick":
+        return {"quick": [[
+            *p2_geometry.QUICK_RED_DOT, *p2_geometry.QUICK_RED_DOT_SIZE,
+            p2_geometry.quick_red_dot_angle(),
+        ]]}
+    rect = _overlay_rect(coordinator, camera_name, name)
+    return {"areas": [list(rect)]} if rect is not None else {}
+
+
+def _overlay_style(
+    coordinator: XtoolCoordinator, name: str, image_width: int, px_per_mm: float,
+) -> dict[str, Any]:
+    """How the integration draws an overlay on a picture this size.
+
+    ``line`` is in pixels of that picture; ``size`` (the icon's) in mm.
+    """
+    sizes = overlay_sizes(image_width, px_per_mm)
+    if name == "slat_lines":
+        return {
+            "color": list(_color(coordinator, "slat_lines")), "line": sizes.thin,
+            "style": "solid", "icon": None, "size": None,
+        }
+    if name == "laser_target":
+        # A circle with a cross twice its radius
+        return {
+            "color": list(_color(coordinator, "laser_target")), "line": sizes.line,
+            "style": "solid", "icon": "mdi:crosshairs",
+            "size": round(4 * sizes.target / px_per_mm, 1),
+        }
+    if name in ("red_dot_close", "red_dot_quick"):
+        return {
+            "color": list(_color(coordinator, "red_dots")), "line": OVERLAY_RING_WIDTH,
+            "style": "solid", "icon": None, "size": None,
+        }
+    # An area: its outline, with a dot at its origin and one at its centre
+    return {
+        "color": list(_area_color(coordinator, name)), "line": sizes.line,
+        "style": "solid", "icon": "mdi:circle",
+        "size": round(2 * sizes.dot / px_per_mm, 1),
+    }
+
+
+def _moved(
+    marks: dict[str, list], dx: float, dy: float, digits: int | None = None,
+) -> dict[str, list]:
+    """Marks moved by (-dx, -dy): each row starts with x, y (slats: two points)."""
+    moved: dict[str, list] = {}
+    for kind, rows in marks.items():
+        moved[kind] = []
+        for row in rows:
+            row = list(row)
+            for i in range(2 if kind == "slats" else 1):
+                row[2 * i] -= dx
+                row[2 * i + 1] -= dy
+            if digits is not None:
+                row = [round(v, digits) if isinstance(v, float) else v for v in row]
+            moved[kind].append(row)
+    return moved
+
+
+def _overlay_switches(coordinator: XtoolCoordinator) -> dict[str, Any]:
+    """The overlay switches in Home Assistant, by their key."""
+    switches = getattr(coordinator, "_p2_overlay_switches", None)
+    if switches is None:
+        switches = coordinator._p2_overlay_switches = {}
+    return switches
+
+
+def _overlay_attributes(coordinator: XtoolCoordinator) -> dict[str, dict[str, Any]]:
+    """Each overlay switch's position and style, by its key."""
+    attributes = getattr(coordinator, "_p2_overlay_attributes", None)
+    if attributes is None:
+        attributes = coordinator._p2_overlay_attributes = {}
+    return attributes
+
+
+def _set_overlay_attributes(
+    coordinator: XtoolCoordinator, camera_name: str, calibration: CameraCalibration,
+    view: CameraView, lens: tuple[float, ...] | None, marks: dict[str, dict[str, list]],
+    origin: tuple[float, float],
+) -> None:
+    """Give the camera's overlay switches their overlay's position and style.
+
+    The position is in the frame of the camera's crop numbers, so a
+    dashboard card maps it onto the picture as it maps the crop: the
+    overview's in the laser's mm, the close camera's from the centre of
+    its calibrated area. The overview picture already shows the
+    material's top to scale, so no height correction applies.
+    """
+    resolved, _, _, width, _ = output_frame(calibration, view, lens)
+    px_per_mm = width / resolved.width_mm
+    dx, dy = origin
+    if camera_name != "overview":
+        dx += calibration.area_mm / 2
+        dy += calibration.area_h_mm / 2
+    attributes = _overlay_attributes(coordinator)
+    switches = _overlay_switches(coordinator)
+    for name, overlay_marks in marks.items():
+        key = _overlay_key(camera_name, name)
+        value = {
+            "position": _moved(overlay_marks, dx, dy, 1) if overlay_marks else None,
+            "style": _overlay_style(coordinator, name, width, px_per_mm),
+        }
+        if attributes.get(key) == value:
+            continue
+        attributes[key] = value
+        switch = switches.get(key)
+        if switch is not None and switch.hass is not None:
+            switch.async_write_ha_state()
+
+
 def p2_correction(
     coordinator: XtoolCoordinator, camera_name: str, calibration: CameraCalibration,
     view: CameraView,
 ) -> dict[str, Any]:
-    """``correct_image`` arguments for a P2 camera's next photo."""
+    """``correct_image`` arguments for a P2 camera's next photo.
+
+    Also gives each of the camera's overlay switches the position and
+    style of its overlay on this picture.
+    """
     settings = _p2_view(coordinator)
     preset = _preset_view(
         coordinator, camera_name, settings[_key(camera_name, "crop_preset")], calibration,
@@ -829,57 +983,52 @@ def p2_correction(
         # The crop numbers show the preset (a close camera area follows the head)
         view = preset
         _show_crop(coordinator, camera_name, view, calibration)
+    lens = p2_geometry.OVERVIEW_LENS if camera_name == "overview" else None
 
     def on(overlay: str) -> bool:
         return bool(settings.get(_overlay_key(camera_name, overlay)))
 
     # Overlays are worked out in the laser's mm, then moved to the
     # camera's calibrated area (the close camera's moves with the head)
-    areas = []
-    for name in P2_OVERLAYS[camera_name]:
-        if name not in OVERLAY_MARKS and name != CLOSE_CAMERA_IMAGE and on(name):
-            rect = _overlay_rect(coordinator, camera_name, name)
-            if rect is not None:
-                areas.append((*rect, _area_color(coordinator, name)))
+    marks = {
+        name: _overlay(coordinator, camera_name, name)
+        for name in P2_OVERLAYS[camera_name]
+        if name != CLOSE_CAMERA_IMAGE
+    }
+    origin = (0.0, 0.0) if camera_name == "overview" else _close_origin(coordinator)
+    _set_overlay_attributes(coordinator, camera_name, calibration, view, lens, marks, origin)
     images = []
     if camera_name == "overview" and on(CLOSE_CAMERA_IMAGE):
         # The close camera's last picture as it shows it (its crop and
-        # overlays), where it was taken
+        # overlays), where it was taken: a photo, so always laid on
         close = _thumbnail_registry(coordinator).cameras.get("closeup")
         picture = getattr(close, "_last_snapshot", None)
         rect = _overlay_rect(coordinator, "closeup", VIEW_CUSTOM)
         if picture and rect is not None:
             images.append((*rect, picture))
-    lines = ()
-    if on("slat_lines"):
-        _, top, _, height = p2_geometry.AREAS["work_bed"]
-        # Every slat's line; the odd numbers written
-        lines = tuple(
-            (x, top, x, top + height, label if int(label) % 2 else "")
-            for x, label in p2_geometry.slats()
-        )
-    head_x, head_y = _head(coordinator)
-    markers = ((head_x, head_y),) if on("laser_target") else ()
-    spots = []
-    rings = []
-    if on("red_dot_close"):
-        # A ring the dot sits just inside, so the dot itself stays visible
-        dx, dy = p2_geometry.CLOSE_RED_DOT_OFFSET
-        rings.append((head_x + dx, head_y + dy, p2_geometry.CLOSE_RED_DOT_DIAMETER))
-    if on("red_dot_quick"):
-        spots.append((
-            *p2_geometry.QUICK_RED_DOT, *p2_geometry.QUICK_RED_DOT_SIZE,
-            p2_geometry.quick_red_dot_angle(),
-        ))
+    drawn: dict[str, list] = {}
+    if settings[_key(camera_name, "overlays")] == OVERLAYS_INTEGRATION:
+        for name, overlay_marks in marks.items():
+            if not on(name):
+                continue
+            for kind, rows in overlay_marks.items():
+                if kind == "areas":
+                    rows = [[*row, _area_color(coordinator, name)] for row in rows]
+                drawn.setdefault(kind, []).extend(rows)
     overlay = None
-    if areas or lines or markers or spots or rings or images:
-        dx, dy = (0.0, 0.0) if camera_name == "overview" else _close_origin(coordinator)
+    if drawn or images:
+        dx, dy = origin
+        drawn = _moved(drawn, dx, dy)
+
+        def rows(kind: str) -> tuple:
+            return tuple(tuple(row) for row in drawn.get(kind, []))
+
         overlay = Overlay(
-            areas=tuple((x - dx, y - dy, w, h, color) for x, y, w, h, color in areas),
-            lines=tuple((x0 - dx, y0 - dy, x1 - dx, y1 - dy, t) for x0, y0, x1, y1, t in lines),
-            markers=tuple((x - dx, y - dy) for x, y in markers),
-            spots=tuple((x - dx, y - dy, *rest) for x, y, *rest in spots),
-            rings=tuple((x - dx, y - dy, d) for x, y, d in rings),
+            areas=rows("areas"),
+            lines=rows("slats"),
+            markers=rows("target"),
+            spots=rows("quick"),
+            rings=rows("close"),
             images=tuple((x - dx, y - dy, w, h, jpeg) for x, y, w, h, jpeg in images),
             line_color=_color(coordinator, "slat_lines"),
             marker_color=_color(coordinator, "laser_target"),
@@ -891,7 +1040,7 @@ def p2_correction(
     surface = p2_geometry.surface_height(mode, value) - calibration.plane_mm
     camera_x, camera_y, camera_height = p2_geometry.OVERVIEW_CAMERA
     lift = SurfaceLift(camera_x, camera_y, camera_height, surface) if surface else None
-    return {"view": view, "lift": lift, "overlay": overlay, "lens": p2_geometry.OVERVIEW_LENS}
+    return {"view": view, "lift": lift, "overlay": overlay, "lens": lens}
 
 
 def p2_view_needs_head(coordinator: XtoolCoordinator, camera_name: str) -> bool:
@@ -981,11 +1130,23 @@ class P2ViewSelect(_P2ViewSetting, SelectEntity, RestoreEntity):
 
 
 class P2ViewSwitch(_P2ViewSetting, SwitchEntity, RestoreEntity):
-    """One overlay on a camera's picture (any number may be on)."""
+    """One overlay on a camera's picture (any number may be on).
+
+    Its ``position`` and ``style`` attributes tell a dashboard card where
+    the overlay is on the camera's last picture and how the integration
+    draws it (see ``_set_overlay_attributes``).
+    """
+
+    # They change with every head move: not kept in the history
+    _unrecorded_attributes = frozenset({"position", "style"})
 
     @property
     def is_on(self) -> bool:
         return bool(self._value)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        return _overlay_attributes(self.coordinator).get(self._key)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._store(True)
@@ -995,9 +1156,14 @@ class P2ViewSwitch(_P2ViewSetting, SwitchEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        _overlay_switches(self.coordinator)[self._key] = self
         last = await self.async_get_last_state()
         if last is not None and last.state in ("on", "off"):
             _p2_view(self.coordinator)[self._key] = last.state == "on"
+
+    async def async_will_remove_from_hass(self) -> None:
+        _overlay_switches(self.coordinator).pop(self._key, None)
+        await super().async_will_remove_from_hass()
 
 
 class P2ThicknessOrDistance(_P2ViewSetting, RestoreNumber):
@@ -1068,6 +1234,7 @@ def build_p2_view_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
     entities: list[SelectEntity] = []
     for name in _view_cameras(coordinator):
         entities.append(P2ViewSelect(coordinator, name, "crop_preset", P2_CROP_OPTIONS[name]))
+        entities.append(P2ViewSelect(coordinator, name, "overlays", P2_OVERLAYS_OPTIONS))
         if name == "overview":
             entities.append(
                 P2ViewSelect(coordinator, name, "processing_mode", P2_MODE_OPTIONS),
