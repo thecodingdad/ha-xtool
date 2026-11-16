@@ -45,6 +45,8 @@ class XtoolStatus(StrEnum):
     """Normalised status enum used by every protocol's status sensor."""
 
     OFF = "off"
+    # Power switch on, but the laser does not answer (after start-up)
+    NOT_RESPONDING = "not_responding"
     INITIALIZING = "initializing"
     IDLE = "idle"
     WIFI_SETUP = "wifi_setup"

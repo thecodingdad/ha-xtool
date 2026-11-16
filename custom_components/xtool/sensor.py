@@ -54,7 +54,13 @@ class XtoolSensor(XtoolRestoringSensor, SensorEntity):
 
 
 class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):
-    """Status sensor that shows 'off' when device is unreachable (always available)."""
+    """Status sensor; always available.
+
+    Off while the Power switch is off, or while a laser without a Power
+    switch cannot be reached (it cannot be told apart from one that is
+    off). Not responding while the Power switch is on but the laser does
+    not answer after its start-up time.
+    """
 
     _attr_translation_key = "status"
     _attr_icon = "mdi:list-status"
@@ -75,8 +81,13 @@ class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):
         if self.coordinator.power_switch_is_off:
             return XtoolStatus.OFF
         if self.coordinator.data is None or not self.coordinator.data.available:
-            # Just powered on: the laser is starting
-            return XtoolStatus.INITIALIZING if self.coordinator.starting else XtoolStatus.OFF
+            if self.coordinator.starting:
+                # Just powered on: the laser is starting
+                return XtoolStatus.INITIALIZING
+            if self.coordinator.power_switch_entity_id:
+                # Powered, but the laser does not answer
+                return XtoolStatus.NOT_RESPONDING
+            return XtoolStatus.OFF
         status = self.coordinator.data.status
         if status is not None:
             self._last_known_status = status.value

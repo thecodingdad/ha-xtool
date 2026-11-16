@@ -71,6 +71,7 @@
         "name": "Status",
         "state": {
           "off": "Off",
+          "not_responding": "Not responding",
           "initializing": "Initializing",
           "idle": "Idle",
           "wifi_setup": "WiFi setup",

@@ -79,6 +79,7 @@
         "name": "Status",
         "state": {
           "off": "Aus",
+          "not_responding": "Reagiert nicht",
           "initializing": "Initialisierung",
           "idle": "Bereit",
           "wifi_setup": "WLAN-Einrichtung",
