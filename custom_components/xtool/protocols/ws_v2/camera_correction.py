@@ -169,9 +169,9 @@ class Overlay:
     ``lines``: (x0, y0, x1, y1, label), the label written at the lower
     end. ``markers``: (x, y), a red target. ``spots``: (x, y, length,
     width, angle), an outline whose inside is that size (mm), long along
-    ``angle`` (degrees from X toward Y), drawn 3 px wide outward like a ring. ``rings``: (x, y, diameter), a circle whose inside is that
-    diameter (mm), drawn 3 px wide outward, so a dot that size sits just
-    inside it. ``images``: (x, y, width, height, JPEG), a picture laid on
+    ``angle`` (degrees from X toward Y), drawn 3 px wide outward like a ring. ``rings``: (x, y, diameter), a dot that size marked
+    like an mdi:circle-outline icon as large as the laser target (see
+    ``OverlaySizes``), so the dot itself stays visible inside. ``images``: (x, y, width, height, JPEG), a picture laid on
     that area, under everything else. The colours are the lines', the
     markers' and the spots' (also the rings').
     """
@@ -198,23 +198,34 @@ class OverlaySizes:
     ``line``: area outlines and the laser target's circle. ``thin``: slat
     lines and the laser target's cross. ``dot``: the radius of an area's
     origin and centre dots. ``target``: the radius of the laser target's
-    circle (its cross reaches twice as far).
+    circle (its cross reaches twice as far). ``icon``: the side of the
+    box a point's icon fills (the laser target's cross; a ring's icon).
+    ``ring``: a ring icon's outline width, and ``ring_radius`` its outer
+    radius, as in mdi:circle-outline (radius 10 and outline 2 in 24).
     """
 
     line: int
     thin: int
     dot: float
     target: float
+    icon: float
+    ring: int
+    ring_radius: float
 
 
 def overlay_sizes(image_width: int, px_per_mm: float) -> OverlaySizes:
     """The overlay sizes on a picture this wide, at this scale."""
     line = max(2, round(image_width / 500))
+    target = max(6.0, 2.5 * px_per_mm)
+    icon = 4 * target
     return OverlaySizes(
         line=line,
         thin=max(1, line // 2),
         dot=max(4.0, 1.2 * px_per_mm),
-        target=max(6.0, 2.5 * px_per_mm),
+        target=target,
+        icon=icon,
+        ring=max(1, round(icon * 2 / 24)),
+        ring_radius=icon * 10 / 24,
     )
 
 
@@ -256,14 +267,12 @@ def _draw_overlay(
         mask = mask.rotate(-angle, resample=Image.Resampling.BICUBIC)
         x0, y0 = round(cx - size / 2), round(cy - size / 2)
         image.paste(overlay.spot_color, (x0, y0, x0 + size, y0 + size), mask)
-    for x, y, diameter in overlay.rings:
-        # Pillow draws an outline inward from the box: the box is the
-        # outside, 3 px beyond the inside diameter
+    for x, y, _diameter in overlay.rings:
+        # Pillow draws an outline inward from the box: the box is the outside
         cx, cy = px(x, y)
-        r = diameter * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        r = sizes.ring_radius
         draw.ellipse(
-            (cx - r, cy - r, cx + r, cy + r),
-            outline=overlay.spot_color, width=OVERLAY_RING_WIDTH,
+            (cx - r, cy - r, cx + r, cy + r), outline=overlay.spot_color, width=sizes.ring,
         )
 
     # Labels as large as the space between lines allows: white on black

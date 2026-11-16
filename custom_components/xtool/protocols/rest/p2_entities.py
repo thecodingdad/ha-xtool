@@ -883,7 +883,7 @@ def _overlay(coordinator: XtoolCoordinator, camera_name: str, name: str) -> dict
     if name == "laser_target":
         return {"target": [[head_x, head_y]]}
     if name == "red_dot_close":
-        # A ring the dot sits just inside, so the dot itself stays visible
+        # The dot and its size; drawn as a ring icon around it, so the dot stays visible
         dx, dy = p2_geometry.CLOSE_RED_DOT_OFFSET
         return {"close": [[head_x + dx, head_y + dy, p2_geometry.CLOSE_RED_DOT_DIAMETER]]}
     if name == "red_dot_quick":
@@ -913,9 +913,16 @@ def _overlay_style(
         return {
             "color": list(_color(coordinator, "laser_target")), "line": sizes.line,
             "style": "solid", "icon": "mdi:crosshairs",
-            "size": round(4 * sizes.target / px_per_mm, 1),
+            "size": round(sizes.icon / px_per_mm, 1),
         }
-    if name in ("red_dot_close", "red_dot_quick"):
+    if name == "red_dot_close":
+        # A ring as large as the laser target: the dot stays visible inside
+        return {
+            "color": list(_color(coordinator, "red_dots")), "line": sizes.ring,
+            "style": "solid", "icon": "mdi:circle-outline",
+            "size": round(sizes.icon / px_per_mm, 1),
+        }
+    if name == "red_dot_quick":
         return {
             "color": list(_color(coordinator, "red_dots")), "line": OVERLAY_RING_WIDTH,
             "style": "solid", "icon": None, "size": None,
