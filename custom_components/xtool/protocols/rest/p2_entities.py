@@ -74,6 +74,8 @@ P2_EXPOSURE_READY_STATUSES = (XtoolStatus.IDLE, XtoolStatus.FINISHED)
 P2_EXPOSURE_STEP = 10
 # A photo taken 0.3 s after the change still has the old exposure
 P2_EXPOSURE_SETTLE_SECONDS = 2.0
+# Live view: at least this long from the start of one frame to the next
+P2_LIVE_FRAME_INTERVAL = 1.0
 
 # The P2's fill lights by /peripheral/fill_light index
 P2_FILL_LIGHTS = (1, 2, 3)
@@ -186,6 +188,9 @@ class P2Camera(_WSV2Camera):
 
     # The last photo is drawn again (while the P2 sleeps) after a change
     _redraw = True
+    # A full P2 photo is 1 to 2.5 MB and is straightened here: at most one
+    # live-view frame per second (the protocol takes one photo at a time)
+    _live_frame_interval = P2_LIVE_FRAME_INTERVAL
 
     async def refresh_picture(self) -> None:
         self._redraw = True

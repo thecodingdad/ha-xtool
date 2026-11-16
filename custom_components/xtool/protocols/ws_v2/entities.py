@@ -2038,6 +2038,8 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
 
     # When the last photo finished (monotonic seconds)
     _snapshot_done = float("-inf")
+    # Time from the start of one live-view frame to the next
+    _live_frame_interval = LIVE_FRAME_INTERVAL
 
     @property
     def is_streaming(self) -> bool:
@@ -2264,9 +2266,10 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
     ) -> web.StreamResponse | None:
         """Live view: a multipart MJPEG stream of photos.
 
-        A new frame starts every ``LIVE_FRAME_INTERVAL`` (or as soon as
-        the previous photo arrives, if that took longer).
+        A new frame starts every ``_live_frame_interval`` seconds (or as
+        soon as the previous photo arrives, if that took longer).
         """
+        frame_interval = self._live_frame_interval
         boundary = "--xtoolframe"
         response = web.StreamResponse(
             status=200,
@@ -2281,7 +2284,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         await response.prepare(request)
         # Reuse a photo only when another viewer asked for it during
         # this frame's interval.
-        interval = timedelta(seconds=LIVE_FRAME_INTERVAL / 2)
+        interval = timedelta(seconds=frame_interval / 2)
         self._set_live_viewers(1)
         try:
             while True:
@@ -2303,7 +2306,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
                         timeout=LIVE_WRITE_TIMEOUT,
                     )
                 await asyncio.sleep(
-                    max(0.0, LIVE_FRAME_INTERVAL - (time.monotonic() - started))
+                    max(0.0, frame_interval - (time.monotonic() - started))
                 )
         except (asyncio.CancelledError, ConnectionResetError):
             pass

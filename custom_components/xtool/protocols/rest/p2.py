@@ -229,6 +229,9 @@ class P2Protocol(RestProtocol):
         self._push_notify: Callable[[], None] | None = None
         self._http: aiohttp.ClientSession | None = None
         self._next_slow_read = 0.0
+        # The photo already on its way, per camera; one photo at a time
+        self._camera_pending: dict[str, asyncio.Future[bytes | None]] = {}
+        self._camera_lock = asyncio.Lock()
         self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
@@ -730,13 +733,39 @@ class P2Protocol(RestProtocol):
     CAMERA_STREAMS = {"overview": 0, "closeup": 1}
 
     async def camera_snap(self, camera_name: str) -> bytes | None:
-        """A photo (``/camera/snap`` on port 8329). A photo wakes a sleeping P2."""
-        stream = self.CAMERA_STREAMS[camera_name]
-        url = f"http://{self.host}:{REST_CAMERA_PORT}/camera/snap?stream={stream}"
-        async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-            if resp.status != 200:
-                raise ConnectionError(f"P2 {camera_name} photo: HTTP {resp.status}")
-            return await resp.read()
+        """A photo (``/camera/snap`` on port 8329). A photo wakes a sleeping P2.
+
+        A full photo is 1 to 2.5 MB. Asked for faster than it can send
+        them (a live view, seen 2026-11-15), the P2 slowed down until a
+        ping took 300 ms, so requests never queue up: a request for a
+        camera whose photo is already coming gets that photo, and the two
+        cameras take one photo at a time.
+        """
+        # No photo while the P2 does not answer: a request would only wait
+        # for its timeout
+        if self._is_offline():
+            return None
+        pending = self._camera_pending
+        task = pending.get(camera_name)
+        if task is None:
+            task = asyncio.ensure_future(self._camera_snap_locked(camera_name))
+            pending[camera_name] = task
+            task.add_done_callback(
+                lambda done, name=camera_name: pending.pop(name, None)
+                if pending.get(name) is done else None
+            )
+        # Shielded: a viewer that goes away does not cancel the photo
+        # another request is waiting for
+        return await asyncio.shield(task)
+
+    async def _camera_snap_locked(self, camera_name: str) -> bytes | None:
+        async with self._camera_lock:
+            stream = self.CAMERA_STREAMS[camera_name]
+            url = f"http://{self.host}:{REST_CAMERA_PORT}/camera/snap?stream={stream}"
+            async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status != 200:
+                    raise ConnectionError(f"P2 {camera_name} photo: HTTP {resp.status}")
+                return await resp.read()
 
     async def set_camera_exposure(self, stream: int, value: int) -> None:
         """Set a camera's exposure (``POST /camera/exposure`` on port 8329).
