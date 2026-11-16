@@ -1863,10 +1863,13 @@ class WSV2Connection(XtoolEntity, SensorEntity):
     be reached: the connection is not known then.
     """
 
-    _attr_translation_key = "connection"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["ethernet", "wifi"]
+    entity_description = SensorEntityDescription(
+        key="connection",
+        translation_key="connection",
+        device_class=SensorDeviceClass.ENUM,
+        options=["ethernet", "wifi"],
+        entity_category=EntityCategory.DIAGNOSTIC,
+    )
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
