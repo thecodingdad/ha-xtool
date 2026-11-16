@@ -2259,7 +2259,12 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             and time.monotonic() - self._snapshot_done < PICTURE_REUSE_SECONDS
         ):
             return self._last_snapshot
-        return await self._image(MIN_SNAPSHOT_INTERVAL)
+        # Dashboard pictures reload every few seconds; they reuse a photo
+        # younger than the thumbnail refresh interval, so the refresh
+        # alone sets how often the laser takes photos.
+        return await self._image(
+            max(MIN_SNAPSHOT_INTERVAL, timedelta(seconds=self._thumbnail_seconds))
+        )
 
     async def handle_async_mjpeg_stream(
         self, request: web.Request,

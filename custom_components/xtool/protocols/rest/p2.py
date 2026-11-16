@@ -232,6 +232,8 @@ class P2Protocol(RestProtocol):
         # The photo already on its way, per camera; one photo at a time
         self._camera_pending: dict[str, asyncio.Future[bytes | None]] = {}
         self._camera_lock = asyncio.Lock()
+        # No new photo before this time (monotonic), after a slow one
+        self._camera_rest_until = 0.0
         self.machine_info: dict[str, Any] = {}
         # Set by a WORK_STOPED push: the job that ends next was cancelled
         self._stopping = False
@@ -731,6 +733,12 @@ class P2Protocol(RestProtocol):
 
     # Studio: stream 0 is the overview camera, 1 the close camera
     CAMERA_STREAMS = {"overview": 0, "closeup": 1}
+    # A photo that takes this long (or fails after it) means the P2 is
+    # busy: it then rests as long as that photo took, up to PHOTO_REST_MAX.
+    # Seen 2026-11-16: with a photo every 5 s, photos took 7 to 30 s,
+    # some timed out, and the P2 stopped answering pings while sending them.
+    PHOTO_SLOW_SECONDS = 5.0
+    PHOTO_REST_MAX = 30.0
 
     async def camera_snap(self, camera_name: str) -> bytes | None:
         """A photo (``/camera/snap`` on port 8329). A photo wakes a sleeping P2.
@@ -744,6 +752,10 @@ class P2Protocol(RestProtocol):
         # No photo while the P2 does not answer: a request would only wait
         # for its timeout
         if self._is_offline():
+            return None
+        # No new photo while the P2 rests after a slow one: the camera
+        # shows its last photo instead
+        if time.monotonic() < self._camera_rest_until:
             return None
         pending = self._camera_pending
         task = pending.get(camera_name)
@@ -762,10 +774,21 @@ class P2Protocol(RestProtocol):
         async with self._camera_lock:
             stream = self.CAMERA_STREAMS[camera_name]
             url = f"http://{self.host}:{REST_CAMERA_PORT}/camera/snap?stream={stream}"
-            async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status != 200:
-                    raise ConnectionError(f"P2 {camera_name} photo: HTTP {resp.status}")
-                return await resp.read()
+            started = time.monotonic()
+            try:
+                async with self._session().get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status != 200:
+                        raise ConnectionError(f"P2 {camera_name} photo: HTTP {resp.status}")
+                    return await resp.read()
+            finally:
+                took = time.monotonic() - started
+                if took >= self.PHOTO_SLOW_SECONDS:
+                    rest = min(took, self.PHOTO_REST_MAX)
+                    self._camera_rest_until = time.monotonic() + rest
+                    _LOGGER.debug(
+                        "P2 %s photo took %.1f s; no new photo for %.0f s",
+                        camera_name, took, rest,
+                    )
 
     async def set_camera_exposure(self, stream: int, value: int) -> None:
         """Set a camera's exposure (``POST /camera/exposure`` on port 8329).
