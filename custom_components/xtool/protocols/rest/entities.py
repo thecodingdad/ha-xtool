@@ -77,7 +77,7 @@ def _is_m1_legacy(coordinator: XtoolCoordinator) -> bool:
 
 
 class XtoolIRLED(XtoolEntity, SwitchEntity):
-    """IR LED switch (close-up index 1, global index 2)."""
+    """IR LED switch (close camera index 1, global index 2)."""
 
     def __init__(self, coordinator: XtoolCoordinator, kind: str) -> None:
         super().__init__(coordinator)
@@ -300,7 +300,7 @@ class XtoolRestFillLight(XtoolEntity, LightEntity):
 
 
 class XtoolCamera(XtoolEntity, Camera):
-    """Representation of an xTool camera (P2/P2S overview or close-up)."""
+    """Representation of an xTool camera (P2/P2S overview or close camera)."""
 
     def __init__(
         self,

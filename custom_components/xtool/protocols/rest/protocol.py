@@ -574,7 +574,7 @@ class RestProtocol(XtoolProtocol):
         )
 
     async def set_ir_led(self, index: int, on: bool) -> None:
-        """Toggle IR LED (index 1=close-up, 2=global)."""
+        """Toggle IR LED (index 1=close camera, 2=global)."""
         action = PERIPHERAL_ACTION_ON if on else PERIPHERAL_ACTION_OFF
         await self._post(REST_PATH_IR_LED, data={"action": action, "index": index})
 

@@ -22,7 +22,7 @@ This integration communicates directly with your xTool device over the local net
 - Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
 - Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, ...)
-- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab / M2 (overview + close-up, main + deep, or far + near + side depending on model, plus flame record on flame-detection-capable models).
+- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab / M2 (overview + close camera, main + deep, or far + near + side depending on model, plus flame record on flame-detection-capable models).
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
 - Automatic reconnect on network interruption
@@ -209,7 +209,7 @@ Choosing a preset while no job is running only stores its speed; the next job re
 | Cooling fan | Manual cooling-fan toggle |
 | Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
 | Purifier auto-continue | Keep purifier running after job ends |
-| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED |
+| Red dot / Red dot (close) | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close camera's IR LED |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
 | Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control |
@@ -227,7 +227,7 @@ Choosing a preset while no job is running only stores its speed; the next job re
 | Sleep timeout (cover open) | Idle sleep timeout while cover is open (0-3600 s) |
 | IR-light auto-off | IR illumination auto-off (0-3600 s) |
 | Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
-| Camera exposure (overview / close-up) | Camera exposure values (0-255) |
+| Camera exposure (overview / close camera) | Camera exposure values (0-255) |
 | Camera thumbnail refresh interval | WS-V2 cameras, one per camera (on the camera's own device as "Thumbnail refresh interval" when the laser has several cameras). How often the camera's picture on the device page refreshes, 5 s to 10 min (Home Assistant's standard is 5 min). Each refresh is a new camera state sent to every open Home Assistant screen, and a photo from the laser for each screen showing it |
 | Crop width / height / center X / center Y | **F2 Ultra UV**, on the Main camera device. The part of the work surface the straightened main camera shows, in mm. Default: the 200 × 200 mm calibrated area. A width or height of 0 shows the widest area the photo fills that way. The centre moves from the centre of that area (X right, Y down). Areas outside the calibrated area are extended from its edge and are less accurate. A wider shape (for example 267 × 200 mm) fits camera dialogs without scrolling |
 | Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
@@ -289,7 +289,7 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle; its Perspective select turns the photos upright and, by default, also straightens them, so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
 | Close camera | Detail camera (P-family + V1-firmware dual-camera devices) |
-| Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
+| Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close camera) and `side` (process-side view) |
 | Flame record | Snapshot of the most recent flame-detection event |
 | Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
 

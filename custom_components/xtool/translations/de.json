@@ -767,7 +767,7 @@
         "name": "Strom"
       },
       "ir_led_close": {
-        "name": "IR-LED (Nahaufnahme)"
+        "name": "Roter Punkt (nah)"
       },
       "ir_led_global": {
         "name": "Roter Punkt"
@@ -928,7 +928,7 @@
         "name": "Belichtung (Übersicht)"
       },
       "camera_exposure_closeup": {
-        "name": "Belichtung (Nahaufnahme)"
+        "name": "Belichtung (Nahkamera)"
       },
       "air_assist_gear_cut": {
         "name": "Air-Assist Stufe (Schneiden)"

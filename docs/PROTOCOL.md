@@ -2084,7 +2084,7 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/processing/upload` | POST multipart | Upload processing G-code (P2 family) |
 | `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness. **Note:** on F2 family V2 firmware this endpoint accepts the PUT but never persists the value — Studio writes brightness through `/v1/device/configs` with `fillLightBrightFront` / `fillLightBrightBack` keys instead. The peripheral endpoint is read-only on those models. |
 | `/peripheral/laser_head` | POST | `{action:"go_to",x,y,waitTime}` move head, `{action:"get_coord"}` query |
-| `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close-up, 2=global) — P2/P2S |
+| `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close camera, 2=global) — P2/P2S |
 | `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover closed (Studio's `isCover`; checked on the P2) |
 | `/peripheral/airassist?action=get` | GET | Air-Assist V2 connect state — `state==="on"` means accessory attached. Used by M1 Ultra. |
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
@@ -2116,7 +2116,7 @@ P2/P2S/F1/F1 Ultra:
 | Endpoint | Method | Notes |
 |---|---|---|
 | `/camera/snap?stream=0` | GET, blob | Global / overview camera |
-| `/camera/snap?stream=1` | GET, blob | Local / close-up camera |
+| `/camera/snap?stream=1` | GET, blob | Local / close camera |
 | `/camera/exposure?stream=0/1` | POST `{value:<int>}` | Set exposure |
 | `/camera/fireRecord` | POST, blob | Recorded flame snapshot (F1 Ultra) |
 
@@ -2161,7 +2161,7 @@ The Linux-based REST family shares the same `laserservice` HTTP daemon, but each
 | Path | Notes |
 |---|---|
 | `/peripheral/fill_light` | Brightness 0-255 (REST integer scale) |
-| `/peripheral/ir_led` | IR LEDs (close-up + global on P2) |
+| `/peripheral/ir_led` | IR LEDs (close camera + global on P2) |
 | `/peripheral/digital_lock` | Cover digital lock |
 | `/peripheral/gap` | Cover open detection |
 | `/peripheral/drawer` | Front-drawer position |
@@ -2627,7 +2627,7 @@ shown verbatim where they exist.
 
 | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|
-| `/v1/platform/camera/snap` | POST | `?name=far\|near\|side` | — | JPEG body. Channels: `far` = global / overview, `near` = local / close-up, `side` = side view |
+| `/v1/platform/camera/snap` | POST | `?name=far\|near\|side` | — | JPEG body. Channels: `far` = global / overview, `near` = local / close camera, `side` = side view |
 | `/v1/platform/camera/list` | GET | — | — | list of available cameras |
 | `/v1/platform/camera/live` | POST | — | live-stream control | OK — paired with the WS player on port 8089 |
 | `/v1/platform/camera/calibration/params` | GET / POST | — | calibration params | — |

@@ -845,7 +845,7 @@
         "name": "Power"
       },
       "ir_led_close": {
-        "name": "IR LED (close-up)"
+        "name": "Red dot (close)"
       },
       "ir_led_global": {
         "name": "Red dot"
@@ -1009,7 +1009,7 @@
         "name": "Camera exposure (overview)"
       },
       "camera_exposure_closeup": {
-        "name": "Camera exposure (close-up)"
+        "name": "Camera exposure (close camera)"
       },
       "air_assist_gear_cut": {
         "name": "Air-Assist gear (cut)"

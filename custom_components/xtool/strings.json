@@ -275,7 +275,7 @@
       "smoking_fan": { "name": "Exhaust fan" },
       "exhaust_fan_setting": { "name": "Exhaust fan" },
       "power_switch": { "name": "Power" },
-      "ir_led_close": { "name": "IR LED (close-up)" },
+      "ir_led_close": { "name": "Red dot (close)" },
       "ir_led_global": { "name": "Red dot" },
       "ir_led": { "name": "Red dot" },
       "digital_lock": { "name": "Cover lock" },
@@ -313,7 +313,7 @@
       "tilt_threshold": { "name": "Tilt threshold" },
       "moving_threshold": { "name": "Movement threshold" },
       "camera_exposure_overview": { "name": "Camera exposure (overview)" },
-      "camera_exposure_closeup": { "name": "Camera exposure (close-up)" },
+      "camera_exposure_closeup": { "name": "Camera exposure (close camera)" },
       "purifier_timeout": { "name": "Purifier auto-off" }
     },
     "select": {
