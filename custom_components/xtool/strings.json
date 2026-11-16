@@ -260,13 +260,13 @@
         "name": "Overlay slat lines"
       },
       "overlay_red_dot_close": {
-        "name": "Overlay red dot (close)"
+        "name": "Overlay red dot close"
       },
       "overlay_red_dot_quick": {
-        "name": "Overlay red dot (quick)"
+        "name": "Overlay red dot quick"
       },
-      "aimed_measure_light": { "name": "Red dot (close)" },
-      "quick_measure_light": { "name": "Red dot (quick)" },
+      "aimed_measure_light": { "name": "Red dot close" },
+      "quick_measure_light": { "name": "Red dot quick" },
       "flame_alarm": { "name": "Flame alarm" },
       "buzzer": { "name": "Buzzer" },
       "move_stop": { "name": "Move stop" },
@@ -275,7 +275,7 @@
       "smoking_fan": { "name": "Exhaust fan" },
       "exhaust_fan_setting": { "name": "Exhaust fan" },
       "power_switch": { "name": "Power" },
-      "ir_led_close": { "name": "Red dot (close)" },
+      "ir_led_close": { "name": "Red dot close" },
       "ir_led_global": { "name": "Red dot" },
       "ir_led": { "name": "Red dot" },
       "digital_lock": { "name": "Cover lock" },

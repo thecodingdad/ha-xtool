@@ -767,7 +767,7 @@
         "name": "Strom"
       },
       "ir_led_close": {
-        "name": "Roter Punkt (nah)"
+        "name": "Roter Punkt nah"
       },
       "ir_led_global": {
         "name": "Roter Punkt"
@@ -830,10 +830,10 @@
         "name": "Auto-Weiterlauf"
       },
       "aimed_measure_light": {
-        "name": "Roter Punkt (nah)"
+        "name": "Roter Punkt nah"
       },
       "quick_measure_light": {
-        "name": "Roter Punkt (schnell)"
+        "name": "Roter Punkt schnell"
       },
       "overlay_mode_process_on_slats": {
         "name": "Overlay Modus auf Lamellen bearbeiten"
@@ -860,10 +860,10 @@
         "name": "Overlay Lamellenlinien"
       },
       "overlay_red_dot_close": {
-        "name": "Overlay roter Punkt (nah)"
+        "name": "Overlay roter Punkt nah"
       },
       "overlay_red_dot_quick": {
-        "name": "Overlay roter Punkt (schnell)"
+        "name": "Overlay roter Punkt schnell"
       }
     },
     "number": {
