@@ -194,6 +194,21 @@ class P2Camera(_WSV2Camera):
     # A full P2 photo is 1 to 2.5 MB and is straightened here: at most one
     # live-view frame per second (the protocol takes one photo at a time)
     _live_frame_interval = P2_LIVE_FRAME_INTERVAL
+    # Changes with the crop and, on the close camera, every head move
+    _unrecorded_attributes = frozenset({"view"})
+    _picture_view: dict[str, float] | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """``view``: the area the picture shows, in the overlays' mm."""
+        return {"view": self._picture_view} if self._picture_view else None
+
+    @callback
+    def set_picture_view(self, view: dict[str, float]) -> None:
+        if view != self._picture_view:
+            self._picture_view = view
+            if self.hass is not None:
+                self.async_write_ha_state()
 
     async def refresh_picture(self) -> None:
         self._redraw = True
@@ -952,7 +967,8 @@ def _set_overlay_attributes(
     view: CameraView, lens: tuple[float, ...] | None, marks: dict[str, dict[str, list]],
     origin: tuple[float, float],
 ) -> None:
-    """Give the camera's overlay switches their overlay's position and style.
+    """Give the camera's overlay switches their overlay's position and
+    style, and the camera the area its picture shows (``view``).
 
     The position is in the frame of the camera's crop numbers, so a
     dashboard card maps it onto the picture as it maps the crop: the
@@ -960,12 +976,21 @@ def _set_overlay_attributes(
     its calibrated area. The overview picture already shows the
     material's top to scale, so no height correction applies.
     """
-    resolved, _, _, width, _ = output_frame(calibration, view, lens)
+    resolved, left_mm, top_mm, width, _ = output_frame(calibration, view, lens)
     px_per_mm = width / resolved.width_mm
     dx, dy = origin
     if camera_name != "overview":
+        # Its picture's edges are from the area's corner: moved to its centre
+        left_mm -= calibration.area_mm / 2
+        top_mm -= calibration.area_h_mm / 2
         dx += calibration.area_mm / 2
         dy += calibration.area_h_mm / 2
+    camera = _thumbnail_registry(coordinator).cameras.get(camera_name)
+    if isinstance(camera, P2Camera):
+        camera.set_picture_view({
+            "x": round(left_mm, 1), "y": round(top_mm, 1),
+            "width": round(resolved.width_mm, 1), "height": round(resolved.height_mm, 1),
+        })
     attributes = _overlay_attributes(coordinator)
     switches = _overlay_switches(coordinator)
     for name, overlay_marks in marks.items():
