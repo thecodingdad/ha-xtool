@@ -284,6 +284,7 @@ class P2Coordinator(RestCoordinator):
         self._hosts_store: Store | None = None
         self._known_hosts: list[str] = []
         self._next_host_search = 0.0
+        self._next_ethernet_check = 0.0
         self._own_entry_update: tuple[dict[str, Any], dict[str, Any]] | None = None
 
     # --- Identity and addresses ------------------------------------------
@@ -312,6 +313,19 @@ class P2Coordinator(RestCoordinator):
         _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
                      self.device_name, ethernet, self.protocol.host)
         await self._move_to(ethernet)
+
+    async def _back_to_ethernet(self) -> None:
+        """While on Wi-Fi with a cable connected, try Ethernet again now and then.
+
+        A few lost replies on Ethernet move Home Assistant to the Wi-Fi
+        address, which is slower for photos; without this it stays there
+        until the integration reconnects or the P2 renews its address.
+        """
+        now = time.monotonic()
+        if now < self._next_ethernet_check:
+            return
+        self._next_ethernet_check = now + ETHERNET_CHECK_SECONDS
+        await self._prefer_ethernet()
 
     async def async_move_to(self, host: str) -> None:
         """Use the address a DHCP sighting found (see config_flow)."""
@@ -407,6 +421,7 @@ class P2Coordinator(RestCoordinator):
         self._emit_push_events()
         if state.available:
             self._emit_alarm_changes(prev_alarms, state.active_alarms)
+            await self._back_to_ethernet()
         else:
             await self._find_on_other_address()
         return state
@@ -486,6 +501,8 @@ class P2Coordinator(RestCoordinator):
 
 # How often a P2 that stopped answering is looked for at its other address
 HOST_SEARCH_SECONDS = 30.0
+# How often a P2 reached over Wi-Fi is tried on Ethernet again
+ETHERNET_CHECK_SECONDS = 300.0
 
 
 def _arp_mac(host: str) -> str:
