@@ -2282,6 +2282,8 @@ class WSV2Protocol(XtoolProtocol):
             if isinstance(dbm, (int, float)) and not isinstance(dbm, bool):
                 self._latest["wifi_signal"] = int(dbm)
                 answered += 1
+        if answered:
+            self._notify_now()
         await self._read_calibration_info()
         if answered == 2 or self._laser_info_tries >= LASER_INFO_TRIES:
             self._laser_info_known = True
@@ -2293,11 +2295,21 @@ class WSV2Protocol(XtoolProtocol):
         first lets the first poll after the laser powers on carry it.
         """
         self._connection_tries += 1
-        if (
-            await self._read_connection()
-            or self._connection_tries >= LASER_INFO_TRIES
-        ):
+        if await self._read_connection():
             self._connection_known = True
+            self._notify_now()
+        elif self._connection_tries >= LASER_INFO_TRIES:
+            self._connection_known = True
+
+    def _notify_now(self) -> None:
+        """Send what was just read to Home Assistant without waiting for
+        the rest of the poll, as a push does."""
+        notify = self._push_notify
+        if notify is not None:
+            try:
+                notify()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("V2 push_notify callback failed: %s", err)
 
     async def _read_connection(self) -> bool:
         """Read which of the laser's interfaces has the address in use.
