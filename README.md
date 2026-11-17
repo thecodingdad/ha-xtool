@@ -1,4 +1,4 @@
-# xTool Laser
+# xTool
 
 Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P-family, MetalFab, Apparel Printer, O1 Omni, Retail Marker, …).
 
@@ -58,7 +58,7 @@ Or add manually:
 1. Open HACS in your Home Assistant instance
 2. Click the three dots in the top right corner and select **Custom repositories**
 3. Enter `https://github.com/thecodingdad/ha-xtool` and select **Integration** as the category
-4. Click **Add**, then search for "xTool Laser" and download it
+4. Click **Add**, then search for "xTool" and download it
 5. Restart Home Assistant
 
 ### Manual Installation
@@ -72,14 +72,14 @@ Or add manually:
 ### Adding a Device
 
 1. Go to **Settings** > **Devices & Services** > **Add Integration**
-2. Search for **xTool Laser**
+2. Search for **xTool**
 3. The integration scans your network for xTool devices via UDP broadcast
 4. Select a discovered device from the list, or choose **Enter IP address manually**
 5. Confirm to add the device
 
 ### Options
 
-After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool Laser** > **Configure**:
+After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool** > **Configure**:
 
 The available options are gated by the device's protocol family — only relevant fields appear.
 

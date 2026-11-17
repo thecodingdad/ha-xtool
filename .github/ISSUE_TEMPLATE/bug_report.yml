@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with the xTool Laser integration
+description: Report a problem with the xTool integration
 title: "[Bug] "
 labels: ["bug"]
 body:
@@ -75,7 +75,7 @@ body:
     id: integration_version
     attributes:
       label: Integration version
-      description: Found under Settings → Devices & Services → xTool Laser → details, or in `manifest.json`.
+      description: Found under Settings → Devices & Services → xTool → details, or in `manifest.json`.
       placeholder: e.g. 2.3.2
     validations:
       required: true
@@ -124,7 +124,7 @@ body:
       label: Debug logs
       description: |
         **How to capture:**
-        1. Settings → Devices & Services → xTool Laser → click the three-dot menu → **Enable debug logging**.
+        1. Settings → Devices & Services → xTool → click the three-dot menu → **Enable debug logging**.
         2. Reproduce the bug.
         3. Click the three-dot menu again → **Disable debug logging** — this downloads the relevant log file.
         4. Paste the lines tagged `custom_components.xtool` below (or attach the file as a comment after submitting).

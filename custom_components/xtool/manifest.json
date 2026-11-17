@@ -1,6 +1,6 @@
 {
   "domain": "xtool",
-  "name": "xTool Laser",
+  "name": "xTool",
   "codeowners": ["@thecodingdad"],
   "config_flow": true,
   "documentation": "https://github.com/thecodingdad/ha-xtool",

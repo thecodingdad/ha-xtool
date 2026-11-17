@@ -1,4 +1,4 @@
-"""The xTool Laser integration."""
+"""The xTool integration."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> bool:
-    """Set up xTool Laser from a config entry."""
+    """Set up xTool from a config entry."""
     host = entry.data[CONF_HOST]
     device_name = entry.data.get("device_name", DEFAULT_DEVICE_NAME)
     serial_number = entry.data.get("serial_number", "")
@@ -373,7 +373,7 @@ async def async_remove_config_entry_device(
             raise HomeAssistantError(
                 "The laser device itself can't be deleted from the device "
                 "page. Remove the xTool integration via Settings → Devices & "
-                "Services → xTool Laser → Delete instead."
+                "Services → xTool → Delete instead."
             )
         _laser_sn, type_id, acc_sn = parts
         key = f"{type_id}:{acc_sn}"
