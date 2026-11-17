@@ -24,7 +24,6 @@ import random
 import re
 import socket
 import struct
-import time
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives import padding
@@ -200,7 +199,9 @@ async def _probe_v1(
     Studio's full shape is harmless for older firmware.
     """
     devices: list[DiscoveredDevice] = []
-    request_id = int(time.time() * 1000)
+    # The P2 (40.21.x) echoes a requestId only when it fits in 32 bits; a
+    # larger one comes back as 0 and the reply would be dropped.
+    request_id = random.randint(1, 0x7FFFFFFF)
 
     loop = asyncio.get_event_loop()
     transport = None
