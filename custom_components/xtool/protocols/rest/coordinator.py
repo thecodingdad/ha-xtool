@@ -6,12 +6,9 @@ import logging
 from dataclasses import replace as dataclass_replace
 from typing import TYPE_CHECKING, Any
 
-import time
 
 import aiohttp
-from homeassistant.const import CONF_HOST
 from homeassistant.helpers.device_registry import format_mac
-from homeassistant.helpers.storage import Store
 
 from ...coordinator import XtoolCoordinator
 from ..base import XtoolDeviceState
@@ -96,6 +93,7 @@ class RestCoordinator(XtoolCoordinator):
         if state.available:
             self.data = state
             self._dispatch_new_accessories()
+        self.async_search_address(state.available)
         return state
 
     async def _fetch_device_info(self) -> None:
@@ -278,14 +276,6 @@ class P2Coordinator(RestCoordinator):
         self.protocol._push_notify = self._on_push
         # Error codes already sent as events from a push
         self._announced: set[str] = set()
-        # The laser's addresses as it last reported them (Wi-Fi and
-        # Ethernet), kept across restarts; when the configured one stops
-        # answering, the others are tried
-        self._hosts_store: Store | None = None
-        self._known_hosts: list[str] = []
-        self._next_host_search = 0.0
-        self._next_ethernet_check = 0.0
-        self._own_entry_update: tuple[dict[str, Any], dict[str, Any]] | None = None
 
     # --- Identity and addresses ------------------------------------------
 
@@ -296,7 +286,6 @@ class P2Coordinator(RestCoordinator):
         mac = await self.hass.async_add_executor_job(_arp_mac, protocol.host)
         if mac and format_mac(mac) != format_mac(self.mac_address or ""):
             self.other_mac_addresses.add(format_mac(mac))
-        await self._save_hosts([protocol.host, *protocol.addresses()])
         await self._prefer_ethernet()
 
     def prefers_host(self, host: str) -> bool:
@@ -310,80 +299,9 @@ class P2Coordinator(RestCoordinator):
             return
         if await _serial_at(ethernet) != self.serial_number:
             return
-        _LOGGER.info("%s answers on Ethernet at %s; switching from %s",
+        _LOGGER.info("%s answers on Ethernet at %s while Home Assistant uses %s",
                      self.device_name, ethernet, self.protocol.host)
-        await self._move_to(ethernet)
-
-    async def _back_to_ethernet(self) -> None:
-        """While on Wi-Fi with a cable connected, try Ethernet again now and then.
-
-        A few lost replies on Ethernet move Home Assistant to the Wi-Fi
-        address, which is slower for photos; without this it stays there
-        until the integration reconnects or the P2 renews its address.
-        """
-        now = time.monotonic()
-        if now < self._next_ethernet_check:
-            return
-        self._next_ethernet_check = now + ETHERNET_CHECK_SECONDS
-        await self._prefer_ethernet()
-
-    async def async_move_to(self, host: str) -> None:
-        """Use the address a DHCP sighting found (see config_flow)."""
-        await self._move_to(host)
-
-    async def _move_to(self, host: str) -> None:
-        """Use the new address at once and save it, without reloading the entry."""
-        entry = self.config_entry
-        await self.protocol.change_host(host)
-        self.host = host
-        data = {**entry.data, CONF_HOST: host}
-        # The update listener skips this change: nothing needs a reload
-        self._own_entry_update = (data, dict(entry.options))
-        self.hass.config_entries.async_update_entry(entry, data=data)
-
-    def made_entry_update(self, entry: Any) -> bool:
-        """True when the entry holds exactly what this coordinator wrote to it."""
-        return self._own_entry_update == (dict(entry.data), dict(entry.options))
-
-    def _store(self) -> Store:
-        if self._hosts_store is None:
-            entry_id = self.config_entry.entry_id if self.config_entry else self.serial_number
-            self._hosts_store = Store(self.hass, 1, f"xtool.{entry_id}.hosts")
-        return self._hosts_store
-
-    async def _load_hosts(self) -> list[str]:
-        if not self._known_hosts:
-            stored = await self._store().async_load()
-            if isinstance(stored, dict) and isinstance(stored.get("hosts"), list):
-                self._known_hosts = [str(h) for h in stored["hosts"]]
-        return self._known_hosts
-
-    async def _save_hosts(self, hosts: list[str]) -> None:
-        """Keep only the addresses the laser reports now.
-
-        An address a DHCP server gave out earlier may belong to another
-        device by now, so old ones are not kept.
-        """
-        hosts = [h for h in dict.fromkeys(hosts) if h]
-        if hosts != await self._load_hosts():
-            self._known_hosts = hosts
-            await self._store().async_save({"hosts": hosts})
-
-    async def _find_on_other_address(self) -> None:
-        """When the laser stops answering, look for it at its other address."""
-        now = time.monotonic()
-        if now < self._next_host_search or self.power_switch_is_off or not self.config_entry:
-            return
-        self._next_host_search = now + HOST_SEARCH_SECONDS
-        current = self.protocol.host
-        for host in await self._load_hosts():
-            if host == current:
-                continue
-            serial = await _serial_at(host)
-            if serial and serial == self.serial_number:
-                _LOGGER.info("%s answers at %s instead of %s; switching", self.device_name, host, current)
-                await self._move_to(host)
-                return
+        self.async_found_at(ethernet)
 
     def _on_push(self) -> None:
         if self.data is None:
@@ -421,9 +339,6 @@ class P2Coordinator(RestCoordinator):
         self._emit_push_events()
         if state.available:
             self._emit_alarm_changes(prev_alarms, state.active_alarms)
-            await self._back_to_ethernet()
-        else:
-            await self._find_on_other_address()
         return state
 
     def _emit_alarm_changes(
@@ -497,12 +412,6 @@ class P2Coordinator(RestCoordinator):
     def build_events(self) -> list["EventEntity"]:
         from .entities import build_p2_events
         return build_p2_events(self)
-
-
-# How often a P2 that stopped answering is looked for at its other address
-HOST_SEARCH_SECONDS = 30.0
-# How often a P2 reached over Wi-Fi is tried on Ethernet again
-ETHERNET_CHECK_SECONDS = 300.0
 
 
 def _arp_mac(host: str) -> str:

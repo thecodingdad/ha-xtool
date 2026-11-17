@@ -77,7 +77,7 @@ Or add manually:
 4. Select a discovered device from the list, or choose **Enter IP address manually**
 5. Confirm to add the device
 
-**When the laser's address changes.** When a laser that is already set up asks your router for an address (DHCP), Home Assistant sees it and the integration moves to the new address, also while the laser is still starting. The address in use is kept while it answers, except that a P2 moves to its Ethernet address when it has one. When the address in use stops answering, the integration also tries the other addresses the laser last reported (its Wi-Fi and Ethernet).
+**When the laser's address changes.** When a laser that is already set up asks your router for an address (DHCP), Home Assistant sees it and the integration moves to the new address, also while the laser is still starting. The address in use is kept while it answers, except that a P2 moves to its Ethernet address when it has one. When a laser that is turned on stops answering, the integration looks for it with xTool's own discovery, as xTool Studio does, and moves to the address where it answers with its serial number. This finds a laser at any address, also when Home Assistant did not see it ask for one.
 
 ### Options
 

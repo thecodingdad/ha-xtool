@@ -364,11 +364,11 @@ async def _async_options_updated(
 ) -> None:
     """Reload integration when options change."""
     coordinator = getattr(entry, "runtime_data", None)
-    made_update = getattr(coordinator, "made_entry_update", None)
-    if made_update is not None and made_update(entry):
-        # The coordinator saved its new address; it already uses it
-        return
     before = getattr(coordinator, "options_at_setup", None)
+    if before is not None and dict(entry.options) == dict(before):
+        # Only the entry's data changed (such as a new address, which the
+        # config flow applies with its own reload)
+        return
     if before is not None:
         from .const import CONF_OVERLAY_COLORS
 

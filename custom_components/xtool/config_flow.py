@@ -110,13 +110,29 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 return entry
         return None
 
-    async def _async_follow_address(self, entry: ConfigEntry, host: str) -> ConfigFlowResult:
-        """A configured laser asked for an address (DHCP).
+    async def async_step_integration_discovery(
+        self, discovery_info: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """The integration found a configured laser at an address.
 
-        The MAC address says which laser it is, so the new address is not
-        asked first: the laser asks for its address while it starts, before
-        it answers. The address in use is kept while it answers, unless the
-        new one is the laser's own preferred one (such as its Ethernet).
+        Sent by the coordinator (``async_found_at``) after the laser
+        answered there with its serial number.
+        """
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(
+            DOMAIN, discovery_info["serial_number"],
+        )
+        if entry is None:
+            return self.async_abort(reason="already_configured")
+        return await self._async_follow_address(entry, discovery_info[CONF_HOST])
+
+    async def _async_follow_address(self, entry: ConfigEntry, host: str) -> ConfigFlowResult:
+        """A configured laser was seen at ``host``.
+
+        The address in use is kept while it answers, unless the new one is
+        the laser's preferred one (its Ethernet). Otherwise the entry gets
+        the new address and is reloaded, as Home Assistant's discovery does.
+        A DHCP sighting is not asked first: the MAC address says which laser
+        it is, and the laser asks for its address before it answers.
         """
         await self.async_set_unique_id(entry.unique_id)
         current = entry.data.get(CONF_HOST)
@@ -126,11 +142,6 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             if not (prefers is not None and prefers(host)) and await self._configured_host_answers(
                 entry.unique_id, host,
             ):
-                return self.async_abort(reason="already_configured")
-            move_to = getattr(coordinator, "async_move_to", None)
-            if move_to is not None:
-                # Used at once and saved, without reloading the entry
-                await move_to(host)
                 return self.async_abort(reason="already_configured")
         self._abort_if_unique_id_configured(updates={CONF_HOST: host})
         return self.async_abort(reason="already_configured")
@@ -156,12 +167,12 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason=conn_info or "cannot_connect")
 
         if conn_info.serial_number:
+            entry = self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, conn_info.serial_number,
+            )
+            if entry is not None:
+                return await self._async_follow_address(entry, host)
             await self.async_set_unique_id(conn_info.serial_number)
-            if await self._configured_host_answers(conn_info.serial_number, host):
-                # A laser on Ethernet and Wi-Fi at once is seen at both
-                # addresses; keep the one in use while it answers
-                self._abort_if_unique_id_configured()
-            self._abort_if_unique_id_configured(updates={CONF_HOST: host})
 
         self._discovered_host = host
         self._discovered_name = conn_info.name or name

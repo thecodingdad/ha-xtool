@@ -662,20 +662,6 @@ class P2Protocol(RestProtocol):
         self.machine_info = data
         return self._parse_machine_info_payload(data)
 
-    def addresses(self) -> list[str]:
-        """The laser's own addresses on the network (Wi-Fi and Ethernet)."""
-        ips = self.machine_info.get("ip") if isinstance(self.machine_info, dict) else None
-        if not isinstance(ips, dict):
-            return []
-        found = []
-        for key, ip in ips.items():
-            ip = str(ip or "")
-            # usb0 is the USB link to a computer; 169.254 is an unplugged cable
-            if not ip or key.startswith("usb") or ip.startswith(("169.254.", "127.")):
-                continue
-            found.append(ip)
-        return found
-
     def ethernet_address(self) -> str:
         """The Ethernet address, or "" while no cable is connected."""
         ips = self.machine_info.get("ip") if isinstance(self.machine_info, dict) else None
