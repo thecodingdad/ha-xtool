@@ -530,6 +530,9 @@ PATH_UV_LASER = "/v1/device/uv-laser"
 # The UV laser ready read is tried this many times after a connect
 # before it waits for the slow cadence (it can time out at boot).
 UV_READY_TRIES = 3
+# Tries for the F2 Ultra UV laser information and interface reads after
+# a connect; a laser that is still booting may not answer them yet.
+LASER_INFO_TRIES = 3
 # Studio waits up to 2 minutes for autofocus; Focusing ends after this
 # even if the finish push was missed.
 FOCUSING_TIMEOUT = 150.0
@@ -784,6 +787,11 @@ class WSV2Protocol(XtoolProtocol):
         # Engraving lens, Wi-Fi signal and what Studio calibrated
         # (F2 Ultra UV), read again on each connection.
         self._laser_info_known = False
+        self._laser_info_tries = 0
+        # Which interface Home Assistant reaches the laser on, read
+        # once per connection, first thing in the poll.
+        self._connection_known = False
+        self._connection_tries = 0
         self.calibration_time: datetime | None = None
         self.calibration_info: dict[str, Any] = {}
         # The red dot is on whenever the laser powers on, and the
@@ -898,6 +906,9 @@ class WSV2Protocol(XtoolProtocol):
         self._status_reads_known = False
         self._status_read_tries = 0
         self._laser_info_known = False
+        self._laser_info_tries = 0
+        self._connection_known = False
+        self._connection_tries = 0
         self._assume_red_dot_on = True
         self._red_dot_reported = False
         # Read the focus height again on the next poll.
@@ -2240,8 +2251,13 @@ class WSV2Protocol(XtoolProtocol):
 
         Studio's ``getLensesType`` (``cj_check``: ``fieldLensType`` is
         ``none``, ``small`` or ``big``) and ``wifi_signal_strength``
-        (a POST that only reads). All of them only read.
+        (a POST that only reads). All of them only read. After a
+        connect they are read on each poll until both answer, up to
+        ``LASER_INFO_TRIES`` times, so a laser that is still booting
+        does not leave them unknown until the slow cadence.
         """
+        self._laser_info_tries += 1
+        answered = 0
         try:
             r = await self.request(
                 "/v1/peripheral/param", "GET",
@@ -2253,6 +2269,7 @@ class WSV2Protocol(XtoolProtocol):
             lens = r.get("fieldLensType") if isinstance(r, dict) else None
             if lens in ("none", "small", "big"):
                 self._latest["engraving_lens"] = lens
+                answered += 1
         try:
             r = await self.request(
                 "/v1/net/wifi_signal_strength", "POST",
@@ -2264,35 +2281,51 @@ class WSV2Protocol(XtoolProtocol):
             dbm = r.get("wifi_signal_strength") if isinstance(r, dict) else None
             if isinstance(dbm, (int, float)) and not isinstance(dbm, bool):
                 self._latest["wifi_signal"] = int(dbm)
-        await self._read_connection()
+                answered += 1
         await self._read_calibration_info()
-        self._laser_info_known = True
+        if answered == 2 or self._laser_info_tries >= LASER_INFO_TRIES:
+            self._laser_info_known = True
 
-    async def _read_connection(self) -> None:
+    async def _poll_connection(self) -> None:
+        """Read the connection once per connection, before the other reads.
+
+        It does not change while the connection is open, and reading it
+        first lets the first poll after the laser powers on carry it.
+        """
+        self._connection_tries += 1
+        if (
+            await self._read_connection()
+            or self._connection_tries >= LASER_INFO_TRIES
+        ):
+            self._connection_known = True
+
+    async def _read_connection(self) -> bool:
         """Read which of the laser's interfaces has the address in use.
 
         ``/v1/wifi/interfaces`` lists each interface with its address
         (``[{iface: "wlan0", ip}, {iface: "usb0", ip}, ...]``). The one
         whose address Home Assistant connects to tells how it reaches
         the laser. Nothing is stored when no interface has that address.
+        Returns whether the laser answered with its interface list.
         """
         try:
             r = await self.request("/v1/wifi/interfaces", "GET", timeout=8.0)
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("V2 interface read failed: %s", err)
-            return
+            return False
         _LOGGER.debug("V2 interfaces: %r", r)
         if isinstance(r, dict):
             r = r.get("interfaces")
         if not isinstance(r, list):
-            return
+            return False
         for item in r:
             if not isinstance(item, dict) or str(item.get("ip") or "") != self.host:
                 continue
             connection = connection_of_interface(str(item.get("iface") or ""))
             if connection is not None:
                 self._latest["connection"] = connection
-            return
+            return True
+        return True
 
     async def _read_calibration_info(self) -> None:
         """Read, never write, what Studio calibrated on the laser.
@@ -2350,6 +2383,11 @@ class WSV2Protocol(XtoolProtocol):
         # is overridable: P2S V2 firmware swaps it for
         # ``/v1/device/runningStatus`` (same response shape).
         await self._poll_runtime_status(state)
+        if (
+            getattr(getattr(self, "_model", None), "has_laser_info", False)
+            and not self._connection_known
+        ):
+            await self._poll_connection()
 
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
         # Build the type list dynamically from the model's capability
