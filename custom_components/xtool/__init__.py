@@ -362,12 +362,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> bo
 async def _async_options_updated(
     hass: HomeAssistant, entry: XtoolConfigEntry
 ) -> None:
-    """Reload integration when options change."""
+    """Reload integration when options change; use a new address in place."""
     coordinator = getattr(entry, "runtime_data", None)
+    host = entry.data.get(CONF_HOST)
+    if coordinator is not None and host and host != coordinator.protocol.host:
+        # The config flow saved a new address (discovery or DHCP)
+        if not await coordinator.async_use_host(host):
+            await hass.config_entries.async_reload(entry.entry_id)
+        return
     before = getattr(coordinator, "options_at_setup", None)
     if before is not None and dict(entry.options) == dict(before):
-        # Only the entry's data changed (such as a new address, which the
-        # config flow applies with its own reload)
+        # Only other entry data changed
         return
     if before is not None:
         from .const import CONF_OVERLAY_COLORS

@@ -322,14 +322,31 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
 
     # --- Address ------------------------------------------------------------
 
+    async def async_use_host(self, host: str) -> bool:
+        """Talk to the laser at ``host`` from now on, without a reload.
+
+        Called by the update listener when the config flow saved a new
+        address. False when this laser's protocol cannot change its address
+        while it runs (the entry is then reloaded).
+        """
+        change_host = getattr(self.protocol, "change_host", None)
+        if change_host is None:
+            return False
+        await change_host(host)
+        self.host = host
+        self._unreachable_since = None
+        self._next_address_search = 0.0
+        await self.async_request_refresh()
+        return True
+
     @callback
     def async_found_at(self, host: str) -> None:
         """Hand an address this laser answers at to the config flow.
 
         The flow's discovery step decides whether to use it (the address
         in use is kept while it answers, unless the new one is preferred)
-        and, if so, updates the entry, which reloads it. This is how Home
-        Assistant's own discovery updates an address.
+        and, if so, saves it in the entry, as Home Assistant's own discovery
+        does; the update listener then moves to it (``async_use_host``).
         """
         discovery_flow.async_create_flow(
             self.hass, DOMAIN,

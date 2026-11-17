@@ -130,7 +130,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
 
         The address in use is kept while it answers, unless the new one is
         the laser's preferred one (its Ethernet). Otherwise the entry gets
-        the new address and is reloaded, as Home Assistant's discovery does.
+        the new address, which the update listener uses without a reload.
         A DHCP sighting is not asked first: the MAC address says which laser
         it is, and the laser asks for its address before it answers.
         """
@@ -143,7 +143,8 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
                 entry.unique_id, host,
             ):
                 return self.async_abort(reason="already_configured")
-        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        # The update listener moves the running laser to the new address
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host}, reload_on_update=False)
         return self.async_abort(reason="already_configured")
 
     async def async_step_discovery(
