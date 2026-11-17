@@ -231,6 +231,20 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         self._cancel_startup_end = None
         self.async_update_listeners()
 
+    @callback
+    def async_update_listeners(self) -> None:
+        if (
+            self._powered_on_at is not None
+            and self.data is not None
+            and self.data.available
+            and self.data.status is not None
+        ):
+            # The laser reported its first status: it has started, so losing
+            # it from now on means it does not answer
+            self._powered_on_at = None
+            self._cancel_startup_timer()
+        super().async_update_listeners()
+
     async def async_shutdown(self) -> None:
         self._cancel_startup_timer()
         await self.protocol.disconnect()
