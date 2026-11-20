@@ -1326,6 +1326,27 @@ takes about 0.3 s. The integration takes one photo at a time (the
 transfers of two lenses would otherwise overlap) and starts a
 live-view frame every 0.4 s.
 
+Main-camera calibration (F2 Ultra UV, GS009). Studio straightens
+every main-camera photo before showing it. Its base extension's
+`downLoadConfig()` downloads `global_calib.json` from the laser with
+the file transfer above (`fileType` 3, `filename:"global_calib.json"`),
+and `correctGlobalPhoto` runs the native `GS009_CORRECT_IMAGE_WITH_Z`
+algorithm with it and the material height. The file:
+
+| Key | Example | Meaning |
+|---|---|---|
+| `grid_num_w`, `grid_num_h` | 21, 21 | Grid points across and down |
+| `data0` | `"[1084,644][1170,646]..."` | Grid points in the raw photo, row by row from the top |
+| `image_src_w`, `image_src_h` | 4000, 3000 | Raw photo size |
+| `image_dst_w`, `image_dst_h` | 2000, 2000 | Straightened image size; the grid spreads evenly over it |
+| `thick_num`, `thick0` | 1, 0.0 | Calibrated material heights |
+| `calib_time` | `"2025-11-09 09:41:58"` | When the laser was calibrated |
+
+Mapping each grid cell (a quadrilateral in the photo) onto its
+rectangle in the result corrects the keystone and the lens
+distortion together. The integration does this with Pillow's mesh
+transform for the calibrated plane only (no material height).
+
 Per-model step-1 variants (audited from each Studio bundle):
 
 | Firmware bundle | Step-1 endpoint | Step-1 method + query / body |

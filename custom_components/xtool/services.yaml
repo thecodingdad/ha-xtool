@@ -32,3 +32,45 @@ focus:
           step: 0.1
           unit_of_measurement: mm
           mode: box
+camera:
+  target:
+    entity:
+      integration: xtool
+      domain: camera
+  fields:
+    crop_width:
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 460
+          step: 1
+          unit_of_measurement: mm
+          mode: box
+    crop_height:
+      example: 200
+      selector:
+        number:
+          min: 0
+          max: 460
+          step: 1
+          unit_of_measurement: mm
+          mode: box
+    crop_center_x:
+      example: 0
+      selector:
+        number:
+          min: -200
+          max: 200
+          step: 1
+          unit_of_measurement: mm
+          mode: box
+    crop_center_y:
+      example: 0
+      selector:
+        number:
+          min: -200
+          max: 200
+          step: 1
+          unit_of_measurement: mm
+          mode: box
