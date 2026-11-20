@@ -116,3 +116,30 @@ def no_address_search_on_the_network(monkeypatch):
 
     if hasattr(discovery, "discover_v1"):
         monkeypatch.setattr(discovery, "discover_v1", AsyncMock(return_value=[]))
+
+
+@pytest.fixture
+async def v2_device():
+    """A fake WS-V2 device (see fake_ws_v2.py) in place of the network."""
+    from unittest.mock import patch
+
+    from custom_components.xtool.protocols.ws_v2 import protocol as ws_v2
+
+    from .fake_ws_v2 import Device
+
+    device = Device()
+    with patch.object(ws_v2.aiohttp, "ClientSession", side_effect=device.session):
+        yield device
+
+
+@pytest.fixture
+async def v2_protocol(v2_device):
+    """A WS-V2 protocol, with a pairing token, talking to ``v2_device``."""
+    from custom_components.xtool.protocols.ws_v2 import protocol as ws_v2
+
+    from .fake_ws_v2 import PAIRING_TOKEN
+
+    protocol = ws_v2.WSV2Protocol("printer.test")
+    protocol.pairing_token = PAIRING_TOKEN
+    yield protocol
+    await protocol.disconnect()
