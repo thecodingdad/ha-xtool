@@ -12,6 +12,7 @@ from homeassistant.config_entries import (
     SOURCE_REAUTH,
     SOURCE_RECONFIGURE,
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -111,6 +112,8 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         self._pair_task: asyncio.Task[ConnectionInfo | str] | None = None
         self._pair_result: ConnectionInfo | None = None
         self._pair_error: str | None = None
+        # The entry this flow unloaded to pair; loaded again when it ends.
+        self._unloaded_entry_id: str | None = None
 
     @staticmethod
     @callback
@@ -482,6 +485,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_progress_done(next_step_id="pair_failed")
 
     async def _async_pair(self) -> ConnectionInfo | str:
+        await self._async_unload_entry_to_pair()
         host = self._pair_host or ""
         if self._pair_model_key:
             model_id, _, proto_ver = self._pair_model_key.rpartition("_")
@@ -492,6 +496,31 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         return await validate_connection(
             host, pairing_token=self._pair_token, pairing_timeout=PAIRING_TIMEOUT,
         )
+
+    async def _async_unload_entry_to_pair(self) -> None:
+        """Free the device for the pairing connection.
+
+        The M2 accepts one client at a time and refuses a second one while
+        the entry's own connection is open, so a reauth or reconfigure of a
+        loaded entry unloads it first. It is loaded again when the flow
+        ends (see async_remove), or by the update when pairing succeeds.
+        """
+        if self.source not in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
+            return
+        entry = (
+            self._get_reauth_entry() if self.source == SOURCE_REAUTH
+            else self._get_reconfigure_entry()
+        )
+        if entry.state is ConfigEntryState.LOADED:
+            await self.hass.config_entries.async_unload(entry.entry_id)
+            self._unloaded_entry_id = entry.entry_id
+
+    @callback
+    def async_remove(self) -> None:
+        """Load the entry again if the flow ends without updating it."""
+        if self._unloaded_entry_id is not None:
+            self.hass.config_entries.async_schedule_reload(self._unloaded_entry_id)
+            self._unloaded_entry_id = None
 
     async def async_step_pair_finish(
         self, user_input: dict[str, Any] | None = None,
@@ -507,6 +536,8 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             if conn_info.serial_number:
                 await self.async_set_unique_id(conn_info.serial_number)
                 self._abort_if_unique_id_mismatch(reason="wrong_device")
+            # The update reloads the entry
+            self._unloaded_entry_id = None
             return self.async_update_reload_and_abort(
                 entry,
                 data_updates={
