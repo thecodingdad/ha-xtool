@@ -107,6 +107,21 @@ def built_entities(hass: HomeAssistant, config_entry: MockConfigEntry) -> list[B
 
 
 @pytest.fixture(autouse=True)
+def no_cloud(monkeypatch):
+    """The firmware update check asks xTool's cloud; tests never reach it.
+
+    Returns the stand-in, so a test can see what was asked.
+    """
+    from unittest.mock import AsyncMock
+
+    from custom_components.xtool import firmware
+
+    api_post = AsyncMock(return_value=None)
+    monkeypatch.setattr(firmware, "_api_post", api_post)
+    return api_post
+
+
+@pytest.fixture(autouse=True)
 def no_address_search_on_the_network(monkeypatch):
     """A failed poll starts the discovery search for a new address; tests
     must not send discovery on the real network."""
