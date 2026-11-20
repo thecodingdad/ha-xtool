@@ -1322,9 +1322,9 @@ camera-refresh interval. Implementations that want a "live preview"
 have to drive their own poll loop. Measured on an F2 Ultra UV
 (firmware 40.130.023.00.ht5): the snap request answers in about
 0.13 s and the ~200 KB download takes about 0.16 s, so one photo
-takes about 0.3 s. The integration takes one photo at a time (the
-transfers of two lenses would otherwise overlap) and starts a
-live-view frame every 0.4 s.
+takes about 0.3 s. Requested at once, the transfers of two lenses
+overlap, so photos are best taken one at a time; that allows about
+2.5 photos per second.
 
 Main-camera calibration (F2 Ultra UV, GS009). Studio straightens
 every main-camera photo before showing it. Its base extension's
@@ -1344,8 +1344,9 @@ algorithm with it and the material height. The file:
 
 Mapping each grid cell (a quadrilateral in the photo) onto its
 rectangle in the result corrects the keystone and the lens
-distortion together. The integration does this with Pillow's mesh
-transform for the calibrated plane only (no material height).
+distortion together. A mesh warp of the calibrated plane alone (no
+material height) straightened an F2 Ultra UV's bed to within about
+0.3 % (200 mm measured as 199.4 mm).
 
 Per-model step-1 variants (audited from each Studio bundle):
 
@@ -1371,8 +1372,7 @@ available: `POST /v1/platform/camera/live` with `{name, action:"start"}`
 answers code -1 `camera disabled` for `main`, `deep`, `far`, `upside`
 and `0`, and `GET /v1/platform/camera/list` answers code -1
 `getCameraList failed`. Studio's GS009 bundles never call these; they
-only take photos. Only the P3 bundle calls `/v1/platform/camera/live`
-(see upstream PR #14).
+only take photos. Only the P3 bundle calls `/v1/platform/camera/live`.
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -1694,9 +1694,6 @@ subsequent polls.
 | F1 Ultra V2 / GS003 / P3 | `timeModeWorking`, `timeSystemWork`, `numOnlineWorking`, `numOfflineWorking`, `toolRuntime` |
 | MetalFab / HJ003 | `clickFlashDrive`, `clickLocalFile`, `fireboxV1_5Used`, `flashDriveGoProcessing`, `insertFlashDrive`, `lastProcessed`, `localFileGoProcessing`, `numOfflineWorking`, `numOnlineWorking` (no time-based counters) |
 | F2 Ultra UV / GS009-CLASS-4 | `numOnlineWorking`, `numOfflineWorking` and other counts, no time. Its working time is `worktime` (seconds) in `/v1/device/machineInfo` and the `/device/info` push; `worktimes` there is the job count. |
-
-When statistics carries no time, the integration uses machineInfo's
-`worktime` for the Working time sensor.
 
 Consumers should treat the absence of any key as "this firmware
 doesn't track that counter" — the corresponding sensor stays
@@ -2124,8 +2121,8 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
 | `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
 | `/peripheral/digital_lock` | POST `{action:"on/off"}` | Lock (`on`) or unlock the cover (P2) |
-| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (the sensor read nothing). The reply cannot tell "no reading" from a real one, so the integration uses the next row. |
-| `/peripheral/quest/ir_measure_distance` | GET | The IR sensor's own distance (P2): `{distance, coord_x, coord_y}`. `distance` is 0 while the sensor has no reading (dot off, or within about 0.2 s of the dot turning on) and -1 when the P2 could not talk to it. The sensor starts when the dot turns on: asked in the first 0.2 s, the P2 sometimes fails to reach it (about 1 time in 15 measured), replies -1 (thickness Z + 1 on the row above) and raises the warning `MEASURE_DISTANCE_SENSOR` / `COMMUNI_ABNORMAL` in `/device/runningStatus`, which stays until the P2 restarts. From 0.3 s after, 90 of 90 readings were good. The integration waits 0.5 s. |
+| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (the sensor read nothing). The reply cannot tell "no reading" from a real one; the next row can. |
+| `/peripheral/quest/ir_measure_distance` | GET | The IR sensor's own distance (P2): `{distance, coord_x, coord_y}`. `distance` is 0 while the sensor has no reading (dot off, or within about 0.2 s of the dot turning on) and -1 when the P2 could not talk to it. The sensor starts when the dot turns on: asked in the first 0.2 s, the P2 sometimes fails to reach it (about 1 time in 15 measured), replies -1 (thickness Z + 1 on the row above) and raises the warning `MEASURE_DISTANCE_SENSOR` / `COMMUNI_ABNORMAL` in `/device/runningStatus`, which stays until the P2 restarts. From 0.3 s after, 90 of 90 readings were good. |
 | `/device/modeSwitch` | POST | Switch mode |
 | `/parts` | POST multipart, port **8080** | Upload accessory firmware |
 | `/partsProgress` | GET, port **8080** | Accessory firmware update progress |
@@ -2341,14 +2338,14 @@ temperature. `/processing/progress` is `{time, total, value}`.
 **Settings** are `POST /config/get` and `/config/set` with
 `{"alias": "config", "type": "user", "kv": ...}` (a list of keys to read, an
 object to write). A settings change, made by Studio or anyone else, is not
-pushed, so the integration reads the settings on every poll (5 s). Studio's
+pushed; it shows only when the settings are read again. Studio's
 Device settings for firmware 25 and later:
 
 | Studio label | key | values |
 |---|---|---|
 | Buzzer | `beepEnable` | bool |
 | Flame alarm (Low / High) | `flameAlarmLevel1` (written with `flameLevelHLSelect: 1`) | bool, true = High |
-| Fill light brightness | `fillLightBrightness` | 0-255, shown as %; changing it in Studio also sets the lights that are on. The integration has no entity for it: each fill light has its own brightness and turns on at this level. Studio has one brightness for the right and left lights, so the integration keeps them in step: a change to either writes the brighter of the two here, and a change made in Studio sets both |
+| Fill light brightness | `fillLightBrightness` | 0-255, shown as %. A fill light turns on at this level, and changing it in Studio also sets the lights that are on. Studio has one brightness for the right and left lights |
 | Exhaust fan | `purifierEnable` | bool; Studio also writes `purifierTimeout: 5` when turned on |
 | Exhaust time after processing | `purifierTimeout` | 1-60 s |
 | Lowest output power | `motionPowerCut` | `M37S<1-10>` |
@@ -2360,8 +2357,7 @@ the reply comes when the head has arrived. x and y are mm from home (0, 0) at
 the top left; x grows to the right and y toward the front (tested: (100, 50)
 put the close camera over the mat 100 mm right of and 50 mm below home).
 `{action: "get_coord", waitTime: 0}` reads `{x, y, z, a, u}`. A plain GET is
-refused. The integration reads the position once a minute and on the poll
-after each move.
+refused.
 
 **Bed positions** (mm in the laser's coordinates, which Studio's canvas and
 the overview camera's straightened picture share; measured on a P2 with a
@@ -2416,7 +2412,7 @@ position).
 **Sleep.** After the sleep timeout (600 s) the P2 pushes `P_SLEEP` and turns
 the fill lights off. A camera photo (`:8329/camera/snap`) wakes it at once
 (`P_IDLE`); the status and settings reads above and a push connection do
-not. The integration takes no photo while the P2 sleeps.
+not.
 
 **Cameras.** `GET :8329/camera/snap?stream=0` is the overview camera and
 `stream=1` the close camera; both give 4656 x 3496 JPEGs. Exposure is
@@ -2444,18 +2440,16 @@ picture toward its edges, so these points are continued, not measured.
 A ruled mat, placed with the close camera, showed the real spacing at
 X 570-630 as 34, 32, 31, 29, 28, 26 pixels: mapped through the grid, the
 picture was 5 mm off at X 600, 7.6 mm at X 610 and 5.4 mm at X -5.
-`camera_correction._measured_bounds` finds the measured part (columns
-6-54, rows 0-28: X 60-540, Y 0-280) by how much each column and row
-of points bends; the lens is fitted to that part and used outside it.
-The same mat then read within about 1 mm at the edges (2 mm in the
+The measured part (columns 6-54, rows 0-28: X 60-540, Y 0-280) shows by
+how much each column and row of points bends. With a lens fitted to that
+part and used outside it, the same mat read within about 1 mm at the edges (2 mm in the
 back right corner at X 630), and in the measured part within 0.2 mm
 (median) of a uniform shift and scale of up to 2 mm that belongs to the
 P2's own calibration. At slat level the overview camera sees from about
 X -6 to X 640 (bed walls: X -20.5 and 663.5); the head stops at X 610
 and Y 305.
 
-**Replies that do not work on the P2** (the integration creates no entity
-for them):
+**Replies that do not work on the P2:**
 
 | request | reply |
 |---|---|
@@ -2469,19 +2463,12 @@ for them):
 | `/setsleeptimeout`, `/setsleeptimeoutopengap`, `/setFilllightAutoClosetimout`, `/setIrlightAutoClosetimout` | `invalid request` as JSON, form or query (the `/get…` forms read 600, 180, 180, 120 s); Studio does not set them |
 | `/reboot` (GET or POST) | `invalid request`; Studio has no reboot for the P2 |
 
-Not offered on the P2 because Studio does not offer them: Filter check,
-Purifier check, Purifier continue (Studio uses `purifierEnable` and
-`purifierTimeout`), Baseplate detection (Studio only), Purifier speed,
-the cooling fan switch (the water cooling's fans), Time sync, the
-`/peripheral/water_line` reading (its meaning is not known).
-
-Left out because they tell nothing on the P2: Tool type and Working mode
-(never reported), Gyro X/Y/Z (`/peripheral/gyro` reads 0 rotation while
-the laser stands still; it also has `acc_*`, `pitch`, `roll`, `yaw`),
-Laser power and Laser module (fixed for the model), Last distance (the
-Measured sensor has it as the attribute `sensor_distance`). Task ID, CPU
-temperature, Cooling fan running and Water pump running are created
-turned off.
+Other P2 readings: `/peripheral/gyro` reads 0 rotation while the laser
+stands still (it also has `acc_*`, `pitch`, `roll`, `yaw`); the tool type
+and working mode are never reported; the meaning of the
+`/peripheral/water_line` reading is not known. Studio offers no filter
+check, purifier check, purifier speed, cooling fan switch or time sync on
+the P2; its exhaust fan is `purifierEnable` with `purifierTimeout`.
 
 ## M2 protocol
 

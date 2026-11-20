@@ -364,6 +364,10 @@ Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop
 
 **Moving the laser.** Set Laser position X and Y (the numbers show the values set, with the attribute `waiting` until the laser moves), then press **Move laser**. The `xtool.move` action takes the P2 device and moves to X and Y, or by signed steps. The P2 moves the laser while it sleeps too; it moves the laser home a minute before it sleeps and when it wakes.
 
+**Fill lights and settings.** Each P2 fill light keeps its own brightness and turns on at it. Studio has one brightness for the right and left lights, so they are kept in step: a change to either writes the brighter of the two to Studio's setting, and a change made in Studio sets both. A settings change made in Studio is not pushed by the P2, so the settings are read on every poll.
+
+**Left out on the P2.** Studio does not offer these on the P2, so there is no entity for them: Filter check, Purifier check, Purifier continue (the Exhaust fan setting covers it, as in Studio), Baseplate detection (stored in Studio only), Purifier speed, the cooling fan switch, Time sync and the water line reading. These tell nothing on the P2 and are left out too: Tool type and Working mode (never reported), Gyro X/Y/Z (0 while the laser stands still), Laser power and Laser module (fixed for the model) and Last distance (the Measured sensor has it as its `sensor_distance` attribute). Task ID, CPU temperature, Cooling fan running and Water pump running are disabled by default.
+
 ### Button
 
 | Entity | Description |
