@@ -79,6 +79,14 @@ Or add manually:
 
 **When the laser's address changes.** When a laser that is already set up asks your router for an address (DHCP), Home Assistant sees it and the integration moves to the new address, also while the laser is still starting. The address in use is kept while it answers, except that a P2 moves to its Ethernet address when it has one. When a laser that is turned on stops answering, the integration looks for it with xTool's own discovery, as xTool Studio does, and moves to the address where it answers with its serial number. This finds a laser at any address, also when Home Assistant did not see it ask for one.
 
+### Pairing (newer V2 firmware)
+
+Some V2 firmware (first seen on the M2 with `40.141.012.01.ht05`) only accepts paired clients. When the device asks for it, setup shows a pairing step: click **Submit**, then press the button on the device to confirm. The device hands out a token that the integration stores and presents on every later connection.
+
+If the device rejects the stored token later (e.g. after a reset), Home Assistant shows **Re-authentication required** for the integration. Open it and press the button on the device again. Your device, entities and history stay as they are.
+
+To change the IP address or pair again at any time, use **Reconfigure** on the integration entry.
+
 ### Options
 
 After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool** > **Configure**:
