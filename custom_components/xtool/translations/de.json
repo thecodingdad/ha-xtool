@@ -1123,6 +1123,13 @@
           "sync_to_mode": "Mit Modus abgleichen"
         }
       },
+      "overlays": {
+        "name": "Overlays",
+        "state": {
+          "integration": "Integration",
+          "card": "Karte"
+        }
+      },
       "processing_mode": {
         "name": "Modus",
         "state": {

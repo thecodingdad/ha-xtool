@@ -348,6 +348,13 @@
           "custom": "Custom"
         }
       },
+      "overlays": {
+        "name": "Overlays",
+        "state": {
+          "integration": "Integration",
+          "card": "Card"
+        }
+      },
       "processing_mode": {
         "name": "Mode",
         "state": {

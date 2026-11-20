@@ -123,6 +123,13 @@
       "processing_mode": {
         "default": "mdi:layers-outline"
       },
+      "overlays": {
+        "default": "mdi:vector-square",
+        "state": {
+          "integration": "mdi:image-edit-outline",
+          "card": "mdi:card-outline"
+        }
+      },
       "perspective": {
         "default": "mdi:perspective-less",
         "state": {

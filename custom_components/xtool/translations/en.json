@@ -1204,6 +1204,13 @@
           "sync_to_mode": "Sync to Mode"
         }
       },
+      "overlays": {
+        "name": "Overlays",
+        "state": {
+          "integration": "Integration",
+          "card": "Card"
+        }
+      },
       "processing_mode": {
         "name": "Mode",
         "state": {
