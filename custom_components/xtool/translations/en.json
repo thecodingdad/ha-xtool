@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to xTool Laser",
+        "title": "Connect to an xTool device",
         "description": "Select a device found on your network, or enter an IP address manually.",
         "data": {
           "device": "Device"
@@ -16,7 +16,7 @@
         }
       },
       "discovery_confirm": {
-        "title": "xTool Laser discovered",
+        "title": "xTool device discovered",
         "description": "An xTool laser **{name}** was discovered on your network. Do you want to set it up?"
       },
       "pick_model": {

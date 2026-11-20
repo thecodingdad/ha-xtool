@@ -1,4 +1,4 @@
-"""Config flow for xTool Laser integration."""
+"""Config flow for the xTool integration."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for xTool Laser."""
+    """Handle a config flow for xTool."""
 
     VERSION = 1
 
@@ -306,7 +306,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class XtoolOptionsFlow(OptionsFlow):
-    """Handle xTool Laser options."""
+    """Handle xTool options."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize the options flow."""
