@@ -7,6 +7,8 @@ pattern must not take another model's devices.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from custom_components.xtool.protocols import DEVICE_MODELS, detect_model, detect_models
@@ -44,3 +46,16 @@ def test_v1_comes_first_where_both_firmwares_exist() -> None:
             continue
         pattern = (model.discovery_match or (model.model_id,))[0]
         assert detect_model(f"xTool {pattern}").protocol_version == "V1", key
+
+
+@pytest.mark.parametrize(("key", "pattern"), _patterns())
+def test_underscores_separate_words_like_spaces(key: str, pattern: str) -> None:
+    """Newer firmware announces "xTool_F1_Ultra" for "xTool F1 Ultra" (issue #27)."""
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", pattern)
+    with_spaces = detect_models(f"xTool {words}")
+    assert detect_models(f"xTool_{words.replace(' ', '_')}") == with_spaces
+
+
+def test_an_f1_ultra_with_underscores_is_an_f1_ultra() -> None:
+    assert detect_model("xTool_F1_Ultra") is DEVICE_MODELS["F1Ultra_V1"]
+    assert [m for m in detect_models("xTool_F1_Ultra") if m.protocol_version == "V2"][0] is DEVICE_MODELS["F1Ultra_V2"]

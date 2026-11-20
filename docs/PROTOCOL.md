@@ -254,6 +254,9 @@ unicast leg of a reply.
 }
 ```
 
+`deviceName` may separate words with underscores instead of spaces
+(`xTool_F1_Ultra` on F1 Ultra firmware 40.52.018).
+
 The device's per-response `key` field is informational — Studio
 decrypts everything with the static `commonKey`. The richer field set
 (`deviceSn`, `deviceCode`, `firmwareVersion`) lets a client populate

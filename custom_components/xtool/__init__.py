@@ -35,7 +35,7 @@ from .const import (
 # Imported the other way round, the family modules ask for XtoolCoordinator
 # before coordinator.py has defined it, and the first import of the package
 # fails (Home Assistant then retries it inside the event loop).
-from .protocols import DEVICE_MODELS, LaserInfo, WSV2Protocol, detect_model  # isort: skip
+from .protocols import DEVICE_MODELS, LaserInfo, WSV2Protocol, detect_model, detect_models  # isort: skip
 from .coordinator import XtoolCoordinator  # isort: skip
 from .services import async_setup_services  # isort: skip
 
@@ -127,6 +127,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     )
     if model is None:
         model = detect_model(device_name)
+    # A name with underscores ("xTool_F1_Ultra") used to match only its
+    # shortest model ("F1"); entries set up that way become the model
+    # the name stands for.
+    if "_" in device_name:
+        named = [m for m in detect_models(device_name) if m.protocol_version == model.protocol_version]
+        if model in named[1:]:
+            _LOGGER.info("xTool %r is an %s, not an %s", device_name, named[0].name, model.name)
+            model = named[0]
     if model.protocol_class is None or model.coordinator_class is None:
         raise RuntimeError(
             f"Unknown xTool model {device_name!r} — cannot pick a protocol"

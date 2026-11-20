@@ -51,7 +51,8 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _normalize(text: str) -> str:
-    return text.upper().replace(" ", "").replace("-", "")
+    # Newer firmware announces names with underscores ("xTool_F1_Ultra").
+    return text.upper().replace(" ", "").replace("-", "").replace("_", "")
 
 
 def _registry_key(model: XtoolDeviceModel) -> str:
