@@ -95,18 +95,13 @@ class _AccessoryEntity(XtoolEntity):
     Each accessory becomes its own HA child device hanging off
     the laser (``via_device``). Entity-id naming reuses the
     laser's ``xtool_{model_slug}_{serial}_*`` prefix so accessory
-    entities sort alongside the laser's own in HA's UI. The
-    ``has_entity_name`` flag is intentionally **off** here — that
-    way HA uses ``suggested_object_id`` directly instead of
-    composing the entity-id from the (much shorter) child-device
-    name.
+    entities sort alongside the laser's own in HA's UI (set by
+    ``XtoolEntity._set_unique_id``, not composed from the device name).
     """
 
     # ``has_entity_name = True`` so HA resolves the localised
     # display name via ``_attr_translation_key`` — the laser-side
-    # ``XtoolEntity`` does the same, and the serial-prefixed
-    # entity-id is preserved via ``suggested_object_id`` plus the
-    # one-shot registry migration in ``xtool/__init__.py``.
+    # ``XtoolEntity`` does the same.
     _attr_has_entity_name = True
 
     def __init__(
@@ -529,8 +524,7 @@ class _AccessoryUpdate(XtoolEntity, UpdateEntity):
     _xtool_platform = "update"
     # ``has_entity_name = True`` lets HA resolve the display name
     # via ``_attr_translation_key`` — same pattern the rest of the
-    # integration uses. Serial-prefixed entity-id stays intact via
-    # ``suggested_object_id`` + the one-shot registry migration.
+    # integration uses.
     _attr_has_entity_name = True
     _attr_device_class = UpdateDeviceClass.FIRMWARE
     _attr_entity_category = EntityCategory.DIAGNOSTIC

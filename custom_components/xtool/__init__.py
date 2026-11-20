@@ -239,8 +239,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     # Entity-id migration was previously run on every setup. It
     # ping-ponged friendly ↔ serial-prefixed names on each reload
     # (Issue #4, v2.5.4 retest), and it crashed on accessory
-    # unique_ids that contain colons. HA's native suggested_object_id
-    # already produces the right shape on fresh registrations; the
+    # unique_ids that contain colons. New entities get the right shape
+    # from the entity_id XtoolEntity._set_unique_id sets; the
     # old re-stamp is no longer needed for new installs. Leaving the
     # function around for now in case we need a clean migration pass
     # in a future release, but it is no longer wired in.
@@ -297,10 +297,9 @@ def _migrate_entity_registry(
 ) -> None:
     """Re-stamp ``entity_id`` with the SN-prefix shape + drop stale entries.
 
-    The integration's ``XtoolEntity._set_unique_id`` declares
-    ``suggested_object_id`` = ``xtool_<model_slug>_<serial>_<key>``
-    so fresh entity-ids carry the serial number. HA only honors
-    ``suggested_object_id`` on **first** registration; entries that
+    The integration's ``XtoolEntity._set_unique_id`` sets the entity ID
+    ``xtool_<model_slug>_<serial>_<key>`` so fresh entity-ids carry the
+    serial number. HA only takes it on **first** registration; entries that
     were created during an earlier setup run with an empty serial
     keep their unrelated entity-ids forever unless something
     re-stamps them.

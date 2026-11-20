@@ -12,6 +12,7 @@ from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, Device
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import slugify
 
 from .const import DOMAIN
 from .coordinator import XtoolCoordinator
@@ -19,17 +20,26 @@ from .coordinator import XtoolCoordinator
 _MODEL_SLUG_RE = re.compile(r"[^a-z0-9]")
 
 
+def _platform_domain(entity: object) -> str:
+    """The domain of the Home Assistant entity class an entity implements.
+
+    Read from the class hierarchy, so no entity component is imported
+    before Home Assistant has loaded it.
+    """
+    for cls in type(entity).__mro__:
+        parts = cls.__module__.split(".")
+        if len(parts) > 2 and parts[:2] == ["homeassistant", "components"]:
+            return parts[2]
+    raise TypeError(f"{type(entity).__name__} is not a Home Assistant entity")
+
+
 class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
     """Base entity for xTool devices.
 
     ``has_entity_name`` stays **on** so HA resolves the localized
     display name via ``translation_key`` (German UI keeps its
-    "Auftragszeit" etc. labels). The serial-prefixed entity-id
-    shape is enforced by a one-shot registry migration in
-    :func:`__init__._migrate_entity_registry` because HA's
-    ``suggested_object_id`` is only consulted on *fresh*
-    registrations — without the migration, existing installs
-    would keep their old non-serial-prefixed entity-ids.
+    "Auftragszeit" etc. labels). The entity ID does not follow the
+    name: :meth:`_set_unique_id` gives it the serial-prefixed shape.
     """
 
     _attr_has_entity_name = True
@@ -39,24 +49,23 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
         super().__init__(coordinator)
 
     def _set_unique_id(self, key: str) -> None:
-        """Stamp ``unique_id`` and a serial-prefixed ``suggested_object_id``.
+        """Set ``unique_id`` and the serial-prefixed entity ID.
 
         ``unique_id`` keeps the long-standing ``{serial}_{key}`` shape
-        so existing registry entries continue to match. The
-        ``suggested_object_id`` is consumed by HA on first
-        registration — fresh entities land at
-        ``<platform>.xtool_<model>_<serial>_<key>``. Existing
-        registrations are rebased to the same shape by the
-        integration's one-shot setup migration.
+        so existing registry entries continue to match. The entity ID
+        ``<platform>.xtool_<model>_<serial>_<key>`` is what Home
+        Assistant registers a new entity under; Home Assistant takes it
+        only from ``entity_id`` (it derives ``suggested_object_id`` from
+        the translated name, so new entities got language-dependent IDs).
+        An entity already in the registry keeps the ID it has there.
         """
         sid = self.coordinator.serial_number
         model_slug = _MODEL_SLUG_RE.sub(
             "", self.coordinator.model.model_id.lower()
         )
         self._attr_unique_id = f"{sid}_{key}"
-        self._attr_suggested_object_id = (
-            f"xtool_{model_slug}_{sid}_{key}"
-        )
+        object_id = slugify(f"xtool_{model_slug}_{sid}_{key}")
+        self.entity_id = f"{_platform_domain(self)}.{object_id}"
 
     @property
     def device_info(self) -> DeviceInfo:
