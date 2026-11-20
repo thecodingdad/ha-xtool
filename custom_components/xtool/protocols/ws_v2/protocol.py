@@ -2188,6 +2188,8 @@ class WSV2Protocol(XtoolProtocol):
             if not self._wrong_machine_info_mac():
                 info.mac_address = data.get("mac", "")
             self._latch_worktime(data)
+            info.sku = str(data.get("sku") or "")
+            info.machine_style = str(data.get("machineStyle") or "")
             firmware = data.get("firmware") or {}
             if isinstance(firmware, dict):
                 info.main_firmware = (
