@@ -861,7 +861,17 @@ class WSV2Protocol(XtoolProtocol):
         F2UV-specific type-error response, cache the key in
         ``_config_keys_bool`` and retry with the bool. Subsequent
         writes to a cached key skip the int attempt.
+
+        Once the laser takes the value, it is kept as the laser's own
+        (``_apply_configs``): the settings are read only every sixth
+        poll, and a push may not follow.
         """
+        result = await self._put_config(key, value)
+        self._apply_configs({"kv": {key: value}})
+        return result
+
+    async def _put_config(self, key: str, value: Any) -> dict[str, Any]:
+        """PUT the key, as an int first or as a bool (see :meth:`set_config`)."""
         coerced: Any = value
         if isinstance(value, bool) and key not in self._config_keys_bool:
             coerced = 1 if value else 0
