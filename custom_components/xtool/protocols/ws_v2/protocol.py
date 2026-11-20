@@ -799,6 +799,11 @@ class WSV2Protocol(XtoolProtocol):
         # on for each new connection unless the laser reports it.
         self._assume_red_dot_on = False
         self._red_dot_reported = False
+        self._assume_smoking_fan_off = False
+        # One photo per camera waiting or being taken, and one file
+        # transfer at a time (see camera_snap).
+        self._camera_pending: dict[str, asyncio.Future[bytes | None]] = {}
+        self._camera_lock = asyncio.Lock()
         # Push-event queue drained by the coordinator each poll. Each
         # entry is ``(kind, event_type, attrs)``. Push handlers in
         # ``_dispatch_push`` append; the WS-V2 coordinator forwards
@@ -1339,10 +1344,7 @@ class WSV2Protocol(XtoolProtocol):
         # A request for a camera whose photo is already coming gets that
         # photo, so requests never queue up: at most one photo per
         # camera is waiting or being taken.
-        pending: dict[str, asyncio.Future[bytes | None]] = getattr(
-            self, "_camera_pending", None
-        ) or {}
-        self._camera_pending = pending
+        pending = self._camera_pending
         task = pending.get(camera_name)
         if task is None:
             task = asyncio.ensure_future(self._camera_snap_locked(camera_name))
@@ -1358,11 +1360,8 @@ class WSV2Protocol(XtoolProtocol):
     async def _camera_snap_locked(self, camera_name: str) -> bytes | None:
         # One photo at a time: each one opens its own file transfer,
         # and live views of both lenses would otherwise overlap them.
-        lock = getattr(self, "_camera_lock", None)
-        if lock is None:
-            lock = self._camera_lock = asyncio.Lock()
         queued = time.monotonic()
-        async with lock:
+        async with self._camera_lock:
             started = time.monotonic()
             image = await self._camera_snap(camera_name)
         _LOGGER.debug(
@@ -1379,10 +1378,7 @@ class WSV2Protocol(XtoolProtocol):
         type 3 and the bare file name. The camera lock keeps it from
         overlapping a photo's transfer.
         """
-        lock = getattr(self, "_camera_lock", None)
-        if lock is None:
-            lock = self._camera_lock = asyncio.Lock()
-        async with lock:
+        async with self._camera_lock:
             try:
                 blob = await self._download_file_stream(
                     "global_calib.json", file_type=3,
@@ -2747,7 +2743,7 @@ class WSV2Protocol(XtoolProtocol):
         # 7. Push-cached values (overrule poll if newer)
         self._apply_latest_to_state(state)
 
-        if getattr(self, "_assume_smoking_fan_off", False):
+        if self._assume_smoking_fan_off:
             self._assume_smoking_fan_off = False
             if model is not None and getattr(model, "has_smoking_fan", False):
                 state.smoking_fan_running = False

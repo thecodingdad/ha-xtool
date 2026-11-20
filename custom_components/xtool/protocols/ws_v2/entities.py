@@ -2116,6 +2116,9 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
     """
 
     _camera_name: str = ""
+    # Set while the camera changes its own token; a class attribute,
+    # because Camera.__init__ already calls async_update_token
+    _rotating = False
 
     def __init__(
         self,
@@ -2250,7 +2253,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         refresh interval decides instead. Without a change, HA's
         following state write sends nothing.
         """
-        if self.access_tokens and not getattr(self, "_rotating", False):
+        if self.access_tokens and not self._rotating:
             return
         super().async_update_token()
 

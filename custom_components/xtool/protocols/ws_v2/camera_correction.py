@@ -475,6 +475,7 @@ class _SurfaceMap:
         self._fit_x = _least_squares(rows, [point[0] for _, _, point in samples])
         self._fit_y = _least_squares(rows, [point[1] for _, _, point in samples])
         self._lens = None
+        self._photo_size: tuple[float, float] | None = None
         # The area the grid is used in (mm): all of it, or its measured part
         self._bounds = (0.0, self.width_mm, 0.0, self.height_mm)
         if lens is not None and len(lens) == LENS_PARAMETERS:
@@ -598,10 +599,9 @@ class _SurfaceMap:
     def photo_size_mm(self) -> tuple[float, float]:
         """The widest area, centred on the calibrated area, that the photo
         fills: across every grid row, and down every grid column."""
-        size = getattr(self, "_photo_size", None)
-        if size is None:
-            size = self._photo_size = self._measure_photo_size()
-        return size
+        if self._photo_size is None:
+            self._photo_size = self._measure_photo_size()
+        return self._photo_size
 
     def _measure_photo_size(self) -> tuple[float, float]:
         cx = self.width_mm / 2
