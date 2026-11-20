@@ -546,6 +546,15 @@ class _ParityFailed(Exception):
 _SECRET_KEYS = frozenset({"token", "sessionToken"})
 
 
+def _is_auth_rejection(code: Any, msg: Any) -> bool:
+    """Whether a reply says this client is not, or no longer, authorized.
+
+    Seen on the O1 (40.101.014.01.ht11): 401 / 403, or ``code -2`` with
+    ``need user auth`` for a request without a valid session.
+    """
+    return code in (401, 403) or (code == -2 and "need user auth" in str(msg).lower())
+
+
 def _redact(value: Any) -> Any:
     """Mask pairing secrets before a payload reaches the debug log."""
     if isinstance(value, dict):
@@ -803,6 +812,9 @@ class WSV2Protocol(XtoolProtocol):
         # Set by ``pair()``: a 406 then waits for the button press until
         # this monotonic deadline instead of failing.
         self._pairing_deadline: float | None = None
+        # Set when a request on an open connection was refused as not
+        # authorized; the coordinator then starts the reauth flow.
+        self._auth_rejected = False
         # Coordinator stamps the resolved XtoolDeviceModel via set_model();
         # poll_state reads it to gate per-model peripheral queries.
         self._model: Any = None
@@ -955,7 +967,7 @@ class WSV2Protocol(XtoolProtocol):
 
     @staticmethod
     def _raise_if_pairing_error(err: BaseException) -> None:
-        if isinstance(err, WSV2PairingFailed):
+        if isinstance(err, (WSV2PairingFailed, WSV2PairingRequired)):
             raise err
         code = getattr(err, "code", None)
         if code == WSV2_PAIRING_REQUIRED:
@@ -998,7 +1010,6 @@ class WSV2Protocol(XtoolProtocol):
             await self._close_quiet()
             raise ConnectionError(f"V2 WebSocket connect failed: {err}") from err
         _LOGGER.debug("V2 WS open to %s — sending parity handshake", self.host)
-        self._connected = True
         # Reset the per-connection peripheral-rejection cache — fresh
         # firmware revisions might expose types the previous one didn't.
         self._unsupported_peripheral_types.clear()
@@ -1030,6 +1041,7 @@ class WSV2Protocol(XtoolProtocol):
         # Read the focus height again on the next poll.
         self._focus_known = False
         self._session_token = ""
+        self._auth_rejected = False
         self._reader_task = asyncio.create_task(self._reader_loop())
         # Parity handshake must complete before any user request fires
         # — V2 firmware closes the WS otherwise.
@@ -1041,6 +1053,11 @@ class WSV2Protocol(XtoolProtocol):
             )
             await self._close_quiet()
             raise _ParityFailed(err) from err
+        if self._ws_instr is None or self._ws_instr.closed:
+            await self._close_quiet()
+            raise _ParityFailed(ConnectionError("V2 WebSocket closed during the handshake"))
+        # Only now: no request may go out before the handshake succeeded
+        self._connected = True
         _LOGGER.debug("V2 parity handshake OK — starting heartbeat")
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
@@ -1049,6 +1066,7 @@ class WSV2Protocol(XtoolProtocol):
 
     async def _close_quiet(self) -> None:
         self._connected = False
+        self._session_token = ""
         for t in (self._reader_task, self._heartbeat_task):
             if t and not t.done():
                 t.cancel()
@@ -1129,7 +1147,7 @@ class WSV2Protocol(XtoolProtocol):
         frame = _encode_frame(_json_compact(payload).encode("utf-8"))
         _LOGGER.debug(
             "V2 TX %s %s txn=%d params=%s data=%s",
-            method, url, transaction_id, params, _redact(data),
+            method, url, transaction_id, _redact(params), _redact(data),
         )
         try:
             await self._ws_instr.send_bytes(frame)
@@ -1149,6 +1167,9 @@ class WSV2Protocol(XtoolProtocol):
                 "V2 RX %s %s txn=%d code=%d msg=%s data=%r",
                 method, url, transaction_id, code, msg, _redact(err_data),
             )
+            if not _skip_connect and _is_auth_rejection(code, msg):
+                self._auth_rejected = True
+                raise WSV2PairingRequired(f"V2 {method.upper()} {url}: {msg}")
             raise WSV2RequestError(method.upper(), url, code, msg, err_data)
         result = (
             response.get("data") if isinstance(response, dict) else {}
@@ -1187,7 +1208,19 @@ class WSV2Protocol(XtoolProtocol):
                 raise
             _LOGGER.info("V2 %s asks for a button press to pair", self.host)
             result = await self._await_button_confirm()
+        auth_state = result.get("authState") if isinstance(result, dict) else None
+        if auth_state == "WAITING_BUTTON_CONFIRM" and self._pairing_deadline is not None:
+            _LOGGER.info("V2 %s asks for a button press to pair", self.host)
+            result = await self._await_button_confirm()
+        elif auth_state in ("DENIED", "WAITING_BUTTON_CONFIRM"):
+            raise WSV2PairingRequired(f"V2 parity: {auth_state}")
         self._apply_pairing_result(result)
+
+    def raise_if_auth_rejected(self) -> None:
+        """Raise when a request since the last check was refused as not authorized."""
+        if self._auth_rejected:
+            self._auth_rejected = False
+            raise WSV2PairingRequired("the device no longer accepts this client")
 
     async def _await_button_confirm(self) -> dict[str, Any]:
         """Poll auth-status once per second until the device pairs or gives up."""
@@ -1594,8 +1627,8 @@ class WSV2Protocol(XtoolProtocol):
                     self._handle_binary(msg.data)
                 elif msg.type == aiohttp.WSMsgType.TEXT:
                     _LOGGER.debug(
-                        "V2 RX TEXT (unexpected on V2): %r",
-                        msg.data[:200] if isinstance(msg.data, str) else msg.data,
+                        "V2 RX TEXT (unexpected on V2): %d chars",
+                        len(msg.data) if isinstance(msg.data, str) else 0,
                     )
                     # V2 firmware doesn't normally send TEXT frames, but
                     # tolerate them in case a debug/firmware build does.
@@ -1647,6 +1680,8 @@ class WSV2Protocol(XtoolProtocol):
                     "params": {},
                     "timestamp": int(time.time() * 1000),
                 }
+                if self._session_token:
+                    payload["sessionToken"] = self._session_token
                 self._heartbeat_pending = asyncio.Future()
                 frame = _encode_frame(_json_compact(payload).encode("utf-8"))
                 try:
@@ -1657,10 +1692,18 @@ class WSV2Protocol(XtoolProtocol):
                     asyncio.create_task(self._close_quiet())
                     return
                 try:
-                    await asyncio.wait_for(
+                    response = await asyncio.wait_for(
                         self._heartbeat_pending,
                         timeout=WSV2_HEARTBEAT_TIMEOUT,
                     )
+                    if isinstance(response, dict) and _is_auth_rejection(
+                        response.get("code"), response.get("msg") or response.get("message"),
+                    ):
+                        # The session is no longer valid: a new connection
+                        # runs the handshake again (and pairs if needed)
+                        _LOGGER.info("V2 heartbeat refused — reconnecting %s", self.host)
+                        asyncio.create_task(self._close_quiet())
+                        return
                 except asyncio.TimeoutError:
                     _LOGGER.info(
                         "V2 heartbeat timeout (%.1fs) — closing %s",
@@ -1759,8 +1802,8 @@ class WSV2Protocol(XtoolProtocol):
                 event = json.loads(payload.decode("utf-8"))
             except Exception as err:
                 _LOGGER.debug(
-                    "V2 RX JSON parse failed: %s payload=%r",
-                    err, payload[:200],
+                    "V2 RX JSON parse failed: %s (%d bytes)",
+                    err, len(payload),
                 )
                 continue
             _LOGGER.debug(
@@ -1782,7 +1825,7 @@ class WSV2Protocol(XtoolProtocol):
 
         _LOGGER.debug(
             "V2 push url=%s module=%s type=%s info=%r",
-            url, module, typ, info,
+            url, module, typ, _redact(info),
         )
         self._note_status_push(module, typ)
 
@@ -1793,7 +1836,7 @@ class WSV2Protocol(XtoolProtocol):
         if url == "/accessory/status":
             _LOGGER.debug(
                 "V2 /accessory/status push (RAW): event=%r",
-                event,
+                _redact(event),
             )
 
         if url == "/work/mode" and module == "STATUS_CONTROLLER" and typ == "MODE_CHANGE":

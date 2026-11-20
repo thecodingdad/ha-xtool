@@ -143,6 +143,9 @@ class WSV2Coordinator(XtoolCoordinator):
             prev_alarm = self.data.alarm_present if self.data else False
 
             await self.protocol.poll_state(state)
+            # A read the poll does not stop for may have been refused as
+            # not authorized: then the device needs to be paired again
+            self.protocol.raise_if_auth_rejected()  # type: ignore[attr-defined]
 
             state.available = True
             state.device_name = self.device_name
