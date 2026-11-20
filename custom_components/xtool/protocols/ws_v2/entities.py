@@ -1716,7 +1716,7 @@ class WSV2SyncTime(_WSV2Button):
 
 
 # English names of the cameras; the device page shows the translated
-# ones (``device`` in strings.json).
+# ones (``device`` in translations/en.json).
 CAMERA_LABELS: dict[str, str] = {
     "main": "Main camera",
     "deep": "Deep camera",

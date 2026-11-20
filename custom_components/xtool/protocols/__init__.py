@@ -109,7 +109,7 @@ def detect_model(device_name: str) -> XtoolDeviceModel:
 
 
 # Granular failure reasons surfaced by ``validate_connection``. Each is
-# also a translation key in ``strings.json`` (``error`` + ``abort``
+# also a translation key in ``translations/en.json`` (``error`` + ``abort``
 # blocks) so the config flow can render a precise hint.
 VALIDATION_ERROR_UDP_NO_REPLY = "udp_no_reply"
 VALIDATION_ERROR_UNKNOWN_MODEL = "unknown_model"
