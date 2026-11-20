@@ -54,7 +54,13 @@ class XtoolSensor(XtoolRestoringSensor, SensorEntity):
 
 
 class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):
-    """Status sensor that shows 'off' when device is unreachable."""
+    """Status sensor; always available.
+
+    Off while the Power switch is off, or while a laser without a Power
+    switch cannot be reached (it cannot be told apart from one that is
+    off). Not responding while the Power switch is on but the laser does
+    not answer after its start-up time.
+    """
 
     _attr_translation_key = "status"
     _attr_icon = "mdi:list-status"
@@ -64,22 +70,34 @@ class XtoolStatusSensor(XtoolReadOnlyEntity, SensorEntity):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
         self._set_unique_id("status")
-        self._last_known_status: str = XtoolStatus.OFF
+        # The last status the laser reported since it became reachable
+        self._last_known_status: str | None = None
 
     @property
     def available(self) -> bool:
         return True
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         if self.coordinator.power_switch_is_off:
+            self._last_known_status = None
             return XtoolStatus.OFF
         if self.coordinator.data is None or not self.coordinator.data.available:
+            self._last_known_status = None
+            if self.coordinator.starting:
+                # Just powered on: the laser is starting
+                return XtoolStatus.INITIALIZING
+            if self.coordinator.power_switch_entity_id:
+                # Powered, but the laser does not answer
+                return XtoolStatus.NOT_RESPONDING
             return XtoolStatus.OFF
         status = self.coordinator.data.status
         if status is not None:
             self._last_known_status = status.value
             return status.value
+        if self._last_known_status is None and self.coordinator.starting:
+            # The laser answers but has not reported a status yet
+            return XtoolStatus.INITIALIZING
         return self._last_known_status
 
 

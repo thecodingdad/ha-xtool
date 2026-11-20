@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 class DSeriesCoordinator(XtoolCoordinator):
     """Coordinator for the xTool D1 / D1 Pro / D1 Pro 2.0."""
 
-    async def _async_update_data(self) -> XtoolDeviceState:
+    async def _async_poll(self) -> XtoolDeviceState:
         # Carry the last poll's field values forward so the read-only
         # entities (XtoolReadOnlyEntity) keep rendering across a
         # sustained outage. ``state.available`` flips to True only on

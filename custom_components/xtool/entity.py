@@ -89,22 +89,28 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
         )
 
 
+# Totals the laser counts over its life (translation keys). Their last
+# value stays shown while the laser is off or cannot be reached, so
+# their history has no gaps; every other reading is unavailable then.
+LIFETIME_TOTAL_KEYS = frozenset({"working_time", "session_count", "standby_time", "tool_runtime"})
+
+
 class XtoolReadOnlyEntity(XtoolEntity):
-    """Base for read-only entities (sensor, binary_sensor) that should
-    remain available across device outages so the last-known value
-    stays visible on dashboards. Controls (button / switch / number /
-    select / camera) keep the stricter :class:`XtoolEntity.available`
-    gate because actuating them requires a live device.
+    """Base for read-only entities (sensor, binary_sensor).
+
+    Like every entity they are unavailable while the laser is off or
+    cannot be reached: a reading that cannot be read is not shown as
+    current. Only the lifetime totals (``LIFETIME_TOTAL_KEYS``) keep
+    their last value, also across a Home Assistant restart.
     """
 
     @property
     def available(self) -> bool:
+        if self.translation_key not in LIFETIME_TOTAL_KEYS:
+            return super().available
         if self.coordinator.data is not None:
             return True
-        # Pre-first-poll: stay available if a restored state is
-        # cached so HA renders that instead of "unavailable". Plain
-        # ``XtoolReadOnlyEntity`` doesn't carry restore state on its
-        # own; the restoring mixins below override ``_has_restored_value``.
+        # Before the first poll: the value restored from the last run
         return self._has_restored_value()
 
     def _has_restored_value(self) -> bool:

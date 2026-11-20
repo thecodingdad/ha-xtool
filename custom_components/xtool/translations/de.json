@@ -79,6 +79,7 @@
         "name": "Status",
         "state": {
           "off": "Aus",
+          "not_responding": "Reagiert nicht",
           "initializing": "Initialisierung",
           "idle": "Bereit",
           "wifi_setup": "WLAN-Einrichtung",
@@ -556,6 +557,9 @@
       }
     },
     "number": {
+      "auto_power_off": {
+        "name": "Automatisch ausschalten"
+      },
       "accessory_ductfan_manual_gear": {
         "name": "Manuelle Stufe"
       },

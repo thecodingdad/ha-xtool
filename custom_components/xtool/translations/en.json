@@ -79,6 +79,7 @@
         "name": "Status",
         "state": {
           "off": "Off",
+          "not_responding": "Not responding",
           "initializing": "Initializing",
           "idle": "Idle",
           "wifi_setup": "WiFi setup",
@@ -598,6 +599,9 @@
       }
     },
     "number": {
+      "auto_power_off": {
+        "name": "Auto power-off"
+      },
       "air_assist_close_delay": {
         "name": "Air-assist post-run"
       },
