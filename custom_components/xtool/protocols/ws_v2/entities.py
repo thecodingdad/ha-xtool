@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
@@ -57,7 +58,7 @@ from homeassistant.const import (
 )
 from homeassistant.util import dt as dt_util
 
-from ...const import BRIGHTNESS_HA_MAX
+from ...const import BRIGHTNESS_HA_MAX, task_id_value
 from ...coordinator import XtoolCoordinator
 from ...entity import (
     XtoolEntity,
@@ -89,7 +90,7 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         # Studio-side UUID; rarely meaningful to a HA user — opt-in.
         entity_registry_enabled_default=False,
-        value_fn=lambda state, _: state.task_id or None,
+        value_fn=lambda state, _: task_id_value(state.status, state.task_id),
     ),
     # ``task_name`` / loaded-G-code filename entity intentionally
     # absent — F1V2 firmware decompile shows ``fileName`` string
@@ -1178,31 +1179,42 @@ class _WSV2FillLightBase(XtoolEntity, LightEntity):
         self.async_write_ha_state()
 
 
+def _js_round(value: float) -> int:
+    """Round half up, as Studio's ``Math.round`` does."""
+    return math.floor(value + 0.5)
+
+
 def _fill_light_ha_to_device(ha_brightness: int, device_min: int) -> int:
-    """Map HA brightness (0-255) → device value.
+    """Map HA brightness (0-255) to the device value.
 
     ``device_min`` = 0 (default) means the firmware accepts the raw
-    0-255 HA value 1:1. ``device_min`` > 0 (F-series V2 bundles that
-    use Studio's ``Q7`` transform) reserves the device range
-    ``[device_min, 255]`` for a HA value ≥ 1 and maps HA 0 to
-    device 0 (off).
+    0-255 HA value 1:1. ``device_min`` > 0 (F-series V2 bundles) uses
+    Studio's transform: Studio shows a 1-100 percentage ``p`` and
+    writes ``round((p - 1) * (255 - device_min) / 99 + device_min)``.
+    HA brightness is first rounded to the percentage HA shows, so a
+    value set in HA reads back in Studio as the same percentage.
     """
     if device_min <= 0:
         return max(0, min(255, ha_brightness))
     if ha_brightness <= 0:
         return 0
-    span_dev = 255 - device_min
-    return round((ha_brightness - 1) * span_dev / 254 + device_min)
+    percent = max(1, min(100, _js_round(ha_brightness * 100 / 255)))
+    return _js_round((percent - 1) * (255 - device_min) / 99 + device_min)
 
 
 def _fill_light_device_to_ha(device_value: int, device_min: int) -> int:
-    """Inverse of :func:`_fill_light_ha_to_device`."""
+    """Inverse of :func:`_fill_light_ha_to_device`.
+
+    For ``device_min`` > 0 this first computes Studio's percentage,
+    ``round((device - device_min) * 99 / (255 - device_min) + 1)``,
+    and returns the HA brightness that shows as that percentage.
+    """
     if device_min <= 0:
         return max(0, min(255, device_value))
     if device_value <= 0:
         return 0
-    span_dev = 255 - device_min
-    return max(1, min(255, round((device_value - device_min) * 254 / span_dev + 1)))
+    percent = max(1, min(100, _js_round((device_value - device_min) * 99 / (255 - device_min) + 1)))
+    return max(1, min(255, _js_round(percent * 255 / 100)))
 
 
 class WSV2FillLight(_WSV2FillLightBase):
@@ -1256,7 +1268,7 @@ class WSV2FillLightFront(_WSV2FillLightBase):
     """Front fill-light channel — F-family V2 firmware."""
 
     _attr_translation_key = "fill_light_front"
-    _attr_icon = "mdi:dome-light"
+    _attr_icon = "mdi:page-layout-footer"
     _channel = "front"
     _state_attr = "fill_light_a"
     _other_state_attr = "fill_light_b"
@@ -1273,7 +1285,7 @@ class WSV2FillLightBack(_WSV2FillLightBase):
     """Back fill-light channel — F-family V2 firmware."""
 
     _attr_translation_key = "fill_light_back"
-    _attr_icon = "mdi:dome-light"
+    _attr_icon = "mdi:page-layout-header"
     _channel = "back"
     _state_attr = "fill_light_b"
     _other_state_attr = "fill_light_a"

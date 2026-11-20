@@ -32,6 +32,7 @@ from ...const import (
     BRIGHTNESS_DEVICE_MAX,
     BRIGHTNESS_HA_MAX,
     FlameAlarmSensitivity,
+    task_id_value,
 )
 from ...coordinator import XtoolCoordinator
 from ...entity import (
@@ -236,8 +237,9 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="task_id",
         translation_key="task_id",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:identifier",
-        value_fn=lambda state, _: state.task_id or None,
+        value_fn=lambda state, _: task_id_value(state.status, state.task_id),
     ),
     XtoolSensorEntityDescription(
         key="task_time",
@@ -260,6 +262,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="session_count",
         translation_key="session_count",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:counter",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda state, _: state.session_count,
@@ -277,6 +280,7 @@ SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
     XtoolSensorEntityDescription(
         key="tool_runtime",
         translation_key="tool_runtime",
+        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:laser-pointer",
         native_unit_of_measurement=UnitOfTime.HOURS,
         device_class=SensorDeviceClass.DURATION,

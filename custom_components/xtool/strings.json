@@ -256,9 +256,9 @@
       "firmware": { "name": "Firmware" }
     },
     "button": {
-      "pause_job": { "name": "Pause job" },
+      "pause_job": { "name": "Pause" },
       "resume_job": { "name": "Resume job" },
-      "cancel_job": { "name": "Cancel job" },
+      "cancel_job": { "name": "Cancel" },
       "home_all": { "name": "Home all axes" },
       "home_xy": { "name": "Home XY" },
       "home_z": { "name": "Home Z" },

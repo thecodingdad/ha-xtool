@@ -1578,7 +1578,7 @@ Action paths:
 | `/v1/processing/batch` | `GET` / `PUT` | — | `{…}` on PUT | Batch-production mode (run the same job N times). Paired with `/batch/status` push. |
 | `/v1/processing/frame/replace` | `PUT` | — | `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Swap the framing rectangle mid-job (Studio's "adjust framing" flow). |
 | `/v1/processing/upload/config` | `PUT` | — | `{fileType:"txt", autoStart:0, taskId?}` | Apply a job-config blob to the device (separate from the file-stream payload). |
-| `/v1/processing/powerResume` | `GET` / `PUT` | — | `{action:"query" \| "start"}` | Power-loss recovery — query whether a paused job exists from before a power outage, or resume it. |
+| `/v1/processing/powerResume` | `GET` / `PUT` | `action=query` (GET), `action=start \| cancel` (PUT) | — | Power-loss recovery — query whether a job stopped by a power cut can continue, then continue or discard it. Some firmware answers but never reports a job; see [Endpoints that answer but do not work](#endpoints-that-answer-but-do-not-work). |
 | `/v1/parts/control` | `POST` | — | `{link:"uart485", data_b64:<F0F7-encoded M-code>}` | F0F7-tunnelled M-code to a BT-paired accessory (`M9091`–`M9098`, `M9032`–`M9085`). Response `{data_b64}` carries the F0F7-framed reply. |
 | `/v1/parts/firmware/upgrade` | `POST` | — | `{…}` (10-min timeout) | Push a firmware blob to a paired accessory. |
 | `/v1/parts/firmware/upgrade-progress` | `GET` | — | — | Poll the in-progress accessory flash. |
@@ -1703,6 +1703,36 @@ See [M2 protocol](#m2-protocol) for the full URL set; the legacy
 `/v1/*` surface above remains live on every existing V2-firmware
 device (F1, F1 Ultra, F1 Lite, F2 family, M1 Ultra, P2S, P3,
 MetalFab, Apparel Printer).
+
+#### Endpoints that answer but do not work
+
+A V2 laser answers most routes of the shared `/v1/*` surface, even for
+a feature it does not have: the request gets a well-formed reply, not
+an error or a 404. A route that answers is therefore no proof that the
+feature works on that model. Check the feature itself on the hardware,
+and check whether Studio offers it for that model, before building on
+it.
+
+Measured examples (F2 Ultra UV, firmware 40.130.023.00.ht5):
+
+- **Power-loss resume** (`/v1/processing/powerResume`). Studio reads it
+  at connect (`getPowerResume`, `GET ?action=query`) and, when it
+  reports a job, shows "Unfinished processing task detected" with
+  Continue and Discard (`setPowerResume`, `PUT ?action=start` or
+  `?action=cancel`; after Continue, Studio asks to press the button on
+  the laser).
+  - The query always answered `{status: false}`, also right after the
+    power was cut during a job. Three tests: a job started from the
+    laser, a job started from Studio, and a longer power cut.
+  - At boot the laser instead pushes `/work/result` with
+    `{result: "failed", timeUse: 0}`: the job is reported as failed,
+    not kept to continue.
+  - Studio offers no power-loss setting for this model.
+  - The `PUT` was not tried, because there was never a job to continue.
+- **Live camera video** (`/v1/platform/camera/live`). It answers
+  "camera disabled" for every camera name, and the live video port
+  8329 is closed. Studio takes photos only (`/v1/camera/snap`, about
+  0.3 s each), so a live view is built from photos.
 
 
 ---

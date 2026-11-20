@@ -807,13 +807,13 @@
     },
     "button": {
       "pause_job": {
-        "name": "Pause job"
+        "name": "Pause"
       },
       "resume_job": {
         "name": "Start / Resume job"
       },
       "cancel_job": {
-        "name": "Cancel job"
+        "name": "Cancel"
       },
       "home_all": {
         "name": "Home all axes"
