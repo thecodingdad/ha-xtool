@@ -1,0 +1,6 @@
+pytest-homeassistant-custom-component==0.13.375
+# Home Assistant's camera and stream components, which the integration
+# imports; their requirements are not part of the core install
+PyTurboJPEG==1.8.3
+av==19.0.0
+numpy==2.3.2
