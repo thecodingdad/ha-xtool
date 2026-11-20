@@ -2411,11 +2411,6 @@ class WSV2Protocol(XtoolProtocol):
         # is overridable: P2S V2 firmware swaps it for
         # ``/v1/device/runningStatus`` (same response shape).
         await self._poll_runtime_status(state)
-        if (
-            getattr(getattr(self, "_model", None), "has_laser_info", False)
-            and not self._connection_known
-        ):
-            await self._poll_connection()
 
         # A sleeping laser wakes when it is asked for its settings: an
         # F2 Ultra UV left Sleep 0.35 s after a configs read, while the
@@ -2425,6 +2420,12 @@ class WSV2Protocol(XtoolProtocol):
         # after it wakes (the counter starts again at 0).
         asleep = self._latest.get("status") == XtoolStatus.SLEEPING
         slow = not asleep and self._poll_counter % 6 == 0
+        if (
+            not asleep
+            and getattr(getattr(self, "_model", None), "has_laser_info", False)
+            and not self._connection_known
+        ):
+            await self._poll_connection()
 
         # 2. Peripheral aggregate via /v1/peripheral/param?type=...
         # Build the type list dynamically from the model's capability
@@ -2536,15 +2537,15 @@ class WSV2Protocol(XtoolProtocol):
         # every poll until it is known (after each connect), so it shows
         # soon after the laser powers on.
         if model is not None and getattr(model, "has_focus_control", False) and (
-            self._poll_counter % 6 == 0 or not self._focus_known
+            slow or (not asleep and not self._focus_known)
         ):
             await self._poll_focus()
         if getattr(model, "has_uv_laser_status", False) and (
-            self._poll_counter % 6 == 0 or not self._status_reads_known
+            slow or (not asleep and not self._status_reads_known)
         ):
             await self._poll_status_reads()
         if getattr(model, "has_laser_info", False) and (
-            self._poll_counter % 6 == 0 or not self._laser_info_known
+            slow or (not asleep and not self._laser_info_known)
         ):
             await self._poll_laser_info()
 
