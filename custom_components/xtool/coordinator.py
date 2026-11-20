@@ -63,7 +63,6 @@ if TYPE_CHECKING:
     from homeassistant.components.image import ImageEntity
     from homeassistant.components.button import ButtonEntity
     from homeassistant.components.camera import Camera
-    from homeassistant.components.image import ImageEntity
     from homeassistant.components.event import EventEntity
     from homeassistant.components.fan import FanEntity
     from homeassistant.components.light import LightEntity

@@ -717,8 +717,6 @@ def correct_image(
     image = image.convert("RGB")
     scale_x = image.width / calibration.src_w
     scale_y = image.height / calibration.src_h
-    cells_x = calibration.grid_w - 1
-    cells_y = calibration.grid_h - 1
     # Millimetres per grid cell across and down.
     cell_mm_x, cell_mm_y = calibration.cell_mm
     surface = _surface_map(calibration, lens)

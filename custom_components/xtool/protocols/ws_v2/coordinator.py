@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from homeassistant.components.button import ButtonEntity
     from homeassistant.components.camera import Camera
     from homeassistant.components.event import EventEntity
+    from homeassistant.components.image import ImageEntity
     from homeassistant.components.light import LightEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
