@@ -18,9 +18,7 @@ from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import POWER_SWITCH, SERIAL, build_coordinator
-from .features import requires
 
-pytestmark = requires("address_by_discovery")
 
 OLD = "192.0.2.46"
 NEW = "192.0.2.244"

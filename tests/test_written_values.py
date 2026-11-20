@@ -16,9 +16,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import build_coordinator
-from .features import requires
 
-pytestmark = requires("written_values_held")
 
 IF2 = "DuctFanV3:SN1"
 

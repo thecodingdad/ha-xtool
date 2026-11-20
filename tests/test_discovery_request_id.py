@@ -13,9 +13,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("v1_request_id_fits")
 
 LASER_IP = "192.0.2.50"
 

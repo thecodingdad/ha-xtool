@@ -6,9 +6,7 @@ import json
 
 from homeassistant.const import EntityCategory
 
-from .features import COMPONENT, requires
-
-pytestmark = requires("entity_categories")
+from .common import COMPONENT
 
 
 def test_firmware_updates_are_diagnostic() -> None:

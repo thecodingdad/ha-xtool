@@ -12,10 +12,8 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.xtool.const import XtoolStatus
 
-from .features import requires
-from .test_focus import _focus_entity, _protocol
 
-pytestmark = requires("focus_lens")
+from .test_focus import _focus_entity, _protocol
 
 
 @pytest.mark.parametrize(("lens", "refused"), [("big", False), ("small", True), ("none", True), (None, False)])

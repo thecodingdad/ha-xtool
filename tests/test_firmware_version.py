@@ -12,9 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import requires
 
-pytestmark = requires("firmware_version_normalized")
 
 INSTALLED = "40.130.023.00.ht5"
 
@@ -97,7 +95,6 @@ def _polling_coordinator(hass: HomeAssistant):
     return coordinator
 
 
-@requires("device_info_refetch")
 async def test_empty_machine_info_is_read_again(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     """An empty machineInfo right after power-on does not end the retry."""
     from unittest.mock import AsyncMock
@@ -113,7 +110,6 @@ async def test_empty_machine_info_is_read_again(hass: HomeAssistant, config_entr
     assert coordinator.firmware_version == INSTALLED
 
 
-@requires("device_info_refetch")
 async def test_identity_is_read_again_after_reconnect(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     """A failed poll (laser off) makes the next connect read the identity again."""
     from unittest.mock import AsyncMock
@@ -128,8 +124,6 @@ async def test_identity_is_read_again_after_reconnect(hass: HomeAssistant, confi
     assert coordinator._device_info_fetched is False
 
 
-
-@requires("firmware_from_device_page")
 def test_restart_keeps_the_firmware_from_the_device_page(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     """Setup starts from the device page's version, not the one stored at setup."""
     from custom_components.xtool import _last_firmware_version
@@ -144,7 +138,6 @@ def test_restart_keeps_the_firmware_from_the_device_page(hass: HomeAssistant, co
     assert _last_firmware_version(hass, config_entry.entry_id, "MXTEST0001", stored) == INSTALLED
 
 
-@requires("device_info_refetch")
 async def test_identity_is_read_again_on_a_new_connection(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     """A quick power cycle reconnects without a failed poll; the identity is still read again."""
     from unittest.mock import AsyncMock

@@ -16,9 +16,6 @@ from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from .features import has, requires
-
-pytestmark = requires("dhcp_follows_mac")
 
 SERIAL = "MXTEST0003"
 ETHERNET_MAC = "02:00:00:00:00:01"
@@ -90,16 +87,6 @@ async def test_moves_to_the_preferred_address(hass, monkeypatch, entry) -> None:
     assert entry.data["host"] == "192.0.2.46"
 
 
-@pytest.mark.skipif(has("address_by_discovery"), reason="replaced by the discovery search (test_address_discovery)")
-async def test_a_running_p2_takes_the_address_itself(hass, monkeypatch, entry) -> None:
-    """Its update listener does not reload for a new address: the coordinator moves."""
-    move = AsyncMock()
-    entry.runtime_data = SimpleNamespace(prefers_host=lambda host: False, async_move_to=move)
-    result, _ = await _dhcp(hass, monkeypatch, entry, "192.0.2.46", ETHERNET_MAC, set())
-    assert result["reason"] == "already_configured"
-    move.assert_awaited_once_with("192.0.2.46")
-
-
 async def test_an_unknown_mac_is_a_new_laser(hass, monkeypatch, entry) -> None:
     result, validate = await _dhcp(hass, monkeypatch, entry, "192.0.2.80", "aa:bb:cc:dd:ee:ff", set())
     assert result["type"] is FlowResultType.ABORT
@@ -121,18 +108,3 @@ async def test_p2_prefers_its_ethernet_address(hass, config_entry) -> None:
     assert coordinator.prefers_host("192.0.2.46") is False
 
 
-@pytest.mark.skipif(has("address_by_discovery"), reason="replaced by the discovery search (test_address_discovery)")
-async def test_old_addresses_are_not_kept(hass, config_entry) -> None:
-    """A pool address from an earlier start is dropped from the saved list."""
-    from custom_components.xtool.protocols.rest import XTOOL_P2
-
-    from .conftest import build_coordinator
-
-    coordinator = build_coordinator(hass, XTOOL_P2)
-    coordinator.config_entry = config_entry
-    coordinator._known_hosts = ["192.0.2.47", "192.0.2.244"]
-    store = MagicMock(async_save=AsyncMock())
-    coordinator._hosts_store = store
-    await coordinator._save_hosts(["192.0.2.46", "192.0.2.47", "192.0.2.46"])
-    assert coordinator._known_hosts == ["192.0.2.46", "192.0.2.47"]
-    store.async_save.assert_awaited_once_with({"hosts": ["192.0.2.46", "192.0.2.47"]})

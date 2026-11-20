@@ -11,9 +11,6 @@ import json
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("p2_push")
 
 KEEPALIVE = bytes.fromhex("0000000000000a001400")
 

@@ -14,9 +14,6 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import build_coordinator
-from .features import requires
-
-pytestmark = requires("camera_photo_live_view")
 
 
 def _main_camera(hass: HomeAssistant):
@@ -55,10 +52,6 @@ async def test_recent_photo_is_shared(hass: HomeAssistant) -> None:
 async def test_a_photo_just_taken_answers_the_next_picture(hass: HomeAssistant) -> None:
     """A slow photo (older than MIN_SNAPSHOT_INTERVAL when it arrives) still
     answers the picture request that follows a refresh: no black thumbnail."""
-    from .features import has
-
-    if not has("picture_reuse"):
-        pytest.skip("branch lacks picture_reuse")
     camera, protocol = _main_camera(hass)
     await camera.async_camera_image()
     camera._last_snapshot_time -= timedelta(seconds=5)
@@ -95,7 +88,6 @@ async def test_failed_photo_drops_a_stale_image(hass: HomeAssistant) -> None:
     assert await camera.async_camera_image() is None
 
 
-@requires("picture_follows_refresh")
 async def test_pictures_reuse_a_photo_younger_than_the_refresh(hass: HomeAssistant) -> None:
     """A dashboard picture reloads every few seconds; the refresh sets the photo rate."""
     camera, protocol = _main_camera(hass)
@@ -111,7 +103,6 @@ async def test_pictures_reuse_a_photo_younger_than_the_refresh(hass: HomeAssista
     assert protocol.camera_snap.await_count == 2
 
 
-@requires("picture_at_once")
 async def test_a_picture_does_not_wait_for_a_new_photo(hass: HomeAssistant) -> None:
     """The browser gives up after 10 s; a P2 photo can take 30."""
     camera, protocol = _main_camera(hass)
@@ -141,7 +132,6 @@ async def test_a_picture_does_not_wait_for_a_new_photo(hass: HomeAssistant) -> N
     assert protocol.camera_snap.await_count == 2
 
 
-@requires("picture_at_once")
 async def test_a_very_old_photo_is_not_shown_while_waiting(hass: HomeAssistant) -> None:
     camera, protocol = _main_camera(hass)
     camera.hass = hass
@@ -187,9 +177,6 @@ async def test_live_view_ends_when_the_viewer_stops_reading(
     hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from custom_components.xtool.protocols.ws_v2 import entities
-
-    if not hasattr(entities, "LIVE_WRITE_TIMEOUT"):
-        pytest.skip("branch lacks the live write timeout")
 
     class StuckResponse:
         def __init__(self, *args, **kwargs) -> None:

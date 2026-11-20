@@ -10,9 +10,6 @@ from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import has, requires
-
-pytestmark = requires("rest_hold_written_values")
 
 
 @pytest.fixture
@@ -88,16 +85,10 @@ async def test_fill_light_held_and_restored_on_failure(coordinator) -> None:
 
 
 async def test_safety_lock_held(coordinator) -> None:
-    if has("p2_controls"):
-        lock = by_key(coordinator.build_locks())["safety_lock"]
-        await lock.async_lock()
-        poll_with(coordinator, cover_locked=False)
-        assert lock.is_locked is True
-    else:
-        switches = by_key(coordinator.build_switches())
-        await switches["safety_lock"].async_turn_on()
-        poll_with(coordinator, cover_locked=False)
-        assert switches["safety_lock"].is_on is True
+    lock = by_key(coordinator.build_locks())["safety_lock"]
+    await lock.async_lock()
+    poll_with(coordinator, cover_locked=False)
+    assert lock.is_locked is True
     coordinator.protocol.set_digital_lock.assert_awaited_once_with(True)
 
 

@@ -17,9 +17,6 @@ from homeassistant.exceptions import HomeAssistantError
 from custom_components.xtool.const import XtoolStatus
 
 from .conftest import build_coordinator
-from .features import requires
-
-pytestmark = requires("focus_control")
 
 
 def _protocol():

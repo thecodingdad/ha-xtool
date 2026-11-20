@@ -15,9 +15,6 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import build_coordinator
-from .features import has, requires
-
-pytestmark = requires("wsv2_connection")
 
 HOST = "192.0.2.10"
 INTERFACES = [
@@ -85,14 +82,6 @@ async def test_connection_from_the_interface_with_the_address_in_use(reply, expe
     assert proto._latest.get("connection") == expected
 
 
-@pytest.mark.skipif(has("connection_first"), reason="read first in the poll instead")
-async def test_read_with_the_other_laser_info() -> None:
-    proto = _protocol(INTERFACES)
-    await proto._poll_laser_info()
-    assert proto._latest.get("connection") == "wifi"
-    assert "connection" in proto._LATEST_STATE_FIELDS
-
-
 def _connection_sensors(hass: HomeAssistant, model):
     coordinator = build_coordinator(hass, model)
     return coordinator, [
@@ -135,9 +124,9 @@ async def test_only_lasers_that_report_their_interfaces(hass: HomeAssistant, con
 def test_translations() -> None:
     import json
 
-    from .features import COMPONENT
+    from .common import COMPONENT
 
-    for path in ("strings.json", "translations/en.json"):
+    for path in ("translations/en.json",):
         data = json.loads((COMPONENT / path).read_text(encoding="utf-8"))
         assert data["entity"]["sensor"]["connection"]["state"] == {"ethernet": "Ethernet", "wifi": "Wi-Fi"}
 
@@ -169,7 +158,6 @@ def _polling_protocol(answers):
     return proto
 
 
-@requires("connection_first")
 async def test_read_first_in_the_poll_once_per_connection() -> None:
     """The first poll after the laser powers on carries the connection."""
     from custom_components.xtool.protocols.base import XtoolDeviceState
@@ -185,7 +173,6 @@ async def test_read_first_in_the_poll_once_per_connection() -> None:
     assert "/v1/wifi/interfaces" not in proto.urls
 
 
-@requires("connection_first")
 async def test_read_again_on_the_next_poll_while_the_laser_boots() -> None:
     from custom_components.xtool.protocols.base import XtoolDeviceState
     from custom_components.xtool.protocols.ws_v2.protocol import LASER_INFO_TRIES
@@ -203,7 +190,6 @@ async def test_read_again_on_the_next_poll_while_the_laser_boots() -> None:
     assert proto.urls.count("/v1/wifi/interfaces") == LASER_INFO_TRIES
 
 
-@requires("connection_first")
 async def test_read_again_after_a_reconnect() -> None:
     from custom_components.xtool.protocols.base import XtoolDeviceState
 
@@ -216,7 +202,6 @@ async def test_read_again_after_a_reconnect() -> None:
     assert proto.urls.count("/v1/wifi/interfaces") == 1
 
 
-@requires("laser_info_notify_now")
 async def test_sent_to_home_assistant_as_soon_as_it_is_read() -> None:
     """Home Assistant gets the Connection without waiting for the rest of the poll."""
     from unittest.mock import MagicMock

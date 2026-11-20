@@ -12,9 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import SERIAL, build_coordinator
-from .features import COMPONENT, requires
-
-pytestmark = requires("device_registry_lookup")
+from .common import COMPONENT
 
 DOMAIN = "xtool"
 

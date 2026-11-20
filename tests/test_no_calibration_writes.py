@@ -103,9 +103,6 @@ READ_ONLY_FUNCTION = "_read_calibration_info"
 
 def test_calibration_is_only_read() -> None:
     """The Calibration sensor's read sends GET requests and nothing else."""
-    text = (COMPONENT / "protocols" / "ws_v2" / "protocol.py").read_text(encoding="utf-8")
-    if f"async def {READ_ONLY_FUNCTION}(" not in text:
-        pytest.skip("branch has no Calibration sensor")
     body = _protocol_function(READ_ONLY_FUNCTION)
     for forbidden in ("PUT", "POST", "set_config", "setUserConfigs", "_send", "upload", "file_type"):
         assert forbidden not in body, forbidden
@@ -181,7 +178,11 @@ async def _press_everything(entity: Any) -> None:
             pass
 
 
-@pytest.mark.parametrize("model_key", sorted(DEVICE_MODELS))
+# Supported read-only, so it has no controls to use
+READ_ONLY_MODELS = {"DT002_V2"}
+
+
+@pytest.mark.parametrize("model_key", sorted(set(DEVICE_MODELS) - READ_ONLY_MODELS))
 async def test_no_control_writes_calibration(
     hass: HomeAssistant, config_entry: MockConfigEntry, model_key: str
 ) -> None:
@@ -205,8 +206,7 @@ async def test_no_control_writes_calibration(
             controls += getattr(coordinator, build)()
         except Exception:  # noqa: BLE001 - a model without that platform
             continue
-    if not controls:
-        pytest.skip(f"{model_key} has no controls")
+    assert controls, model_key
 
     for entity in controls:
         entity.hass = hass

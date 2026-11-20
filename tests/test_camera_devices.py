@@ -16,13 +16,9 @@ import pytest
 import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
 
 from .conftest import SERIAL, build_coordinator
-from .features import has, requires
 from .test_camera_correction import GRID, _photo
-
-pytestmark = requires("camera_devices")
 
 ROOT = Path("custom_components/xtool")
 SETTINGS = ("width", "height", "center_x", "center_y")
@@ -148,7 +144,7 @@ def test_a_single_camera_stays_on_the_laser(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", [ROOT / "strings.json", ROOT / "translations" / "en.json", ROOT / "translations" / "de.json"],
+    "path", [ROOT / "translations" / "en.json", ROOT / "translations" / "de.json"],
 )
 def test_translations_name_the_devices_and_settings(path: Path) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -162,7 +158,7 @@ def test_translations_name_the_devices_and_settings(path: Path) -> None:
 
 
 def test_english_names() -> None:
-    numbers = json.loads((ROOT / "strings.json").read_text(encoding="utf-8"))["entity"]["number"]
+    numbers = json.loads((ROOT / "translations" / "en.json").read_text(encoding="utf-8"))["entity"]["number"]
     assert numbers["crop_width"]["name"] == "Crop width"
     assert numbers["crop_height"]["name"] == "Crop height"
     assert numbers["crop_center_x"]["name"] == "Crop center X"
@@ -175,12 +171,8 @@ def test_crop_numbers(hass: HomeAssistant) -> None:
     height = _number(coordinator, "camera_main_view_height")
     center_x = _number(coordinator, "camera_main_view_center_x")
     center_y = _number(coordinator, "camera_main_view_center_y")
-    if has("crop_center_icons"):
-        assert center_x.icon == "mdi:format-horizontal-align-center"
-        assert center_y.icon == "mdi:format-vertical-align-center"
-    else:
-        assert center_x.icon == "mdi:arrow-left-right"
-        assert center_y.icon == "mdi:arrow-up-down"
+    assert center_x.icon == "mdi:format-horizontal-align-center"
+    assert center_y.icon == "mdi:format-vertical-align-center"
     for number in (width, height, center_x, center_y):
         # Not a distance: the xtool.focus picker lists only Focus height.
         assert number.device_class is None
@@ -274,7 +266,6 @@ def test_zero_shows_the_whole_photo() -> None:
         assert pixel[0] > 200 and pixel[1] < 60
 
 
-@requires("camera_limits_per_camera")
 def test_action_schema() -> None:
     from custom_components.xtool.services import CAMERA_SCHEMA
 
@@ -286,7 +277,6 @@ def test_action_schema() -> None:
         schema({"crop_width": "wide"})
 
 
-@requires("camera_limits_per_camera")
 async def test_action_refuses_values_outside_the_f2uv_limits(hass: HomeAssistant) -> None:
     from custom_components.xtool.services import _async_camera
 
@@ -361,31 +351,6 @@ async def test_new_crop_takes_a_new_photo(hass: HomeAssistant) -> None:
     assert coordinator.protocol.camera_snap.await_count == 2
     assert camera.access_tokens[-1] != token
     camera.async_write_ha_state.assert_called_once()
-
-
-async def test_old_view_entity_ids_become_crop(hass: HomeAssistant, config_entry) -> None:
-    from custom_components.xtool import _rename_camera_crop_entities
-
-    coordinator = _f2uv(hass)
-    registry = er.async_get(hass)
-    for setting in SETTINGS:
-        registry.async_get_or_create(
-            "number", "xtool", f"{SERIAL}_camera_main_view_{setting}",
-            config_entry=config_entry,
-            suggested_object_id=(
-                "my_own_name" if setting == "center_y"
-                else f"xtool_f2_ultra_uv_main_camera_view_{setting}"
-            ),
-        )
-    _rename_camera_crop_entities(hass, config_entry, coordinator)
-    ids = {
-        setting: registry.async_get_entity_id("number", "xtool", f"{SERIAL}_camera_main_view_{setting}")
-        for setting in SETTINGS
-    }
-    assert ids["width"] == "number.xtool_f2_ultra_uv_main_camera_crop_width"
-    assert ids["height"] == "number.xtool_f2_ultra_uv_main_camera_crop_height"
-    assert ids["center_x"] == "number.xtool_f2_ultra_uv_main_camera_crop_center_x"
-    assert ids["center_y"] == "number.my_own_name"  # chosen by the user: kept
 
 
 def _perspective_select(coordinator):
@@ -466,7 +431,7 @@ def test_upright_turn_has_no_empty_corners() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", [ROOT / "strings.json", ROOT / "translations" / "en.json", ROOT / "translations" / "de.json"],
+    "path", [ROOT / "translations" / "en.json", ROOT / "translations" / "de.json"],
 )
 def test_select_is_named(path: Path) -> None:
     select = json.loads(path.read_text(encoding="utf-8"))["entity"]["select"]["perspective"]

@@ -8,7 +8,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchDeviceClass
 
 from .conftest import Built
-from .features import COMPONENT, requires
+from .common import COMPONENT
 
 PLATFORMS = ("switch", "binary_sensor")
 
@@ -25,14 +25,12 @@ def test_every_model_builds_its_entities(built_entities: list[Built]) -> None:
     assert platforms == set(PLATFORMS)
 
 
-@requires("icon_translations")
 def test_no_fixed_icons(built_entities: list[Built]) -> None:
     """A fixed icon would hide the state icons from icons.json."""
     fixed = [f"{item} ({item.entity.icon})" for item in built_entities if item.entity.icon]
     assert not fixed, "\n".join(sorted(set(fixed)))
 
 
-@requires("icon_translations")
 def test_icons_json_has_no_unused_entries(built_entities: list[Built]) -> None:
     """Every icons.json entry belongs to an entity the integration creates."""
     icons = _icons()
@@ -46,7 +44,6 @@ def test_icons_json_has_no_unused_entries(built_entities: list[Built]) -> None:
         assert not unused, f"{platform}: {sorted(unused)}"
 
 
-@requires("icon_translations")
 def test_icons_json_entries_are_well_formed() -> None:
     """Each entry has a default icon; switches and binary sensors have only on/off state icons."""
     for platform, entries in _icons().items():
@@ -58,7 +55,6 @@ def test_icons_json_entries_are_well_formed() -> None:
             assert all(icon.startswith("mdi:") for icon in states.values())
 
 
-@requires("icon_translations")
 def test_power_switch_uses_outlet_icons(built_entities: list[Built]) -> None:
     """The power switch shows the outlet's plug and plug-off icons."""
     power = [

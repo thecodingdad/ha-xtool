@@ -12,9 +12,6 @@ import math
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("fill_light_studio_percent")
 
 DEVICE_MIN = 20
 

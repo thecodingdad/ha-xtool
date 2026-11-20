@@ -15,9 +15,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from .conftest import POWER_SWITCH, build_coordinator
-from .features import COMPONENT, has, requires
-
-pytestmark = requires("power_on_starting")
+from .common import COMPONENT
 
 
 @pytest.fixture
@@ -66,10 +64,9 @@ async def test_initializing_after_power_on(hass: HomeAssistant, setup, monkeypat
     )
     await hass.async_block_till_done()
     # Powered, but the laser does not answer after its start-up time
-    assert sensor.native_value == ("not_responding" if has("status_not_responding") else "off")
+    assert sensor.native_value == "not_responding"
 
 
-@requires("startup_ends_at_first_status")
 async def test_lost_after_first_status_is_not_initializing(hass: HomeAssistant, setup) -> None:
     """The laser answered once, then stopped: Status must not go back to Initializing."""
     from custom_components.xtool.const import XtoolStatus
@@ -91,7 +88,7 @@ async def test_lost_after_first_status_is_not_initializing(hass: HomeAssistant, 
     assert sensor.native_value == "idle"
     # It stops answering within the start-up time
     coordinator.async_set_updated_data(XtoolDeviceState(available=False))
-    assert sensor.native_value == ("not_responding" if has("status_not_responding") else "off")
+    assert sensor.native_value == "not_responding"
 
 
 async def test_off_while_switched_off(hass: HomeAssistant, setup) -> None:

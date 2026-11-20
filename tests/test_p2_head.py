@@ -12,12 +12,10 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import has, COMPONENT, requires
+from .common import COMPONENT
 
 # Where the P2's head stops (Studio's limits were used before)
-MAX_X, MAX_Y = (610, 305) if has("p2_real_travel") else (620, 308)
-
-pytestmark = requires("p2_head_controls")
+MAX_X, MAX_Y = 610, 305
 
 
 @pytest.fixture
@@ -205,7 +203,7 @@ def test_the_action_is_described() -> None:
     assert move["fields"]["device_id"]["selector"]["device"]["filter"] == [
         {"integration": "xtool", "model": "xTool P2"},
     ]
-    for name in ("strings.json", "translations/en.json"):
+    for name in ("translations/en.json",):
         data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
         assert set(data["services"]["move"]["fields"]) == {
             "device_id", "x", "y", "step_x", "step_y", "steps",
@@ -247,7 +245,6 @@ def _measure_setup(coordinator, monkeypatch, readings):
     return buttons["measure_thickness_or_distance"], waits
 
 
-@requires("p2_sensor_distance")
 async def test_measure_gives_the_thickness_and_where(coordinator, monkeypatch) -> None:
     from custom_components.xtool.protocols.rest import p2_entities
     from custom_components.xtool.protocols.rest.p2_entities import P2Measured
@@ -274,7 +271,6 @@ async def test_measure_gives_the_thickness_and_where(coordinator, monkeypatch) -
     assert measured.native_value == 19.0  # Studio's distance
 
 
-@requires("p2_sensor_distance")
 async def test_measure_asks_again_until_the_sensor_has_read(coordinator, monkeypatch) -> None:
     from custom_components.xtool.protocols.rest import p2_entities
 
@@ -295,7 +291,6 @@ async def test_measure_asks_again_until_the_sensor_has_read(coordinator, monkeyp
     assert coordinator.data.measured_thickness_mm == 1.5
 
 
-@requires("p2_sensor_distance")
 async def test_a_measure_the_mode_cannot_take_is_refused(coordinator, monkeypatch) -> None:
     # Process on slats takes 0 to 25 mm: 177.4 mm read is 40.7 mm below the slats
     button, _ = _measure_setup(coordinator, monkeypatch, [
@@ -315,7 +310,6 @@ async def test_a_measure_the_mode_cannot_take_is_refused(coordinator, monkeypatc
     assert coordinator._p2_view["thickness_or_distance"] == 65.7
 
 
-@requires("p2_sensor_distance")
 async def test_a_measure_without_a_reply_says_so(coordinator, monkeypatch) -> None:
     button, waits = _measure_setup(coordinator, monkeypatch, [None])
     coordinator.data.ir_led_close = True  # left on: not turned off, no wait
@@ -329,7 +323,6 @@ async def test_a_measure_without_a_reply_says_so(coordinator, monkeypatch) -> No
         await button.async_press()
 
 
-@requires("p2_sensor_distance")
 async def test_the_protocol_reads_the_position_and_the_measurement(monkeypatch) -> None:
     from custom_components.xtool.protocols.rest.p2 import P2Protocol
 
@@ -351,7 +344,6 @@ async def test_the_protocol_reads_the_position_and_the_measurement(monkeypatch) 
     assert await proto.read_head_position() is None
 
 
-@requires("p2_sensor_distance")
 def test_the_p2s_warnings_go_to_the_log(caplog) -> None:
     from custom_components.xtool.protocols.base import XtoolDeviceState
     from custom_components.xtool.protocols.rest.p2 import P2Protocol

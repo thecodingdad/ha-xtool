@@ -12,10 +12,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("access_control_sku")
-
 
 def _model(model_id: str):
     from custom_components.xtool.protocols import DEVICE_MODELS

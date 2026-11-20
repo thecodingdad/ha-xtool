@@ -11,10 +11,6 @@ from unittest.mock import AsyncMock
 
 from custom_components.xtool.protocols.base import XtoolDeviceState
 
-from .features import requires
-
-pytestmark = requires("red_dot_assumed_on")
-
 
 def _f2uv():
     from custom_components.xtool.protocols import DEVICE_MODELS

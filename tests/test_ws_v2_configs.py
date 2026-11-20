@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from .features import requires
-
 
 def protocol():
     from custom_components.xtool.protocols.ws_v2.protocol import WSV2Protocol
@@ -17,7 +15,6 @@ def push(proto, info: dict) -> None:
     proto._dispatch_push({"url": "/device/config", "data": {"module": "DEVICE_CONFIG", "type": "INFO", "info": info}})
 
 
-@requires("stops_when_moved_poll")
 @pytest.mark.parametrize(("mode", "on"), [("NORMAL", True), ("HANDLE", False)])
 def test_stops_when_moved_poll_and_push_agree(mode: str, on: bool) -> None:
     """workingMode NORMAL is on (what the switch writes), from the poll and from a push."""
@@ -56,7 +53,6 @@ class FakeRequests:
         return {"kv": {"flameAlarm": True, "workingMode": "NORMAL", "autoSleepEnable": False}}
 
 
-@requires("config_read_key_list")
 @pytest.mark.parametrize("wants_key_list", [True, False])
 async def test_config_read_finds_the_body_the_firmware_wants(wants_key_list: bool) -> None:
     """The read lists its keys (F2 Ultra UV) or sends none (older firmware), and keeps what works."""
@@ -78,7 +74,6 @@ async def test_config_read_finds_the_body_the_firmware_wants(wants_key_list: boo
         assert sent is None
 
 
-@requires("config_read_key_list")
 def test_settings_start_unknown() -> None:
     """Before the device reports them, the settings are unknown, not off."""
     from custom_components.xtool.protocols.base import XtoolDeviceState

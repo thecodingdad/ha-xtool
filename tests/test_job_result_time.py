@@ -11,9 +11,6 @@ from homeassistant.core import HomeAssistant
 from custom_components.xtool.protocols.base import XtoolDeviceState
 
 from .conftest import build_coordinator
-from .features import requires
-
-pytestmark = requires("job_result_time")
 
 
 def _models():

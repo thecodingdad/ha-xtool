@@ -10,9 +10,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import COMPONENT, has, requires
-
-pytestmark = requires("p2_controls")
+from .common import COMPONENT
 
 
 @pytest.fixture
@@ -53,7 +51,7 @@ def test_alarm_is_on_while_an_alarm_is_active(coordinator) -> None:
 
 
 def test_baseplate_reads_installed_or_removed() -> None:
-    for name in ("strings.json", "translations/en.json"):
+    for name in ("translations/en.json",):
         data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))
         states = data["entity"]["binary_sensor"]["baseplate"]["state"]
         assert states == {"on": "Installed", "off": "Removed"}
@@ -91,12 +89,7 @@ async def test_a_move_waits_and_the_next_poll_reads_the_position(monkeypatch) ->
     await proto.poll_state(state)
     coords.clear()
     await proto.poll_state(state)
-    from .features import has
-
-    if has("p2_position_every_poll"):
-        assert coords == ["/peripheral/laser_head"]  # it moves while the P2 homes
-    else:
-        assert coords == []  # the position waits a minute
+    assert coords == ["/peripheral/laser_head"]  # it moves while the P2 homes
 
     await proto.move_laser_head(100.0, 50.0)
     path, data, timeout = sent[-1]
@@ -109,15 +102,10 @@ async def test_a_move_waits_and_the_next_poll_reads_the_position(monkeypatch) ->
     assert coords and (state.position_x, state.position_y) == (100.0, 50.0)
     coords.clear()
     await proto.poll_state(state)
-    assert coords == (["/peripheral/laser_head"] if has("p2_position_every_poll") else [])
+    assert coords == ["/peripheral/laser_head"]
 
 
 def test_position_icons_are_straight_arrows(coordinator) -> None:
-    if has("p2_head_controls"):
-        icons = json.loads((COMPONENT / "icons.json").read_text(encoding="utf-8"))["entity"]["number"]
-        assert icons["laser_position_x"]["default"] == "mdi:arrow-left-right"
-        assert icons["laser_position_y"]["default"] == "mdi:arrow-up-down"
-        return
-    sensors = _by_key(coordinator.build_sensors())
-    assert sensors["laser_position_x"].icon == "mdi:arrow-left-right"
-    assert sensors["laser_position_y"].icon == "mdi:arrow-up-down"
+    icons = json.loads((COMPONENT / "icons.json").read_text(encoding="utf-8"))["entity"]["number"]
+    assert icons["laser_position_x"]["default"] == "mdi:arrow-left-right"
+    assert icons["laser_position_y"]["default"] == "mdi:arrow-up-down"

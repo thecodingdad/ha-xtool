@@ -11,10 +11,6 @@ import time
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("p2_camera_queue")
-
 
 class _Session:
     """Answers each photo after a short wait, counting overlapping photos."""
@@ -86,7 +82,6 @@ async def test_a_viewer_that_leaves_does_not_cancel_the_photo(monkeypatch) -> No
     assert len(session.urls) == 1
 
 
-@requires("p2_head_read_per_photo")
 async def test_a_cached_picture_does_not_read_the_head(hass, config_entry) -> None:
     """Seen 2026-11-15: two live views read the head about 10 times a second."""
     from unittest.mock import AsyncMock

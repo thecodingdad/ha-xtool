@@ -10,10 +10,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import SERIAL, build_coordinator
-from .features import has, requires
 from .test_camera_correction import GRID, _photo
-
-pytestmark = requires("p2_cameras")
 
 
 @pytest.fixture
@@ -71,7 +68,7 @@ def test_close_fill_light_is_on_the_close_camera(coordinator) -> None:
     close = lights["fill_light_1"]
     assert _ids(close) == {(DOMAIN, f"{SERIAL}:camera_closeup")}
     # Fill light (close), also on the Close camera's device
-    assert close.translation_key == ("fill_light_1" if has("p2_overlays_v2") else "fill_light")
+    assert close.translation_key == "fill_light_1"
     assert (DOMAIN, SERIAL) in _ids(lights["fill_light_2"])
 
 
@@ -114,7 +111,6 @@ async def test_a_missing_calibration_file_is_none(monkeypatch) -> None:
     assert json.loads(await proto.camera_calibration_file("global_calib.json"))["grid_num_w"] == 3
 
 
-@requires("p2_square_cells")
 def test_p2_grid_cells_are_square() -> None:
     """62 x 32 points over a 2440 x 1220 image at 4 px/mm: 10 mm cells both ways."""
     from custom_components.xtool.protocols.ws_v2.camera_correction import parse_calibration
@@ -129,7 +125,6 @@ def test_p2_grid_cells_are_square() -> None:
     assert parse_calibration(raw).cell_mm[1] == pytest.approx(200 * 1220 / 2440 / 31)
 
 
-@requires("p2_exposure_1000")
 async def test_exposure_change_takes_a_new_photo(hass, config_entry, monkeypatch) -> None:
     from unittest.mock import AsyncMock, MagicMock
 
@@ -190,7 +185,6 @@ async def test_camera_action_refuses_values_outside_the_p2_limits(coordinator) -
     camera.refresh_picture.assert_not_awaited()
 
 
-@requires("p2_camera_action_custom_crop")
 @pytest.mark.parametrize("name", ["overview", "closeup"])
 async def test_camera_action_switches_crop_to_custom(coordinator, name) -> None:
     """Seen 2026-11-15: with Sync to Mode, the preset put its crop back 0.3 s later."""
@@ -211,57 +205,12 @@ async def test_camera_action_switches_crop_to_custom(coordinator, name) -> None:
     assert view[key] == p2_entities.VIEW_CUSTOM
 
 
-
 def _p2_protocol():
     from custom_components.xtool.protocols.rest.p2 import P2Protocol
 
     return P2Protocol("192.0.2.10")
 
 
-@requires("p2_exposure_read")
-async def test_exposure_is_read_back(monkeypatch) -> None:
-    """Each camera's exposure comes from the P2, except while it sleeps."""
-    from custom_components.xtool.const import XtoolStatus
-    from custom_components.xtool.protocols.base import XtoolDeviceState
-
-    protocol = _p2_protocol()
-    asked = []
-
-    async def get_json(path, timeout=5.0):
-        if "/camera/exposure" in path:
-            asked.append(path)
-            return {"mode": "manual", "value": 760 if path.endswith("stream=0") else 150}
-        return None
-
-    monkeypatch.setattr(protocol, "_get_json", get_json)
-    state = XtoolDeviceState()
-    state.status = XtoolStatus.IDLE
-    await protocol._read_slow(state)
-    assert (state.camera_exposure_overview, state.camera_exposure_closeup) == (760, 150)
-    assert asked == [
-        "http://192.0.2.10:8329/camera/exposure?stream=0",
-        "http://192.0.2.10:8329/camera/exposure?stream=1",
-    ]
-    asked.clear()
-    state.status = XtoolStatus.SLEEPING
-    await protocol._read_slow(state)
-    assert asked == []  # the cameras' port would wake it
-
-
-@requires("p2_exposure_read")
-async def test_exposure_reply_is_parsed(monkeypatch) -> None:
-    protocol = _p2_protocol()
-    for reply, value in (
-        ({"mode": "auto", "value": 760}, 760),
-        ({"mode": "manual", "value": "150"}, 150),
-        ("camera disabled", None),
-        (None, None),
-    ):
-        monkeypatch.setattr(protocol, "_get_json", AsyncMock(return_value=reply))
-        assert await protocol.read_camera_exposure("closeup") == value
-
-
-@requires("p2_overlays_v2")
 async def test_exposure_refuses_no_number(coordinator) -> None:
     from homeassistant.exceptions import HomeAssistantError
 
@@ -274,7 +223,6 @@ async def test_exposure_refuses_no_number(coordinator) -> None:
     coordinator.protocol.set_camera_exposure.assert_not_awaited()
 
 
-@requires("p2_overlays_v2")
 async def test_wake_takes_one_photo(coordinator) -> None:
     from homeassistant.exceptions import HomeAssistantError
 
@@ -290,38 +238,6 @@ async def test_wake_takes_one_photo(coordinator) -> None:
         await wake.async_press()
 
 
-@requires("p2_exposure_on_wake")
-async def test_exposure_is_read_on_the_first_poll_after_waking(monkeypatch) -> None:
-    """Asleep when Home Assistant starts: no read; the poll after it wakes reads at once."""
-    from custom_components.xtool.protocols.base import XtoolDeviceState
-
-    from .test_p2_status import CONFIG, REPLIES, fake
-
-    protocol = _p2_protocol()
-    mode = {"desc": "", "mode": "P_SLEEP", "subMode": ""}
-    replies = {
-        **REPLIES,
-        "/device/runningStatus": {"curMode": mode},
-        "http://192.0.2.10:8329/camera/exposure?stream=0": {"mode": "manual", "value": 760},
-        "http://192.0.2.10:8329/camera/exposure?stream=1": {"mode": "manual", "value": 150},
-    }
-    calls = fake(protocol, monkeypatch, replies, CONFIG)
-    state = XtoolDeviceState()
-    await protocol.poll_state(state)
-    assert not [c for c in calls if "/camera/exposure" in c]
-    assert state.camera_exposure_overview == 0
-    mode["mode"] = "P_IDLE"
-    calls.clear()
-    # Well inside the minute between slow reads
-    await protocol.poll_state(state)
-    assert len([c for c in calls if "/camera/exposure" in c]) == 2
-    assert (state.camera_exposure_overview, state.camera_exposure_closeup) == (760, 150)
-    calls.clear()
-    await protocol.poll_state(state)
-    assert not [c for c in calls if "/camera/exposure" in c]
-
-
-@requires("p2_exposure_studio")
 async def test_exposure_shows_the_last_value_after_a_restart(hass, coordinator, monkeypatch) -> None:
     """The P2 does not report its exposure: the last value set is kept."""
     from homeassistant.components.number import NumberExtraStoredData
@@ -352,7 +268,6 @@ async def test_exposure_shows_the_last_value_after_a_restart(hass, coordinator, 
     assert coordinator.data.camera_exposure_closeup == 0
 
 
-@requires("p2_exposure_studio")
 async def test_power_switch_on_sets_studios_exposure(hass, coordinator, monkeypatch) -> None:
     """Studio's value once the P2 is up; unknown again when the power goes."""
     from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -402,7 +317,6 @@ async def test_power_switch_on_sets_studios_exposure(hass, coordinator, monkeypa
     assert coordinator.data.camera_exposure_closeup == 0
 
 
-@requires("p2_exposure_studio")
 async def test_refused_exposure_is_an_error(coordinator, monkeypatch) -> None:
     from homeassistant.exceptions import HomeAssistantError
 
@@ -430,13 +344,11 @@ async def test_refused_exposure_is_an_error(coordinator, monkeypatch) -> None:
     assert number.native_value == 100
 
 
-@requires("p2_no_last_distance")
 def test_p2_has_no_last_distance_sensor(coordinator) -> None:
     """The Measured sensor has the reading as the attribute sensor_distance."""
     assert "last_distance" not in {e.translation_key for e in coordinator.build_sensors()}
 
 
-@requires("p2_measure_on_overview")
 def test_measure_is_on_the_overview_camera(coordinator) -> None:
     """The measurement only sets the Overview camera's picture."""
     from custom_components.xtool.const import DOMAIN

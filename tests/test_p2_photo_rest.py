@@ -11,10 +11,6 @@ import time
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("p2_photo_rest")
-
 
 class _Session:
     """Answers each photo after ``delay`` seconds, or fails after it."""

@@ -13,9 +13,7 @@ import pytest
 
 from custom_components.xtool.const import XtoolStatus
 
-from .features import COMPONENT, requires
-
-pytestmark = requires("job_failed")
+from .common import COMPONENT
 
 
 def _protocol():
@@ -66,7 +64,7 @@ def test_the_job_event_offers_failed() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["strings.json", "translations/en.json", "translations/de.json"],
+    "path", ["translations/en.json", "translations/de.json"],
 )
 def test_translated(path: str) -> None:
     data = json.loads((COMPONENT / path).read_text(encoding="utf-8"))["entity"]

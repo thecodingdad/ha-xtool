@@ -16,7 +16,7 @@ from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import requires
+
 
 WRONG_MAC = "6A:C4:AF:DE:80:A4"
 
@@ -59,7 +59,6 @@ def _state(**fields):
 # ── Exhaust fan ─────────────────────────────────────────────────────
 
 
-@requires("exhaust_fan_install_state")
 @pytest.mark.parametrize(("reply", "installed"), [("install", True), ("uninstall", False)])
 async def test_install_state_is_read_and_not_taken_as_running(reply: str, installed: bool) -> None:
     proto = _protocol(replies={"/v1/peripheral/param?smoking_fan": {"state": reply}})
@@ -70,7 +69,6 @@ async def test_install_state_is_read_and_not_taken_as_running(reply: str, instal
     assert state.smoking_fan_running is True
 
 
-@requires("exhaust_fan_install_state")
 @pytest.mark.parametrize(("typ", "installed"), [("DEVICE_ADD", True), ("DEVICE_REMOVE", False)])
 def test_install_push(typ: str, installed: bool) -> None:
     proto = _protocol()
@@ -78,7 +76,6 @@ def test_install_push(typ: str, installed: bool) -> None:
     assert proto._latest["smoking_fan_installed"] is installed
 
 
-@requires("exhaust_fan_install_state")
 async def test_exhaust_fan_is_assumed_off_once_per_connection() -> None:
     """Off after a new connection, then HA's own command stands."""
     proto = _protocol()
@@ -92,7 +89,6 @@ async def test_exhaust_fan_is_assumed_off_once_per_connection() -> None:
     assert state.smoking_fan_running is True
 
 
-@requires("exhaust_fan_install_state")
 def test_problem_sensor_replaces_running_sensor(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     coordinator = build_coordinator(hass, _model())
     keys = {e.translation_key for e in coordinator.build_binary_sensors()}
@@ -109,7 +105,6 @@ def test_problem_sensor_replaces_running_sensor(hass: HomeAssistant, config_entr
     assert sensor.is_on is False
 
 
-@requires("exhaust_fan_install_state")
 def test_other_models_keep_the_running_sensor(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     from custom_components.xtool.protocols import DEVICE_MODELS
 
@@ -125,7 +120,6 @@ def test_other_models_keep_the_running_sensor(hass: HomeAssistant, config_entry:
 COUNTS_ONLY = {"numOnlineWorking": 409, "numOfflineWorking": 161}
 
 
-@requires("working_time_from_machine_info")
 async def test_working_time_from_machine_info() -> None:
     proto = _protocol(replies={
         "/v1/device/statistics": COUNTS_ONLY,
@@ -137,7 +131,6 @@ async def test_working_time_from_machine_info() -> None:
     assert state.session_count == 570
 
 
-@requires("working_time_from_machine_info")
 async def test_statistics_time_wins() -> None:
     proto = _protocol(replies={
         "/v1/device/statistics": {"timeModeWorking": 100, **COUNTS_ONLY},
@@ -150,7 +143,6 @@ async def test_statistics_time_wins() -> None:
     assert proto._latest["working_seconds"] == 100
 
 
-@requires("working_time_from_machine_info")
 def test_working_time_sensor_exists(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     coordinator = build_coordinator(hass, _model())
     keys = [e.entity_description.key for e in coordinator.build_sensors()]
@@ -165,7 +157,6 @@ def test_working_time_sensor_exists(hass: HomeAssistant, config_entry: MockConfi
 MACHINE_INFO = {"mac": WRONG_MAC, "sn": "MXTEST0001", "firmware": {"package_version": "40.130.023.00.ht5"}}
 
 
-@requires("no_wrong_mac")
 async def test_f2_ultra_uv_shows_no_mac() -> None:
     proto = _protocol(replies={"/v1/device/machineInfo": MACHINE_INFO})
     proto._dispatch_push({"url": "/device/info", "data": {"module": "MACHINE_INFO", "type": "INFO", "info": MACHINE_INFO}})
@@ -173,14 +164,12 @@ async def test_f2_ultra_uv_shows_no_mac() -> None:
     assert info.mac_address == ""
 
 
-@requires("no_wrong_mac")
 async def test_other_models_keep_machine_info_mac() -> None:
     proto = _protocol("F1Ultra", replies={"/v1/device/machineInfo": MACHINE_INFO})
     info = await proto.get_device_info()
     assert info.mac_address == WRONG_MAC
 
 
-@requires("no_wrong_mac")
 def test_wrong_mac_is_removed_from_the_device(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     from custom_components.xtool import _drop_mac_connections
 

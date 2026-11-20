@@ -14,9 +14,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import SERIAL, build_coordinator
-from .features import COMPONENT, requires
-
-pytestmark = requires("calibration_image")
+from .common import COMPONENT
 
 
 def _f2uv():
@@ -95,7 +93,7 @@ def test_image_platform_is_set_up() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["strings.json", "translations/en.json", "translations/de.json"],
+    "path", ["translations/en.json", "translations/de.json"],
 )
 def test_translated(path: str) -> None:
     images = json.loads((COMPONENT / path).read_text(encoding="utf-8"))["entity"]["image"]

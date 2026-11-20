@@ -13,9 +13,6 @@ from unittest.mock import MagicMock
 from homeassistant.core import HomeAssistant
 
 from .conftest import build_coordinator
-from .features import requires
-
-pytestmark = requires("push_after_accessory_poll")
 
 
 async def test_push_during_the_accessory_read_wins(hass: HomeAssistant) -> None:

@@ -14,9 +14,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import COMPONENT, requires
-
-pytestmark = requires("if2_alerts")
+from .common import COMPONENT
 
 IF2_SN = "MXAK013001250917TAF0FC0"
 
@@ -96,7 +94,7 @@ def test_event_platform_takes_accessory_entities() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["strings.json", "translations/en.json", "translations/de.json"],
+    "path", ["translations/en.json", "translations/de.json"],
 )
 def test_translated(path: str) -> None:
     events = json.loads((COMPONENT / path).read_text(encoding="utf-8"))["entity"]["event"]

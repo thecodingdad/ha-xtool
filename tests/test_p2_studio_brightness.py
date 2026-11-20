@@ -9,9 +9,6 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import requires
-
-pytestmark = requires("p2_studio_brightness")
 
 
 @pytest.fixture

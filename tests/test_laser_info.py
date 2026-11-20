@@ -15,9 +15,7 @@ from homeassistant.core import HomeAssistant
 from custom_components.xtool.protocols.base import XtoolDeviceState
 
 from .conftest import build_coordinator
-from .features import COMPONENT, has, requires
-
-pytestmark = requires("laser_info")
+from .common import COMPONENT
 
 CALIB_BLOB = json.dumps({"calib_time": "2025-11-09 09:41:58", "data0": "[1084,644]"})
 
@@ -166,7 +164,7 @@ def test_only_the_uv_models_have_these(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["strings.json", "translations/en.json", "translations/de.json"],
+    "path", ["translations/en.json", "translations/de.json"],
 )
 def test_translated(path: str) -> None:
     sensors = json.loads((COMPONENT / path).read_text(encoding="utf-8"))["entity"]["sensor"]
@@ -174,7 +172,6 @@ def test_translated(path: str) -> None:
     assert {"wifi_signal", "calibration"} <= set(sensors)
 
 
-@pytest.mark.skipif(not has("connection_first"), reason="branch lacks connection_first")
 async def test_read_again_on_the_next_poll_until_the_laser_answers() -> None:
     """A laser that is still booting is asked again on the next poll, not
     only on the slow cadence about 30 seconds later."""

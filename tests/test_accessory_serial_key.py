@@ -11,9 +11,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import requires
 
-pytestmark = requires("accessory_serial_key")
 
 LIST = "0,38:36:0C:01:C1:96,4E736300,1;"
 INFO = 'A40.213.004.4E22.01.B02 B1 C0 D4 E:"MXAK013001250917TAF0FC0" S0 Z1'

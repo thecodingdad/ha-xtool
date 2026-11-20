@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import COMPONENT, has, requires
-
-pytestmark = requires("p2_device_info")
+from .common import COMPONENT
 
 MACHINE_INFO = {
     "deviceName": "P2", "sn": "MXTEST0001", "mac": "48:FB:A9:5C:4F:7D", "deviceCode": "MP2",
@@ -39,11 +36,6 @@ async def test_identity_from_machine_info(monkeypatch) -> None:
     info = await proto.get_device_info()
     assert info.serial_number == "MXTEST0001"
     assert proto.model_variant() == "Class 4"
-    if not has("address_by_discovery"):
-        # The unplugged cable (169.254) and the USB link are not addresses to use
-        assert proto.addresses() == ["192.0.2.47"]
-        proto.machine_info = {**MACHINE_INFO, "ip": {"eth0-0-ip": "192.0.2.46", "wlan0-ip": "192.0.2.47"}}
-        assert proto.addresses() == ["192.0.2.46", "192.0.2.47"]
 
 
 async def test_work_info_as_studio_reads_it(monkeypatch) -> None:
@@ -85,48 +77,6 @@ def test_device_page_shows_class_and_both_macs(coordinator) -> None:
     info = entity.device_info
     assert info["model_id"] == "Class 4"
     assert {mac for _, mac in info["connections"]} == {"02:00:00:00:00:01", "02:00:00:00:00:02"}
-
-
-@pytest.mark.skipif(has("address_by_discovery"), reason="replaced by the discovery search (test_address_discovery)")
-async def test_finds_the_laser_at_its_other_address(coordinator, monkeypatch) -> None:
-    """When the configured address stops answering, the other one is tried."""
-    from custom_components.xtool.protocols.rest import coordinator as rest_coordinator
-
-    coordinator.protocol.host = "192.0.2.46"
-    coordinator._known_hosts = ["192.0.2.46", "192.0.2.47"]
-    asked = []
-
-    async def serial_at(host):
-        asked.append(host)
-        return "MXTEST0001" if host == "192.0.2.47" else ""
-
-    monkeypatch.setattr(rest_coordinator, "_serial_at", serial_at)
-    coordinator.protocol.change_host = AsyncMock()
-    update = MagicMock()
-    monkeypatch.setattr(coordinator.hass.config_entries, "async_update_entry", update)
-    monkeypatch.setattr(coordinator.hass.config_entries, "async_schedule_reload", MagicMock())
-    await coordinator._find_on_other_address()
-    assert asked == ["192.0.2.47"]
-    assert update.call_args.kwargs["data"]["host"] == "192.0.2.47"
-    # Not again within the next 30 seconds
-    update.reset_mock()
-    await coordinator._find_on_other_address()
-    update.assert_not_called()
-
-
-@pytest.mark.skipif(has("address_by_discovery"), reason="replaced by the discovery search (test_address_discovery)")
-async def test_a_different_laser_is_not_taken(coordinator, monkeypatch) -> None:
-    """Another laser answering at the other address is left alone."""
-    from custom_components.xtool.protocols.rest import coordinator as rest_coordinator
-
-    coordinator.protocol.host = "192.0.2.46"
-    coordinator._known_hosts = ["192.0.2.46", "192.0.2.47"]
-    monkeypatch.setattr(rest_coordinator, "_serial_at", AsyncMock(return_value="OTHER"))
-    update = MagicMock()
-    monkeypatch.setattr(coordinator.hass.config_entries, "async_update_entry", update)
-    monkeypatch.setattr(coordinator.hass.config_entries, "async_schedule_reload", MagicMock())
-    await coordinator._find_on_other_address()
-    update.assert_not_called()
 
 
 def test_dhcp_finds_registered_lasers() -> None:

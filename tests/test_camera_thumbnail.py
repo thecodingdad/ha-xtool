@@ -7,9 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 from homeassistant.core import HomeAssistant
 
 from .conftest import SERIAL, build_coordinator
-from .features import has, requires
-
-pytestmark = requires("camera_thumbnail_refresh")
 
 
 def _f2uv(hass: HomeAssistant):
@@ -84,11 +81,10 @@ def test_translations_name_every_number() -> None:
     from pathlib import Path
 
     root = Path("custom_components/xtool")
-    for path in (root / "translations" / "en.json", root / "translations" / "de.json", root / "strings.json"):
+    for path in (root / "translations" / "en.json", root / "translations" / "de.json"):
         numbers = json.loads(path.read_text(encoding="utf-8"))["entity"]["number"]
-        # With camera devices, a camera's own device needs no camera name.
-        keys = ("camera", "") if has("camera_devices") else ("camera_main", "camera_deep", "camera")
-        for key in keys:
+        # A camera's own device needs no camera name.
+        for key in ("camera", ""):
             name = f"{key}_thumbnail_refresh" if key else "thumbnail_refresh"
             assert name in numbers, (path, name)
 
@@ -97,10 +93,6 @@ async def test_refresh_stops_when_home_assistant_stops(hass: HomeAssistant, monk
     """A photo every few seconds adds tasks the shutdown waits for, so it never ended."""
     import custom_components.xtool.protocols.ws_v2.entities as entities
 
-    if not has("thumbnail_cancel_on_shutdown"):
-        import pytest
-
-        pytest.skip("branch lacks thumbnail_cancel_on_shutdown")
     calls = []
     monkeypatch.setattr(entities, "async_track_time_interval", lambda *a, **kw: calls.append(kw) or (lambda: None))
     coordinator = _f2uv(hass)

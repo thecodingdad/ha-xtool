@@ -19,9 +19,6 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from .conftest import POWER_SWITCH, build_coordinator
-from .features import requires
-
-pytestmark = requires("auto_power_off")
 
 
 @pytest.fixture

@@ -13,13 +13,9 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import COMPONENT, has, requires
-
-CONTROLS = has("p2_controls")
+from .common import COMPONENT
 
 P2_SOURCE = (COMPONENT / "protocols" / "rest" / "p2.py").read_text(encoding="utf-8") if (COMPONENT / "protocols" / "rest" / "p2.py").exists() else ""
-
-pytestmark = requires("p2_status")
 
 WORKING = {
     "alarmInfo": {"alarm": None},
@@ -136,7 +132,7 @@ async def test_settings_are_read_once_a_minute(monkeypatch) -> None:
     assert calls.count("/config/get") == 1
     calls.clear()
     await proto.poll_state(XtoolDeviceState())
-    assert ("/config/get" in calls) is CONTROLS
+    assert "/config/get" in calls
     assert "/device/workingInfo" not in calls
     assert "/device/runningStatus" in calls
     assert len(calls) < first
@@ -209,8 +205,8 @@ def test_p2_entities(coordinator) -> None:
     assert {"task_progress", "cpu_temp"} <= keys
     alarm_sensors = {e.translation_key for e in coordinator.build_binary_sensors()}
     # The Alarm problem sensor replaced the Active alarms count
-    assert ("active_alarms" in keys) is not CONTROLS
-    assert ("alarm" in alarm_sensors) is CONTROLS
+    assert "active_alarms" not in keys
+    assert "alarm" in alarm_sensors
     error = next(e for e in coordinator.build_events() if e.translation_key == "error")
     assert error.event_types == list(P2_ERROR_EVENT_TYPES)
     assert "water_cooling" in error.event_types and "fire" not in error.event_types

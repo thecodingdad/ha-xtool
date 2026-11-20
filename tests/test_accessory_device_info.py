@@ -1,7 +1,4 @@
-"""Accessory parent-link regression tests; run with Home Assistant installed.
-
-python -m unittest discover -s tests
-"""
+"""Accessory parent-link regression tests."""
 
 from pathlib import Path
 import sys

@@ -16,14 +16,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import SERIAL, build_coordinator
-from .features import has, requires
-
-pytestmark = requires("if2_fan_v3")
-
-# Before the single Auto preset, Auto had a regular and a quiet preset
-SINGLE_AUTO = has("if2_fan_v3") and has("if2_fan_single_auto")
-AUTO = "Auto" if SINGLE_AUTO else "Auto Regular"
-two_presets = pytest.mark.skipif(SINGLE_AUTO, reason="the fan has one Auto preset")
+AUTO = "Auto Regular"
 
 IF2_SN = "MXAK013001250917TAF0FC0"
 
@@ -43,7 +36,6 @@ def test_manual_commands_carry_the_mode(gear: int, command: str) -> None:
     assert duct_fan().fan_v3_manual_mcode(gear) == command
 
 
-@two_presets
 def test_auto_commands() -> None:
     """Auto runs at Studio's default gear 3, quiet one gear less."""
     df = duct_fan()
@@ -69,8 +61,6 @@ def test_push_reads_mode_gear_and_job(body: str, expected: dict) -> None:
     """The push names the mode in C, the Auto gear in B and a running job in D."""
     fields = duct_fan().parse_fan_v3_push(body)
     fields.pop("alert", None)
-    if SINGLE_AUTO:  # one Auto preset: the push names no preset
-        expected = {k: v for k, v in expected.items() if k != "auto_submode"}
     assert fields == expected
 
 
@@ -169,7 +159,6 @@ async def test_fan_speed_from_off(fan, percentage: int, command: str, gear: int)
     assert entity.percentage == percentage
 
 
-@two_presets
 async def test_fan_presets_while_idle_stay_off(fan) -> None:
     """Choosing a preset with no job running shows it, with the fan off."""
     entity, parts_control, _ = fan
@@ -184,7 +173,6 @@ async def test_fan_presets_while_idle_stay_off(fan) -> None:
     assert entity.is_on is False
 
 
-@two_presets
 async def test_auto_job_shows_the_real_speed(fan) -> None:
     """Captured from an F2 Ultra UV: the job runs at the speed saved in it,
     HA's preset changes apply live, and the fan is off after the post-run."""
@@ -254,7 +242,6 @@ async def test_speed_during_an_auto_job_leaves_auto(fan) -> None:
     assert entity.percentage == 25
 
 
-@two_presets
 async def test_fan_follows_a_studio_change(fan) -> None:
     """A change made in Studio arrives as a push and shows at once."""
     entity, _, accessory = fan
@@ -289,34 +276,3 @@ async def test_retired_if2_entities_are_removed(
     assert registry.async_get(sensor.entity_id) is None
 
 
-@pytest.mark.skipif(not SINGLE_AUTO, reason="the fan has two Auto presets")
-def test_one_auto_preset() -> None:
-    """Auto keeps the IF2's gear; each job sets its own, as in Studio."""
-    df = duct_fan()
-    assert df.FANV3_PRESETS == ("Auto",)
-    assert df.fan_v3_auto_mcode(3) == "M9064 B3 C4"
-    assert df.fan_v3_auto_mcode(2) == "M9064 B2 C4"
-
-
-@pytest.mark.skipif(not SINGLE_AUTO, reason="the fan has two Auto presets")
-async def test_auto_keeps_the_gear_and_the_job_sets_it(fan) -> None:
-    entity, parts_control, accessory = fan
-    assert entity.preset_modes == ["Auto"]
-    await entity.async_set_preset_mode("Auto")
-    assert _sent(parts_control) == "M9064 B3 C4"  # 3 until a gear is seen
-    assert entity.preset_mode == "Auto"
-    assert entity.is_on is False
-
-    def push(body: str) -> None:
-        accessory.fields.update(duct_fan().parse_fan_v3_push(body))
-
-    push("A1 B2 C4 D1 S0")  # a job sent with Studio's quiet work mode
-    assert entity.is_on is True and entity.percentage == 50 and entity.preset_mode == "Auto"
-    await entity.async_set_percentage(100)
-    assert entity.preset_mode is None
-    await entity.async_set_preset_mode("Auto")
-    assert _sent(parts_control) == "M9064 B2 C4"  # back to the job's gear
-    push("A1 B0 C4 D0 S0")  # post-run over
-    assert entity.is_on is False and entity.preset_mode == "Auto"
-    with pytest.raises(Exception):
-        await entity.async_set_preset_mode("Auto Quiet")

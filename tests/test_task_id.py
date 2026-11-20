@@ -9,10 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from .features import requires
-
-pytestmark = requires("task_id_none")
-
 
 def _value(status, task_id):
     from custom_components.xtool.const import task_id_value

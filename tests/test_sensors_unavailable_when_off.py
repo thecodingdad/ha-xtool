@@ -5,9 +5,7 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 
 from .conftest import POWER_SWITCH, build_coordinator
-from .features import requires
 
-pytestmark = requires("sensors_unavailable_when_off")
 
 TOTALS = {"working_time", "session_count", "standby_time", "tool_runtime"}
 

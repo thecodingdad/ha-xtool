@@ -8,10 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from .features import COMPONENT, requires
+from .common import COMPONENT
 from .test_p2_views import _calibration, _view, coordinator  # noqa: F401 - fixture
-
-pytestmark = requires("p2_overlays")
 
 
 def _correction(coordinator, camera="overview", view=None):  # noqa: F811
@@ -199,7 +197,7 @@ def test_each_camera_has_an_overlays_select(coordinator) -> None:  # noqa: F811
 
 
 def test_overlays_names() -> None:
-    for name in ("strings.json", "translations/en.json"):
+    for name in ("translations/en.json",):
         data = json.loads((COMPONENT / name).read_text(encoding="utf-8"))["entity"]
         assert data["select"]["overlays"] == {
             "name": "Overlays", "state": {"integration": "Integration", "card": "Card"},

@@ -6,11 +6,9 @@ import logging
 import re
 from unittest.mock import AsyncMock
 
-import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import POWER_SWITCH, build_coordinator
-from .features import requires
 
 
 def _models():
@@ -25,7 +23,6 @@ def _models():
     return models
 
 
-@requires("skip_polling_while_off")
 async def test_no_poll_while_the_power_switch_is_off(hass: HomeAssistant, config_entry) -> None:
     from custom_components.xtool.protocols.base import XtoolDeviceState
 
@@ -52,7 +49,6 @@ async def test_no_poll_while_the_power_switch_is_off(hass: HomeAssistant, config
         assert polled == [True]
 
 
-@requires("poll_error_type")
 async def test_a_failed_poll_names_its_error(hass: HomeAssistant, config_entry, caplog) -> None:
     hass.states.async_set(POWER_SWITCH, "on")
     for model in _models():

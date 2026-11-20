@@ -7,7 +7,6 @@ run on the first poll after it wakes.
 
 from __future__ import annotations
 
-from .features import requires
 
 SLOW_READS = ("/v1/device/configs", "/v1/device/statistics", "/v1/device/alarms")
 
@@ -42,7 +41,6 @@ async def poll(proto, times: int) -> None:
         await proto.poll_state(XtoolDeviceState())
 
 
-@requires("sleep_no_slow_reads")
 async def test_no_slow_reads_while_asleep() -> None:
     """Thirteen polls of a sleeping laser read no settings, statistics or alarms."""
     laser = FakeLaser()
@@ -52,7 +50,6 @@ async def test_no_slow_reads_while_asleep() -> None:
     assert not [u for u in laser.urls if u in SLOW_READS]
 
 
-@requires("sleep_no_slow_reads")
 async def test_slow_reads_on_the_first_poll_after_waking() -> None:
     """The first poll after the laser wakes reads its settings, statistics and alarms."""
     laser = FakeLaser()

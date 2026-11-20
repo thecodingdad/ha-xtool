@@ -13,9 +13,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import POWER_SWITCH, build_coordinator
-from .features import COMPONENT, requires
-
-pytestmark = requires("status_not_responding", "power_on_starting")
+from .common import COMPONENT
 
 
 def _models():
@@ -81,7 +79,7 @@ def test_status_options_and_translations() -> None:
 
     # The Status sensor's options are every XtoolStatus value
     assert "not_responding" in [s.value for s in XtoolStatus]
-    for path in ("strings.json", "translations/en.json"):
+    for path in ("translations/en.json",):
         data = json.loads((COMPONENT / path).read_text(encoding="utf-8"))
         assert data["entity"]["sensor"]["status"]["state"]["not_responding"] == "Not responding"
     data = json.loads((COMPONENT / "translations" / "de.json").read_text(encoding="utf-8"))

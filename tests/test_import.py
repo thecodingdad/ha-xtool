@@ -5,10 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from .features import requires
 
-
-@requires("clean_first_import")
 def test_first_import_succeeds() -> None:
     """A fresh interpreter imports the package on the first attempt.
 

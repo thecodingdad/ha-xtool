@@ -11,11 +11,6 @@ from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import build_coordinator
-from .features import has, requires
-
-pytestmark = requires("p2_settings")
-LIGHT_BRIGHTNESS = has("p2_light_brightness")
-CONTROLS = has("p2_controls")
 
 CONFIG = {
     "beepEnable": False, "fillLightBrightness": 204, "flameAlarm": True, "flameAlarmLevel1": False,
@@ -52,38 +47,20 @@ def test_p2_entities_use_studio_names(coordinator) -> None:
     """The P2 offers what Studio offers, under Studio's names."""
     switches = by_key(coordinator.build_switches())
     expected = {"aimed_measure_light", "quick_measure_light", "buzzer", "smoking_fan"}
-    if CONTROLS:  # the Safety lock is a lock
-        assert set(by_key(coordinator.build_locks())) == {"safety_lock"}
-    else:
-        expected.add("safety_lock")
-    views = has("p2_views")  # the cameras' view settings
-    if views and has("p2_overlays_v2"):
-        expected |= {
-            "overlay_mode_process_on_slats", "overlay_mode_honeycomb_panel",
-            "overlay_mode_slats_removed", "overlay_close_camera", "overlay_studio",
-            "overlay_custom", "overlay_laser_target", "overlay_slat_lines",
-            "overlay_red_dot_close", "overlay_red_dot_quick",
-        }
-    elif views:
-        expected |= {
-            "overlay_work_bed", "overlay_process_on_slats", "overlay_honeycomb_panel",
-            "overlay_slats_removed", "overlay_close_camera_uncropped",
-            "overlay_close_camera_studio", "overlay_close_camera_custom",
-            "overlay_close_camera_image", "overlay_studio",
-            "overlay_custom", "overlay_overview_work_bed", "overlay_overview_process_on_slats",
-            "overlay_overview_honeycomb_panel", "overlay_overview_slats_removed",
-            "overlay_laser_target", "overlay_slat_lines", "overlay_red_dot_close",
-            "overlay_red_dot_quick",
-        }
+    # The Safety lock is a lock
+    assert set(by_key(coordinator.build_locks())) == {"safety_lock"}
+    # The cameras' overlay switches
+    expected |= {
+        "overlay_mode_process_on_slats", "overlay_mode_honeycomb_panel",
+        "overlay_mode_slats_removed", "overlay_close_camera", "overlay_studio",
+        "overlay_custom", "overlay_laser_target", "overlay_slat_lines",
+        "overlay_red_dot_close", "overlay_red_dot_quick",
+    }
     assert set(switches) == expected
     numbers = by_key(coordinator.build_numbers())
     assert {"smoking_fan_duration", "lowest_output_power"} <= set(numbers)
-    assert ("fill_light_brightness" in numbers) is not LIGHT_BRIGHTNESS
-    selects = {"flame_alarm_level"}
-    if views:
-        selects |= {"crop_preset", "processing_mode"}
-    if has("p2_overlays"):
-        selects.add("overlays")
+    assert "fill_light_brightness" not in numbers
+    selects = {"flame_alarm_level", "crop_preset", "processing_mode", "overlays"}
     assert set(by_key(coordinator.build_selects())) == selects
     assert set(by_key(coordinator.build_lights())) == {"fill_light_1", "fill_light_2", "fill_light_3"}
     assert {"lid", "baseplate"} <= set(by_key(coordinator.build_binary_sensors()))
@@ -94,8 +71,6 @@ def test_p2_entities_use_studio_names(coordinator) -> None:
 def test_settings_read_as_studio_shows_them(coordinator) -> None:
     """Fill light brightness in %, Lowest output power from M37S<n>, Flame alarm Low."""
     numbers = by_key(coordinator.build_numbers())
-    if not LIGHT_BRIGHTNESS:
-        assert numbers["fill_light_brightness"].native_value == 80
     assert numbers["lowest_output_power"].native_value == 3
     assert numbers["smoking_fan_duration"].native_value == 5
     assert by_key(coordinator.build_selects())["flame_alarm_level"].current_option == "low"
@@ -108,9 +83,6 @@ async def test_settings_write_studios_keys(coordinator) -> None:
     """Each setting writes the key Studio writes."""
     set_config = coordinator.protocol.set_config
     numbers = by_key(coordinator.build_numbers())
-    if not LIGHT_BRIGHTNESS:
-        await numbers["fill_light_brightness"].async_set_native_value(50)
-        set_config.assert_awaited_with(fillLightBrightness=128)
     await numbers["lowest_output_power"].async_set_native_value(7)
     set_config.assert_awaited_with(motionPowerCut="M37S7")
     await by_key(coordinator.build_selects())["flame_alarm_level"].async_select_option("high")
@@ -165,7 +137,6 @@ async def test_config_set_body_is_studios(monkeypatch) -> None:
     assert await proto.set_config(nothing=1) is False
 
 
-@requires("p2_light_brightness")
 async def test_a_fill_light_turns_on_at_studios_brightness(coordinator) -> None:
     """Turned on without a brightness, a fill light uses Studio's Fill light brightness."""
     lights = by_key(coordinator.build_lights())

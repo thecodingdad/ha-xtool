@@ -16,9 +16,7 @@ import pytest
 from custom_components.xtool.const import XtoolStatus
 from custom_components.xtool.protocols.base import XtoolDeviceState
 
-from .features import COMPONENT, requires
-
-pytestmark = requires("status_details")
+from .common import COMPONENT
 
 
 def _f2uv():
@@ -184,7 +182,7 @@ def test_only_the_uv_models_have_these() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["strings.json", "translations/en.json", "translations/de.json"],
+    "path", ["translations/en.json", "translations/de.json"],
 )
 def test_translated(path: str) -> None:
     data = json.loads((COMPONENT / path).read_text(encoding="utf-8"))["entity"]

@@ -14,9 +14,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from .conftest import SERIAL, build_coordinator
-from .features import requires
 
-pytestmark = requires("camera_calibration")
 
 # A 3 x 3 grid over the rectangle (100, 75)-(300, 225) of a 400 x 300
 # photo, mapped onto a 200 x 200 result.

@@ -11,10 +11,6 @@ from __future__ import annotations
 
 import asyncio
 
-from .features import requires
-
-pytestmark = requires("camera_no_queue")
-
 
 def _protocol():
     from custom_components.xtool.protocols.ws_v2.protocol import WSV2Protocol
