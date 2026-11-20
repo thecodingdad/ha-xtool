@@ -497,6 +497,9 @@
       "accessory_ductfan_current_speed": {
         "name": "Aktuelle Drehzahl"
       },
+      "accessory_ductfan_gear": {
+        "name": "Stufe"
+      },
       "accessory_purifier_filter_pre": {
         "name": "Vorfilter Restkapazität"
       },
@@ -517,6 +520,9 @@
       },
       "accessory_purifier_purifier_sensor_s": {
         "name": "Reiniger Sensor S"
+      },
+      "accessory_purifier_sn": {
+        "name": "Seriennummer"
       },
       "accessory_fireextinguisher_version": {
         "name": "Firmware"
@@ -648,7 +654,12 @@
         "name": "Gemessene Stärke oder Distanz"
       },
       "clean_water": {
-        "name": "Reinigungsflüssigkeit"
+        "name": "Reinigungsflüssigkeit",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
       },
       "cpu_temp": {
         "name": "CPU-Temperatur"
@@ -657,22 +668,142 @@
         "name": "Heizstatus"
       },
       "ink_black": {
-        "name": "Tinte Schwarz"
+        "name": "Tinte Schwarz",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
       },
       "ink_cyan": {
-        "name": "Tinte Cyan"
+        "name": "Tinte Cyan",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
       },
       "ink_magenta": {
-        "name": "Tinte Magenta"
+        "name": "Tinte Magenta",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
       },
       "ink_white": {
-        "name": "Tinte Weiß"
+        "name": "Tinte Weiß",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
       },
       "ink_yellow": {
-        "name": "Tinte Gelb"
+        "name": "Tinte Gelb",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
       },
       "waste_water": {
-        "name": "Abfallflüssigkeit"
+        "name": "Abfallflüssigkeit",
+        "state": {
+          "empty": "Leer",
+          "low": "Niedrig",
+          "normal": "Normal"
+        }
+      },
+      "accessory_largepurifier_filter_pre": {
+        "name": "Vorfilter Restkapazität"
+      },
+      "accessory_largepurifier_filter_medium": {
+        "name": "Mittelfilter Restkapazität"
+      },
+      "accessory_largepurifier_filter_carbon": {
+        "name": "Aktivkohle-Filter Restkapazität"
+      },
+      "accessory_largepurifier_filter_dense_carbon": {
+        "name": "Ultra-Aktivkohle-Filter Restkapazität"
+      },
+      "accessory_largepurifier_filter_hepa": {
+        "name": "HEPA-Filter Restkapazität"
+      },
+      "accessory_largepurifier_gear": {
+        "name": "Reiniger-Stufe"
+      },
+      "accessory_largepurifier_purifier_sensor_d": {
+        "name": "Reiniger Sensor D"
+      },
+      "accessory_largepurifier_purifier_sensor_s": {
+        "name": "Reiniger Sensor S"
+      },
+      "accessory_largepurifier_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_largepurifierv3_filter_pre": {
+        "name": "Vorfilter Restkapazität"
+      },
+      "accessory_largepurifierv3_filter_medium": {
+        "name": "Mittelfilter Restkapazität"
+      },
+      "accessory_largepurifierv3_filter_carbon": {
+        "name": "Aktivkohle-Filter Restkapazität"
+      },
+      "accessory_largepurifierv3_filter_dense_carbon": {
+        "name": "Ultra-Aktivkohle-Filter Restkapazität"
+      },
+      "accessory_largepurifierv3_filter_hepa": {
+        "name": "HEPA-Filter Restkapazität"
+      },
+      "accessory_largepurifierv3_gear": {
+        "name": "Reiniger-Stufe"
+      },
+      "accessory_largepurifierv3_purifier_sensor_d": {
+        "name": "Reiniger Sensor D"
+      },
+      "accessory_largepurifierv3_purifier_sensor_s": {
+        "name": "Reiniger Sensor S"
+      },
+      "accessory_largepurifierv3_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_backpackpurifier_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_backpackpurifier_filter_status": {
+        "name": "Filterstatus"
+      },
+      "accessory_backpackpurifier_filter_a": {
+        "name": "Filter A Restkapazität"
+      },
+      "accessory_backpackpurifier_filter_b": {
+        "name": "Filter B Restkapazität"
+      },
+      "accessory_feeder_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_hotstampingpen_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_hotstampingpen_version": {
+        "name": "Firmware"
+      },
+      "accessory_multifunctionalbase_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_safetyfireboxpro_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_ultrasonicknife_sn": {
+        "name": "Seriennummer"
+      },
+      "accessory_ultrasonicknife_version": {
+        "name": "Firmware"
+      },
+      "accessory_uvsensor_sn": {
+        "name": "Seriennummer"
       }
     },
     "binary_sensor": {
@@ -787,6 +918,12 @@
       },
       "powder_loop_running": {
         "name": "Pulverkreislauf läuft"
+      },
+      "accessory_largepurifier_running": {
+        "name": "Luftreiniger aktiv"
+      },
+      "accessory_largepurifierv3_running": {
+        "name": "Luftreiniger aktiv"
       }
     },
     "camera": {
@@ -813,6 +950,9 @@
       },
       "camera_fire_record": {
         "name": "Flammen-Aufnahme"
+      },
+      "camera": {
+        "name": "Kamera"
       }
     },
     "light": {
@@ -1173,13 +1313,37 @@
         "name": "Stufe einstellen"
       },
       "accessory_purifier_speed_select": {
-        "name": "Geschwindigkeit"
+        "name": "Geschwindigkeit",
+        "state": {
+          "off": "Aus",
+          "low": "Niedrig",
+          "medium": "Mittel",
+          "high": "Hoch"
+        }
       },
       "accessory_largepurifier_speed_select": {
-        "name": "Geschwindigkeit"
+        "name": "Geschwindigkeit",
+        "state": {
+          "off": "Aus",
+          "low": "Niedrig",
+          "medium": "Mittel",
+          "high": "Hoch"
+        }
+      },
+      "accessory_largepurifier_gear_select": {
+        "name": "Reiniger-Stufe einstellen"
       },
       "accessory_largepurifierv3_speed_select": {
-        "name": "Geschwindigkeit"
+        "name": "Geschwindigkeit",
+        "state": {
+          "off": "Aus",
+          "low": "Niedrig",
+          "medium": "Mittel",
+          "high": "Hoch"
+        }
+      },
+      "accessory_largepurifierv3_gear_select": {
+        "name": "Reiniger-Stufe einstellen"
       },
       "flame_alarm_level": {
         "name": "Feueralarm",
@@ -1218,6 +1382,9 @@
           "honeycomb_panel": "Wabenplatte",
           "slats_removed": "Lamellen entfernt"
         }
+      },
+      "accessory_ductfan_gear_select": {
+        "name": "Stufe einstellen"
       }
     },
     "update": {
@@ -1315,6 +1482,15 @@
       },
       "move_laser": {
         "name": "Laser bewegen"
+      },
+      "accessory_largepurifier_reset_filter": {
+        "name": "Filter zurücksetzen"
+      },
+      "accessory_largepurifierv3_reset_filter": {
+        "name": "Filter zurücksetzen"
+      },
+      "accessory_purifier_reset_filter": {
+        "name": "Filter zurücksetzen"
       }
     },
     "image": {

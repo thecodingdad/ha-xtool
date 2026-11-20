@@ -497,6 +497,9 @@
       "accessory_ductfan_current_speed": {
         "name": "Current speed"
       },
+      "accessory_ductfan_gear": {
+        "name": "Gear"
+      },
       "accessory_purifier_filter_pre": {
         "name": "Pre-filter remaining"
       },
@@ -517,6 +520,9 @@
       },
       "accessory_purifier_purifier_sensor_s": {
         "name": "Purifier sensor S"
+      },
+      "accessory_purifier_sn": {
+        "name": "Serial number"
       },
       "accessory_fireextinguisher_version": {
         "name": "Firmware"
@@ -585,25 +591,60 @@
         "name": "Heating status"
       },
       "ink_cyan": {
-        "name": "Ink cyan"
+        "name": "Ink cyan",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "ink_black": {
-        "name": "Ink black"
+        "name": "Ink black",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "ink_magenta": {
-        "name": "Ink magenta"
+        "name": "Ink magenta",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "ink_white": {
-        "name": "Ink white"
+        "name": "Ink white",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "ink_yellow": {
-        "name": "Ink yellow"
+        "name": "Ink yellow",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "clean_water": {
-        "name": "Cleaning fluid"
+        "name": "Cleaning fluid",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "waste_water": {
-        "name": "Waste fluid"
+        "name": "Waste fluid",
+        "state": {
+          "empty": "Empty",
+          "low": "Low",
+          "normal": "Normal"
+        }
       },
       "gyro_x": {
         "name": "Gyro X"
@@ -673,6 +714,96 @@
       },
       "measured_thickness_or_distance": {
         "name": "Measured thickness or distance"
+      },
+      "accessory_largepurifier_filter_pre": {
+        "name": "Pre-filter remaining"
+      },
+      "accessory_largepurifier_filter_medium": {
+        "name": "Medium efficiency filter remaining"
+      },
+      "accessory_largepurifier_filter_carbon": {
+        "name": "Activated carbon filter remaining"
+      },
+      "accessory_largepurifier_filter_dense_carbon": {
+        "name": "Ultra dense carbon mesh filter remaining"
+      },
+      "accessory_largepurifier_filter_hepa": {
+        "name": "HEPA filter remaining"
+      },
+      "accessory_largepurifier_gear": {
+        "name": "Purifier speed"
+      },
+      "accessory_largepurifier_purifier_sensor_d": {
+        "name": "Purifier sensor D"
+      },
+      "accessory_largepurifier_purifier_sensor_s": {
+        "name": "Purifier sensor S"
+      },
+      "accessory_largepurifier_sn": {
+        "name": "Serial number"
+      },
+      "accessory_largepurifierv3_filter_pre": {
+        "name": "Pre-filter remaining"
+      },
+      "accessory_largepurifierv3_filter_medium": {
+        "name": "Medium efficiency filter remaining"
+      },
+      "accessory_largepurifierv3_filter_carbon": {
+        "name": "Activated carbon filter remaining"
+      },
+      "accessory_largepurifierv3_filter_dense_carbon": {
+        "name": "Ultra dense carbon mesh filter remaining"
+      },
+      "accessory_largepurifierv3_filter_hepa": {
+        "name": "HEPA filter remaining"
+      },
+      "accessory_largepurifierv3_gear": {
+        "name": "Purifier speed"
+      },
+      "accessory_largepurifierv3_purifier_sensor_d": {
+        "name": "Purifier sensor D"
+      },
+      "accessory_largepurifierv3_purifier_sensor_s": {
+        "name": "Purifier sensor S"
+      },
+      "accessory_largepurifierv3_sn": {
+        "name": "Serial number"
+      },
+      "accessory_backpackpurifier_sn": {
+        "name": "Serial number"
+      },
+      "accessory_backpackpurifier_filter_status": {
+        "name": "Filter status"
+      },
+      "accessory_backpackpurifier_filter_a": {
+        "name": "Filter A remaining"
+      },
+      "accessory_backpackpurifier_filter_b": {
+        "name": "Filter B remaining"
+      },
+      "accessory_feeder_sn": {
+        "name": "Serial number"
+      },
+      "accessory_hotstampingpen_sn": {
+        "name": "Serial number"
+      },
+      "accessory_hotstampingpen_version": {
+        "name": "Firmware"
+      },
+      "accessory_multifunctionalbase_sn": {
+        "name": "Serial number"
+      },
+      "accessory_safetyfireboxpro_sn": {
+        "name": "Serial number"
+      },
+      "accessory_ultrasonicknife_sn": {
+        "name": "Serial number"
+      },
+      "accessory_ultrasonicknife_version": {
+        "name": "Firmware"
+      },
+      "accessory_uvsensor_sn": {
+        "name": "Serial number"
       }
     },
     "binary_sensor": {
@@ -787,6 +918,12 @@
           "on": "Installed",
           "off": "Removed"
         }
+      },
+      "accessory_largepurifier_running": {
+        "name": "Air cleaner running"
+      },
+      "accessory_largepurifierv3_running": {
+        "name": "Air cleaner running"
       }
     },
     "camera": {
@@ -813,6 +950,9 @@
       },
       "camera_fire_record": {
         "name": "Flame record"
+      },
+      "camera": {
+        "name": "Camera"
       }
     },
     "light": {
@@ -1173,13 +1313,37 @@
         "name": "Set gear"
       },
       "accessory_purifier_speed_select": {
-        "name": "Speed"
+        "name": "Speed",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        }
       },
       "accessory_largepurifier_speed_select": {
-        "name": "Speed"
+        "name": "Speed",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        }
+      },
+      "accessory_largepurifier_gear_select": {
+        "name": "Set purifier speed"
       },
       "accessory_largepurifierv3_speed_select": {
-        "name": "Speed"
+        "name": "Speed",
+        "state": {
+          "off": "Off",
+          "low": "Low",
+          "medium": "Medium",
+          "high": "High"
+        }
+      },
+      "accessory_largepurifierv3_gear_select": {
+        "name": "Set purifier speed"
       },
       "flame_alarm_level": {
         "name": "Flame alarm",
@@ -1218,6 +1382,9 @@
           "honeycomb_panel": "Honeycomb panel",
           "slats_removed": "Slats removed"
         }
+      },
+      "accessory_ductfan_gear_select": {
+        "name": "Set gear"
       }
     },
     "update": {
@@ -1315,6 +1482,15 @@
       },
       "move_laser": {
         "name": "Move laser"
+      },
+      "accessory_largepurifier_reset_filter": {
+        "name": "Reset filter"
+      },
+      "accessory_largepurifierv3_reset_filter": {
+        "name": "Reset filter"
+      },
+      "accessory_purifier_reset_filter": {
+        "name": "Reset filter"
       }
     },
     "image": {
