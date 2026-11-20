@@ -2118,13 +2118,14 @@ The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>`
 | `/processing/upload` | POST multipart | Upload processing G-code (P2 family) |
 | `/peripheral/fill_light` | POST `{action:"set_bri",idx,value}` | Fill light brightness. **Note:** on F2 family V2 firmware this endpoint accepts the PUT but never persists the value — Studio writes brightness through `/v1/device/configs` with `fillLightBrightFront` / `fillLightBrightBack` keys instead. The peripheral endpoint is read-only on those models. |
 | `/peripheral/laser_head` | POST | `{action:"go_to",x,y,waitTime}` move head, `{action:"get_coord"}` query |
-| `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close-up, 2=global) — P2/P2S |
-| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover open |
+| `/peripheral/ir_led` | POST `{action:"on/off",index}` | IR LED (1=close camera, 2=global) — P2/P2S |
+| `/peripheral/gap` | GET | Cover state — `data.state==="off"` means cover closed (Studio's `isCover`; checked on the P2) |
 | `/peripheral/airassist?action=get` | GET | Air-Assist V2 connect state — `state==="on"` means accessory attached. Used by M1 Ultra. |
 | `/config/get` (`type:"user", kv:["airassistCut","airassistGrave"]`) | POST | M1 Ultra default Air-Assist gear for cut and engrave operations. |
 | `/config/set` (`type:"user", kv:{airassistCut: <gear>}` or `airassistGrave`) | POST | Set the default Air-Assist gear (applied to next job). |
-| `/peripheral/digital_lock` | POST | Lock cover |
-| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR distance |
+| `/peripheral/digital_lock` | POST `{action:"on/off"}` | Lock (`on`) or unlock the cover (P2) |
+| `/peripheral/ir_measure_distance` | POST `{action:"get_distance",type:"single"}` | IR reading (P2): `{distance, coord_x, coord_y}`, where `distance` is the material's **thickness** (`laserMeasureOffset` Z minus the sensor's distance; measured on a P2, firmware 40.21.025). The sensor reads only while the close red dot (`ir_led` index 1) is on; with it off the reply is always Z (the sensor read nothing). The reply cannot tell "no reading" from a real one, so the integration uses the next row. |
+| `/peripheral/quest/ir_measure_distance` | GET | The IR sensor's own distance (P2): `{distance, coord_x, coord_y}`. `distance` is 0 while the sensor has no reading (dot off, or within about 0.2 s of the dot turning on) and -1 when the P2 could not talk to it. The sensor starts when the dot turns on: asked in the first 0.2 s, the P2 sometimes fails to reach it (about 1 time in 15 measured), replies -1 (thickness Z + 1 on the row above) and raises the warning `MEASURE_DISTANCE_SENSOR` / `COMMUNI_ABNORMAL` in `/device/runningStatus`, which stays until the P2 restarts. From 0.3 s after, 90 of 90 readings were good. The integration waits 0.5 s. |
 | `/device/modeSwitch` | POST | Switch mode |
 | `/parts` | POST multipart, port **8080** | Upload accessory firmware |
 | `/partsProgress` | GET, port **8080** | Accessory firmware update progress |
@@ -2149,7 +2150,7 @@ P2/P2S/F1/F1 Ultra:
 | Endpoint | Method | Notes |
 |---|---|---|
 | `/camera/snap?stream=0` | GET, blob | Global / overview camera |
-| `/camera/snap?stream=1` | GET, blob | Local / close-up camera |
+| `/camera/snap?stream=1` | GET, blob | Local / close camera |
 | `/camera/exposure?stream=0/1` | POST `{value:<int>}` | Set exposure |
 | `/camera/fireRecord` | POST, blob | Recorded flame snapshot (F1 Ultra) |
 
@@ -2194,7 +2195,7 @@ The Linux-based REST family shares the same `laserservice` HTTP daemon, but each
 | Path | Notes |
 |---|---|
 | `/peripheral/fill_light` | Brightness 0-255 (REST integer scale) |
-| `/peripheral/ir_led` | IR LEDs (close-up + global on P2) |
+| `/peripheral/ir_led` | IR LEDs (close camera + global on P2) |
 | `/peripheral/digital_lock` | Cover digital lock |
 | `/peripheral/gap` | Cover open detection |
 | `/peripheral/drawer` | Front-drawer position |
@@ -2305,6 +2306,182 @@ table (see `_REST_STATUS_MAP` in the bundles).
 
 
 ---
+
+### P2 (as xTool Studio's P2 extension talks to it)
+
+Measured on a P2 with firmware 40.21.025 (2026-11-07) and read from Studio's
+`P2/index.js`.
+
+**Push channel.** Studio keeps `ws://<laser>:8081/` open and sends the text
+`ping` every 3 s; it treats 11 s without a frame as a lost laser. The laser
+sends a 10-byte binary keepalive (`00 00 00 00 00 00 0a 00 14 00`) every 2 s.
+Every push is a binary frame: a 10-byte header (bytes 2-5 = JSON length,
+little-endian; bytes 6-9 = `01 00 02 00`) followed by
+`{"module", "type", "info", "level"}`. On connect the laser pushes its
+current `MODE_CHANGE` at once.
+
+| module | types | meaning |
+|---|---|---|
+| `STATUS_CONTROLLER` | `MODE_CHANGE` (`info.mode`, `info.subMode`, `info.taskId`) | status change |
+| `STATUS_CONTROLLER` | `WORK_PREPARED`, `WORK_STARTED`, `WORK_PAUSED`, `WORK_STOPED`, `WORK_FINISHED`, `CLEAN_START`, `IDLE` | job steps; Studio reads `WORK_STOPED` and then `WORK_FINISHED` as a cancelled job |
+| `GAP` | `OPEN`, `CLOSE` | lid opened, lid closed |
+| `DRAWER` | `OPEN`, `CLOSE` | baseplate taken out, baseplate in place |
+| `BUTTON` | `SHOERT_PRESS` (sic) | button |
+| `FIRE_RECOGNITION` | `FIND_EXCEPTION` (`level`: `fatal` = large flame) | flame alarm |
+| `BOARDS` | `CONNNECT` (sic), `DISCONNECT` (`info`: `ext_firebox_esp32`) | seen about every 8 minutes |
+| any | `<module>.<type>.<info>` in Studio's error table | an error (Studio codes `Qx..`) |
+
+**Status.** `/device/runningStatus` `curMode` as Studio maps it:
+`P_SLEEP` Sleeping, `P_IDLE` Idle, `Work.workReady` Ready,
+`Work.working` Processing, `Work.workPause` Paused, `P_WORK_DONE` Finished,
+`P_MEASURE` Measuring (`P_UPGRADE` also seen). `curAlarmInfo.alarm` lists the
+active alarms (`{module, type, info, level}`); `cpuTemp` is the CPU
+temperature. `/processing/progress` is `{time, total, value}`.
+
+**Settings** are `POST /config/get` and `/config/set` with
+`{"alias": "config", "type": "user", "kv": ...}` (a list of keys to read, an
+object to write). A settings change, made by Studio or anyone else, is not
+pushed, so the integration reads the settings on every poll (5 s). Studio's
+Device settings for firmware 25 and later:
+
+| Studio label | key | values |
+|---|---|---|
+| Buzzer | `beepEnable` | bool |
+| Flame alarm (Low / High) | `flameAlarmLevel1` (written with `flameLevelHLSelect: 1`) | bool, true = High |
+| Fill light brightness | `fillLightBrightness` | 0-255, shown as %; changing it in Studio also sets the lights that are on. The integration has no entity for it: each fill light has its own brightness and turns on at this level. Studio has one brightness for the right and left lights, so the integration keeps them in step: a change to either writes the brighter of the two here, and a change made in Studio sets both |
+| Exhaust fan | `purifierEnable` | bool; Studio also writes `purifierTimeout: 5` when turned on |
+| Exhaust time after processing | `purifierTimeout` | 1-60 s |
+| Lowest output power | `motionPowerCut` | `M37S<1-10>` |
+| Baseplate detection, Background brightness increase | none | stored in Studio only; Background brightness increase only changes the exposure Studio sets before each photo (overview 100, or 1000 with it on; close camera 150, or 500) |
+
+**Laser head.** `POST /peripheral/laser_head` `{action: "go_to", x, y, f,
+waitTime}` moves the head; Studio sends `f: 9600` and `waitTime: 30000`, and
+the reply comes when the head has arrived. x and y are mm from home (0, 0) at
+the top left; x grows to the right and y toward the front (tested: (100, 50)
+put the close camera over the mat 100 mm right of and 50 mm below home).
+`{action: "get_coord", waitTime: 0}` reads `{x, y, z, a, u}`. A plain GET is
+refused. The integration reads the position once a minute and on the poll
+after each move.
+
+**Bed positions** (mm in the laser's coordinates, which Studio's canvas and
+the overview camera's straightened picture share; measured on a P2 with a
+cutting mat and the red dots):
+
+| What | X | Y | Width | Height |
+|---|---|---|---|---|
+| Actual work bed | -20.5 | -40.5 | 684 | 376 |
+| Process on slats, Honeycomb panel | 0 | 0 | 600 | 305 |
+| Slats removed | 50 | 0 | 500 | 250 |
+| Head travel (the P2 stops there; Studio's limits are 620 x 308) | 0 | 0 | 610 | 305 |
+| Close camera picture | head + 55 | head - 30 | 140 | 100 |
+| IR measuring spot (`laserMeasureOffset`) | head + 64.3 | head + 0.9 | | |
+| Slat 0 reference (348 from the left wall) | 327.5 | | | |
+
+Slats are 13.2 mm apart, numbered from the 0 reference outward: 1-24 to
+the left and 1-23 to the right, each slat 1 half a pitch from the 0
+reference. The overview picture showed a mat's centre line at X 327.4,
+the close camera's picture started at the head plus (54.9, -31.5), and
+the close red dot (`ir_led` index 1, on the head) landed at the head plus
+(64.8, 0.7), about 0.9 mm across, in the close camera's picture. The quick red dot (index 2) is fixed in the machine, at
+(343.2, 81.9). The overview calibration's plane is `thick0` (3 mm) above
+the slats; Studio's distance with the honeycomb panel or the slats removed
+is measured down from 25 mm above the slats.
+
+**Head and sleep** (seen on a P2 with firmware 40.21.025): the P2 sleeps
+600 s after it wakes; head moves and measurements do not restart that
+time. About 60 s before it sleeps it turns off the close red dot and
+moves the head home, and it homes again when it wakes. It moves the head
+while it sleeps (`go_to` answers and `get_coord` reports the new
+position).
+
+**Peripherals** (checked on a P2 with firmware 40.21.025):
+
+- `/peripheral/gap` `state` `off` = lid closed (Studio's `isCover`).
+- `/peripheral/drawer` `state` `off` = baseplate in place (Studio's
+  `drawerStatus`). The P2 does not detect a baseplate in the riser.
+- `/peripheral/digital_lock` reads `{state, limit_state, curOpen, curClose}`
+  and takes `{action: on|off}` (`on` locks); any other action is refused
+  with `action failed, not on|off`. A lock change is not pushed. Studio
+  never locks the lid itself (its calls are commented out).
+- `/peripheral/fill_light` reads `[{idx, value}]` (0-255): 1 = on the laser
+  head (the close-view camera's light), 2 = right, 3 = left. Studio writes
+  `{action: set_bri, idx: 0, value}` (0 = all three). A value of 3 (1 %) is
+  too dim to see.
+- `/peripheral/ir_led` reads `{ir1, ir2}` and takes `{action: on|off,
+  index: 1|2}`: 1 = the close-view infrared laser, a red dot under the laser
+  head (xTool's Aimed Measure); 2 = the distant-view infrared laser, from
+  the back right corner to the middle of the bed (xTool's Quick Measure). Pause is `GET /processing/pause` and cancel
+`GET /processing/stop`; Studio has no resume request.
+
+**Sleep.** After the sleep timeout (600 s) the P2 pushes `P_SLEEP` and turns
+the fill lights off. A camera photo (`:8329/camera/snap`) wakes it at once
+(`P_IDLE`); the status and settings reads above and a push connection do
+not. The integration takes no photo while the P2 sleeps.
+
+**Cameras.** `GET :8329/camera/snap?stream=0` is the overview camera and
+`stream=1` the close camera; both give 4656 x 3496 JPEGs. Exposure is
+`POST :8329/camera/exposure?stream=<n>` `{value}` (Studio sets 80 and
+100 before its photos). A higher value is brighter; 1 to 2000 are
+accepted and 0 is refused (`code` 1). A photo taken 0.3 s after the
+change still has the old exposure; one taken 2 s after has the new one.
+The exposure cannot be read back: `GET` always answers
+`{mode: "auto", value: 0}`, also right after a value was set and after
+a photo. After power on the overview photo looks the same as at 100.
+Each camera
+has a calibration grid, downloaded as Studio does with
+`GET :8080/file?action=download&filename=<name>`:
+`global_calib.json` (overview, 62 x 32 points, straightened to
+2440 x 1220 at Studio's `globalScale` 4 pixels per mm, so 610 x 305 mm)
+and `local_calib.json` (close camera, 15 x 11 points, 2800 x 2000 at
+`localScale` 20, so 140 x 100 mm). `global_ir.txt` holds the Quick
+measure light's curve; `local_ir.txt` reads `{"result":"failed"}`.
+
+**The overview grid is only partly measured.** On the P2 tested
+(calibrated 2023-12-27) the outer points of `global_calib.json` lie on
+straight, evenly spaced lines: columns 0-5 and 55-61 (36.4 and 39.0
+pixels per 10 mm) and rows 29-31. A wide-angle lens compresses the
+picture toward its edges, so these points are continued, not measured.
+A ruled mat, placed with the close camera, showed the real spacing at
+X 570-630 as 34, 32, 31, 29, 28, 26 pixels: mapped through the grid, the
+picture was 5 mm off at X 600, 7.6 mm at X 610 and 5.4 mm at X -5.
+`camera_correction._measured_bounds` finds the measured part (columns
+6-54, rows 0-28: X 60-540, Y 0-280) by how much each column and row
+of points bends; the lens is fitted to that part and used outside it.
+The same mat then read within about 1 mm at the edges (2 mm in the
+back right corner at X 630), and in the measured part within 0.2 mm
+(median) of a uniform shift and scale of up to 2 mm that belongs to the
+P2's own calibration. At slat level the overview camera sees from about
+X -6 to X 640 (bed walls: X -20.5 and 663.5); the head stops at X 610
+and Y 305.
+
+**Replies that do not work on the P2** (the integration creates no entity
+for them):
+
+| request | reply |
+|---|---|
+| `/getBeepEnable`, `/setBeepEnable` | `invalid request` (the Buzzer is `beepEnable`) |
+| `/getfiltercheck` | `{"result": "not support"}` |
+| `/gethardwaretype` | `Not Implement` |
+| `/peripheral/button?action=get` | `{"code": 1, "msg": "action failed, not short\|long"}` (buttons are pushed) |
+| `/peripheral/airassist`, `/peripheral/uv_fire_sensor`, `/peripheral/cpu_fan` | `invalid request` |
+| `/config/get {"keys": [...]}` | refused: `key 'kv' not found` |
+| `/system` | `{"result": "failed"}` (Studio reads `/system?action=version_v2`) |
+| `/setsleeptimeout`, `/setsleeptimeoutopengap`, `/setFilllightAutoClosetimout`, `/setIrlightAutoClosetimout` | `invalid request` as JSON, form or query (the `/get…` forms read 600, 180, 180, 120 s); Studio does not set them |
+| `/reboot` (GET or POST) | `invalid request`; Studio has no reboot for the P2 |
+
+Not offered on the P2 because Studio does not offer them: Filter check,
+Purifier check, Purifier continue (Studio uses `purifierEnable` and
+`purifierTimeout`), Baseplate detection (Studio only), Purifier speed,
+the cooling fan switch (the water cooling's fans), Time sync, the
+`/peripheral/water_line` reading (its meaning is not known).
+
+Left out because they tell nothing on the P2: Tool type and Working mode
+(never reported), Gyro X/Y/Z (`/peripheral/gyro` reads 0 rotation while
+the laser stands still; it also has `acc_*`, `pitch`, `roll`, `yaw`),
+Laser power and Laser module (fixed for the model), Last distance (the
+Measured sensor has it as the attribute `sensor_distance`). Task ID, CPU
+temperature, Cooling fan running and Water pump running are created
+turned off.
 
 ## M2 protocol
 
@@ -2484,7 +2661,7 @@ shown verbatim where they exist.
 
 | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|
-| `/v1/platform/camera/snap` | POST | `?name=far\|near\|side` | — | JPEG body. Channels: `far` = global / overview, `near` = local / close-up, `side` = side view |
+| `/v1/platform/camera/snap` | POST | `?name=far\|near\|side` | — | JPEG body. Channels: `far` = global / overview, `near` = local / close camera, `side` = side view |
 | `/v1/platform/camera/list` | GET | — | — | list of available cameras |
 | `/v1/platform/camera/live` | POST | — | live-stream control | OK — paired with the WS player on port 8089 |
 | `/v1/platform/camera/calibration/params` | GET / POST | — | calibration params | — |

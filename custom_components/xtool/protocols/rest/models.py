@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from ..base import XtoolDeviceModel
 
-from .coordinator import RestCoordinator
+from .coordinator import P2Coordinator, RestCoordinator
+from .p2 import P2Protocol
 from .protocol import RestProtocol, RestProtocolF1V1, RestProtocolM1Legacy
 
 XTOOL_M1 = XtoolDeviceModel(
@@ -51,8 +52,10 @@ XTOOL_M1_ULTRA = XtoolDeviceModel(
 XTOOL_P2 = XtoolDeviceModel(
     model_id="P2",
     name="xTool P2",
-    protocol_class=RestProtocol,
-    coordinator_class=RestCoordinator,
+    # Studio's push channel on port 8081 alongside the REST API
+    protocol_class=P2Protocol,
+    coordinator_class=P2Coordinator,
+    has_button_event=True,  # BUTTON pushes
     has_beeper=True,
     has_flame_alarm=True,
     has_move_stop=True,
@@ -71,6 +74,15 @@ XTOOL_P2 = XtoolDeviceModel(
     has_fill_light=True,
     has_gyro=True,
     has_water_cooling=True,  # 55W CO2 glass tube — water tank + antifreeze
+    # Studio: stream 0 is the overview (global) camera, 1 the close (local) one
+    camera_names=("overview", "closeup"),
+    # Studio's P2 extension: globalScale 4 and localScale 20 pixels per mm
+    # of the straightened 2440 x 1220 and 2800 x 2000 images
+    camera_calibrations=(
+        ("overview", "global_calib.json", 4.0, (610.0, 305.0)),
+        ("closeup", "local_calib.json", 20.0, (140.0, 100.0)),
+    ),
+    camera_crop_from_origin=("overview",),
     firmware_content_id="xTool-p2-firmware",
     firmware_machine_type="MXP",
 )

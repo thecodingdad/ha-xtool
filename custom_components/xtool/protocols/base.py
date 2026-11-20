@@ -166,6 +166,18 @@ class XtoolDeviceModel:
     # (``global_calib.json``); photos are straightened with it, as
     # Studio does (F2 Ultra UV).
     has_camera_calibration: bool = False
+    # Other cameras with a calibration file of their own: ``(camera
+    # name, file name, pixels per mm of the straightened image, the
+    # calibrated area's width and height in mm)``, as the laser's Studio
+    # extension names them (P2: ``global_calib.json`` for the overview
+    # camera, ``local_calib.json`` for the close camera).
+    camera_calibrations: tuple[
+        tuple[str, str, float, tuple[float, float]], ...
+    ] = ()
+    # Calibrated cameras whose crop centre is measured from the
+    # calibrated area's origin (the P2 overview's is the laser's home, so
+    # the centre is in the laser's coordinates) instead of its centre.
+    camera_crop_from_origin: tuple[str, ...] = ()
     # Cameras that look at the bed at an angle: ``(camera name,
     # perspective coefficients, photo size, result size)``. The eight
     # Pillow perspective coefficients map the result to the photo and
@@ -467,12 +479,20 @@ class XtoolDeviceState:
     ir_led_close: bool = False
     ir_led_global: bool = False
 
+    # P2: each fill light's brightness by index (0-255), and the
+    # /config/get settings by Studio's key
+    fill_light_levels: dict[int, int] = field(default_factory=dict)
+    device_config: dict[str, Any] = field(default_factory=dict)
+
     # REST camera exposure
     camera_exposure_overview: int = 0
     camera_exposure_closeup: int = 0
 
     # REST distance measurement
     last_distance_mm: float | None = None
+    # P2: the material thickness from the last IR reading, and where it was read
+    measured_thickness_mm: float | None = None
+    measured_at: tuple[float, float] | None = None
 
     # AP2 air cleaner
     purifier_speed: int = 0

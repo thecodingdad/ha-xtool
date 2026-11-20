@@ -22,7 +22,7 @@ This integration communicates directly with your xTool device over the local net
 - Monitor various sensors (laser position, gyro/accelerometer, ...)
 - Lifetime statistics (working time, session count, standby time, laser module runtime)
 - Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, ...)
-- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab / M2 (overview + close-up, main + deep, or far + near + side depending on model, plus flame record on flame-detection-capable models).
+- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab / M2 (overview + close camera, main + deep, or far + near + side depending on model, plus flame record on flame-detection-capable models).
 - Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
 - Optional power switch linking (smart plug control)
 - Automatic reconnect on network interruption
@@ -76,6 +76,8 @@ Or add manually:
 3. The integration scans your network for xTool devices via UDP broadcast
 4. Select a discovered device from the list, or choose **Enter IP address manually**
 5. Confirm to add the device
+
+**When the laser's address changes.** When a laser that is already set up asks your router for an address (DHCP), Home Assistant sees it and the integration moves to the new address, also while the laser is still starting. The address in use is kept while it answers, except that a P2 moves to its Ethernet address when it has one. When a laser that is turned on stops answering, the integration looks for it with xTool's own discovery, as xTool Studio does, and moves to the address where it answers with its serial number. This finds a laser at any address, also when Home Assistant did not see it ask for one.
 
 ### Options
 
@@ -214,7 +216,7 @@ The IF2 2.0 also has an **Alert** event entity. It fires **Fan stall** or **Clea
 | Cooling fan | Manual cooling-fan toggle |
 | Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
 | Purifier auto-continue | Keep purifier running after job ends |
-| Red dot / IR LED close-up | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close-up IR LED. On V2 lasers the red dot shows on after the laser connects (it is always on when the laser powers on), unless the laser reports otherwise, and then follows HA's own commands |
+| Red dot / Red dot close | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close camera's IR LED. On V2 lasers the red dot shows on after the laser connects (it is always on when the laser powers on), unless the laser reports otherwise, and then follows HA's own commands |
 | Cover lock | Digital cover lock |
 | Tilt stop / Limit stop | Per-sensor safety toggles |
 | Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control. Attribute `flame_record` (**F2 Ultra UV**): true while the laser stores a photo from a fire alarm (Studio offers it) |
@@ -249,7 +251,7 @@ The F2 Ultra UV (Class 1) has the switch on every unit. Until the laser has repo
 | Sleep timeout (cover open) | Idle sleep timeout while cover is open (0-3600 s) |
 | IR-light auto-off | IR illumination auto-off (0-3600 s) |
 | Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
-| Camera exposure (overview / close-up) | Camera exposure values (0-255) |
+| Camera exposure (overview / close camera) | Camera exposure values (0-255) |
 | Camera thumbnail refresh interval | WS-V2 cameras, one per camera (on the camera's own device as "Thumbnail refresh interval" when the laser has several cameras). How often the camera's picture on the device page refreshes, 5 s to 10 min (Home Assistant's standard is 5 min). Each refresh is a new camera state sent to every open Home Assistant screen, and a photo from the laser for each screen showing it |
 | Crop width / height / center X / center Y | **F2 Ultra UV**, on the Main camera device. The part of the work surface the straightened main camera shows, in mm. Default: the 200 × 200 mm calibrated area. A width or height of 0 shows the widest area the photo fills that way. The centre moves from the centre of that area (X right, Y down). Areas outside the calibrated area are extended from its edge and are less accurate. A wider shape (for example 267 × 200 mm) fits camera dialogs without scrolling |
 | Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
@@ -310,10 +312,51 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle; its Perspective select turns the photos upright and, by default, also straightens them, so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
 | Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
-| Close-up camera | Detail camera (P-family + V1-firmware dual-camera devices) |
-| Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close-up) and `side` (process-side view) |
+| Close camera | Detail camera (P-family + V1-firmware dual-camera devices) |
+| Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close camera) and `side` (process-side view) |
 | Flame record | Snapshot of the most recent flame-detection event |
 | Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
+
+### P2: cameras, crop presets and overlays
+
+The P2's Overview camera and Close camera are straightened with the P2's own camera calibration (the files Studio reads; the integration only reads them). Positions are in the laser's coordinates, as on Studio's canvas: millimetres from home (0, 0), X to the right and Y toward the front. Home is the top left corner of the Process on slats area, 20.5 mm from the bed's left wall and 40.5 mm from its back wall. "Laser position X/Y" is where the laser fires.
+
+The P2's overview calibration is measured only in the middle of the bed (on the P2 tested: X 60–540, Y 0–280); the rest of its grid is filled in with straight lines, which a wide-angle lens does not follow. The integration finds the measured part, uses the calibration there, and continues the picture outside it with the camera's lens fitted to that part. Checked with a ruled mat, the picture then stays within about 1 mm out to where the camera can see. At slat level the camera does not see the last 15 mm or so at the left wall and 25 mm at the right wall (the side rails hide them).
+
+**Overview camera Crop presets.** A preset fills in the four crop numbers; changing a number selects Custom. A width or height of 0 shows as far as the photo reaches.
+
+| Crop preset | Area origin (X, Y) | Size (W × H, mm) | Crop center X, Y written |
+|---|---|---|---|
+| Uncropped | (whole photo) | about 938 × 498 | 305, 152.5 (width and height 0) |
+| Sync to Mode | the selected Mode's area (below) | | |
+| Work bed | −20.5, −40.5 | 684 × 376 | 321.5, 147.5 |
+| Process on slats | 0, 0 | 600 × 305 | 300, 152.5 |
+| Honeycomb panel | 0, 0 | 600 × 305 | 300, 152.5 |
+| Slats removed | 50, 0 | 500 × 250 | 300, 125 |
+| Close camera (uncropped) | follows the laser | about 182 × 138 | Laser position X/Y + (125, 20) |
+| Close camera (Studio) | Laser position X/Y + (55, −30) | 140 × 100 | Laser position X/Y + (125, 20) |
+| Close camera (custom) | the Close camera's own crop | | |
+| Custom | the numbers as set | | |
+
+Ranges: Crop width 0–915, Crop height 0–458, Crop center X 0–610, Crop center Y 0–305 (Studio's straightened overview picture is 610 × 305 mm; the calibration grid itself reaches Y 310).
+
+**Close camera Crop presets.** The center is relative to the center of Studio's close picture, which is at Laser position X/Y + (125, 20).
+
+| Crop preset | Size (W × H, mm) | Crop center X, Y |
+|---|---|---|
+| Uncropped | about 182 × 138 (width and height 0) | 0, 0 |
+| Studio | 140 × 100 | 0, 0 |
+| Custom | the numbers as set | |
+
+Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop center Y −50 to 50.
+
+**Overlays.** Each overlay is a switch on the camera's device; any number can be on, and all start off. An area overlay draws its outline with a dot at its origin and one at its center, all in the area's color. The Overview camera has the three Mode areas (Overlay mode process on slats, honeycomb panel, slats removed) and Laser target (where the laser fires; that point is never in the Close camera's picture); the Close camera has Studio and Custom. Both have Slat lines (every slat, odd numbers labeled), Red dot close and Red dot quick (each an outline the dot sits just inside). **Overlay close camera** lays the Close camera's last picture, as that camera shows it (its crop and its own overlays), on the Overview camera where it was taken. Overlay colors are set in the integration's options.
+
+**Mode and Thickness or distance.** Mode (Process on slats, Honeycomb panel, Slats removed) and one Thickness or distance number, read as Studio reads it in that Mode: the material's thickness on the slats, otherwise the distance down from 25 mm above the slats. The overview picture is straightened for that height. **Measure thickness or distance** (with the Measured sensor, on the Overview camera's device, since the result only sets that camera's picture) reads the IR sensor under the close red dot (turning the dot on for the reading if needed) and fills in Thickness or distance; it can be changed after. A reading the selected Mode cannot take (for example with nothing under the red dot) is refused with a message, and Thickness or distance keeps its value.
+
+**Exposure.** Each camera's Exposure is 10 to 1000; higher is brighter. The P2 does not report its exposure, so the number shows the value Home Assistant set last. When the Power switch turns the P2 on, Home Assistant sets Studio's values (Overview camera 100, Close camera 150). The number is unknown when the P2 was turned on any other way, until a value is set here; a value Studio sets is not shown. The camera takes a new photo two seconds after a change.
+
+**Moving the laser.** Set Laser position X and Y (the numbers show the values set, with the attribute `waiting` until the laser moves), then press **Move laser**. The `xtool.move` action takes the P2 device and moves to X and Y, or by signed steps. The P2 moves the laser while it sleeps too; it moves the laser home a minute before it sleeps and when it wakes.
 
 ### Button
 
@@ -325,7 +368,8 @@ On a laser with several cameras, each camera and its settings are on their own d
 | Home all axes | Move laser head to home position (all axes) |
 | Home XY | Move laser head to XY home |
 | Home Z | Move laser head to Z home |
-| Home laser head | Move laser head back to (0, 0) |
+| Home laser | Move the laser head back to (0, 0) |
+| Wake | P2: wake a sleeping P2 so its cameras take photos again (the P2 has no wake command; a photo wakes it, and Home Assistant takes none while it sleeps) |
 | Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
 | Measure distance | Trigger an IR distance measurement |
 | Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |

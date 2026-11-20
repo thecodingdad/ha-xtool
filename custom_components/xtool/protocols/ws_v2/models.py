@@ -572,7 +572,7 @@ XTOOL_M2_WSV2 = XtoolDeviceModel(
     coordinator_class=WSV2Coordinator,
     has_camera=True,
     # JS002 bundle exposes ``far`` (global / overview), ``near``
-    # (local / close-up), and ``side`` (process-side view). Order
+    # (local / close camera), and ``side`` (process-side view). Order
     # is the Studio bundle order; UI lists them in this order too.
     camera_names=("far", "near", "side"),
     has_fill_light=True,

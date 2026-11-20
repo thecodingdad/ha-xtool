@@ -20,6 +20,8 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from homeassistant.config_entries import SOURCE_INTEGRATION_DISCOVERY
+from homeassistant.const import CONF_HOST
 from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
@@ -27,6 +29,7 @@ from homeassistant.core import (
     HomeAssistant,
     callback,
 )
+from homeassistant.helpers import discovery_flow
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -64,6 +67,7 @@ if TYPE_CHECKING:
     from homeassistant.components.event import EventEntity
     from homeassistant.components.fan import FanEntity
     from homeassistant.components.light import LightEntity
+    from homeassistant.components.lock import LockEntity
     from homeassistant.components.number import NumberEntity
     from homeassistant.components.select import SelectEntity
     from homeassistant.components.sensor import SensorEntity
@@ -72,6 +76,15 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 _LOGGER = logging.getLogger(__name__)
+
+# How long one address search listens for discovery replies, and how often
+# it runs: (seconds since the laser stopped answering, interval).
+ADDRESS_SEARCH_TIMEOUT = 2.0
+ADDRESS_SEARCH_INTERVALS: tuple[tuple[float, float], ...] = (
+    (180.0, 5.0),
+    (600.0, 30.0),
+    (float("inf"), 900.0),
+)
 
 _T = TypeVar("_T")
 
@@ -191,6 +204,18 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         # mac_address is populated by S1/D-series/REST. F1 V2 leaves it empty.
         # entity.py reads it to add CONNECTION_NETWORK_MAC.
         self.mac_address: str = ""
+        # Further MACs of the same laser (a P2 has one for Ethernet and one
+        # for Wi-Fi); each is a device connection, so DHCP finds the laser
+        # again at whichever address it shows up on.
+        self.other_mac_addresses: set[str] = set()
+        # While the laser does not answer, it is looked for at a new address
+        # (see ``async_search_address``)
+        self._unreachable_since: float | None = None
+        self._next_address_search = 0.0
+        self._address_search: asyncio.Task[None] | None = None
+        # Shown as the Model ID on the device page when the model has no SKU
+        # (the P2: Studio's Laser safety classification)
+        self.model_variant: str = ""
 
         # Hardware board revision (e.g. "V1", "V8") from machineInfo.
         self._hardware_version: str = ""
@@ -430,6 +455,92 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
             bool(self.machine_style) and self.machine_style in model.access_control_machine_styles
         )
 
+    # --- Address ------------------------------------------------------------
+
+    async def async_use_host(self, host: str) -> bool:
+        """Talk to the laser at ``host`` from now on, without a reload.
+
+        Called by the update listener when the config flow saved a new
+        address. False when this laser's protocol cannot change its address
+        while it runs (the entry is then reloaded).
+        """
+        change_host = getattr(self.protocol, "change_host", None)
+        if change_host is None:
+            return False
+        await change_host(host)
+        self.host = host
+        self._unreachable_since = None
+        self._next_address_search = 0.0
+        await self.async_request_refresh()
+        return True
+
+    @callback
+    def async_found_at(self, host: str) -> None:
+        """Hand an address this laser answers at to the config flow.
+
+        The flow's discovery step decides whether to use it (the address
+        in use is kept while it answers, unless the new one is preferred)
+        and, if so, saves it in the entry, as Home Assistant's own discovery
+        does; the update listener then moves to it (``async_use_host``).
+        """
+        discovery_flow.async_create_flow(
+            self.hass, DOMAIN,
+            context={"source": SOURCE_INTEGRATION_DISCOVERY},
+            data={CONF_HOST: host, "serial_number": self.serial_number},
+        )
+
+    @callback
+    def async_search_address(self, reachable: bool) -> None:
+        """Look for the laser at a new address while it does not answer.
+
+        A laser can come back at another address: the P2 sometimes starts
+        with a temporary MAC address that Home Assistant's DHCP discovery
+        does not know. It answers xTool's own discovery at any address, as
+        Studio finds it. Every 5 s for the first 3 min, then every 30 s up
+        to 10 min, then every 15 min; never while its Power switch is off.
+        """
+        if (
+            reachable
+            or self.power_switch_is_off
+            or not self.config_entry
+            or not self.serial_number
+        ):
+            self._unreachable_since = None
+            self._next_address_search = 0.0
+            return
+        now = time.monotonic()
+        if self._unreachable_since is None:
+            self._unreachable_since = now
+        if now < self._next_address_search or (
+            self._address_search is not None and not self._address_search.done()
+        ):
+            return
+        elapsed = now - self._unreachable_since
+        self._next_address_search = now + next(
+            interval for limit, interval in ADDRESS_SEARCH_INTERVALS if elapsed < limit
+        )
+        self._address_search = self.config_entry.async_create_background_task(
+            self.hass, self._async_search_address(), f"{DOMAIN} address search",
+        )
+
+    async def _async_search_address(self) -> None:
+        from .discovery import discover_v1
+        from .protocols import ConnectionInfo, detect_models, validate_connection
+
+        for device in await discover_v1(timeout=ADDRESS_SEARCH_TIMEOUT):
+            if device.ip == self.protocol.host or not any(
+                model.model_id == self.model.model_id for model in detect_models(device.name)
+            ):
+                continue
+            info = await validate_connection(device.ip)
+            if isinstance(info, ConnectionInfo) and info.serial_number == self.serial_number:
+                _LOGGER.info(
+                    "%s answers at %s instead of %s",
+                    self.device_name, device.ip, self.protocol.host,
+                )
+                self.async_found_at(device.ip)
+                return
+
     def get_status(self) -> XtoolStatus:
         if self.data is None or self.data.status is None:
             return XtoolStatus.UNKNOWN
@@ -442,6 +553,10 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
     # catches all hardware-swap cases, including the ones where the
     # WS / REST connection stayed up across the swap.
     DEVICE_INFO_REFRESH_EVERY_POLLS = 60
+
+    def prefers_host(self, host: str) -> bool:
+        """True when ``host`` is an address the laser is better reached at."""
+        return False
 
     def _should_fetch_device_info(self) -> bool:
         """Return True when the poll loop should re-fetch identity info.
@@ -509,6 +624,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         return []
 
     def build_fans(self) -> list["FanEntity"]:
+        return []
+
+    def build_locks(self) -> list["LockEntity"]:
         return []
 
     def build_selects(self) -> list["SelectEntity"]:

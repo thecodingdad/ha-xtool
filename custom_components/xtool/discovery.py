@@ -478,6 +478,21 @@ async def discover_devices(
     return _dedupe(v1_bcast + v1_mcast + v2)
 
 
+async def discover_v1(
+    timeout: float = DISCOVERY_TIMEOUT,
+) -> list[DiscoveredDevice]:
+    """Legacy V1 discovery only, broadcast and multicast.
+
+    The lasers polled over REST (F1, P2, M1, ...) answer this one. Used to
+    find a configured laser again at a new address.
+    """
+    bcast, mcast = await asyncio.gather(
+        _probe_v1("255.255.255.255", timeout, broadcast=True),
+        _probe_v1(V1_MULTICAST_GROUP, timeout, broadcast=False, multicast=True),
+    )
+    return _dedupe(bcast + mcast)
+
+
 async def identify_host(
     host: str, timeout: float = 3.0,
 ) -> DiscoveredDevice | None:

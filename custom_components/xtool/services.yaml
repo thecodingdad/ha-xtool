@@ -32,6 +32,60 @@ focus:
           step: 0.1
           unit_of_measurement: mm
           mode: box
+move:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - integration: xtool
+              model: xTool P2
+    x:
+      example: 100
+      selector:
+        number:
+          min: 0
+          max: 610
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    y:
+      example: 50
+      selector:
+        number:
+          min: 0
+          max: 305
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    step_x:
+      example: 10
+      selector:
+        number:
+          min: -610
+          max: 610
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    step_y:
+      example: -10
+      selector:
+        number:
+          min: -305
+          max: 305
+          step: 0.01
+          unit_of_measurement: mm
+          mode: box
+    steps:
+      example: 3
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 1000
+          step: 1
+          mode: box
 camera:
   target:
     entity:
@@ -43,7 +97,7 @@ camera:
       selector:
         number:
           min: 0
-          max: 460
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box
@@ -52,7 +106,7 @@ camera:
       selector:
         number:
           min: 0
-          max: 460
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box
@@ -60,8 +114,8 @@ camera:
       example: 0
       selector:
         number:
-          min: -200
-          max: 200
+          min: -700
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box
@@ -69,8 +123,8 @@ camera:
       example: 0
       selector:
         number:
-          min: -200
-          max: 200
+          min: -700
+          max: 700
           step: 1
           unit_of_measurement: mm
           mode: box

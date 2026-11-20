@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
@@ -45,6 +46,7 @@ PLATFORMS = [
     Platform.IMAGE,
     Platform.SENSOR,
     Platform.LIGHT,
+    Platform.LOCK,
     Platform.SWITCH,
     Platform.NUMBER,
     Platform.SELECT,
@@ -235,6 +237,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
     # _migrate_entity_registry(hass, entry, coordinator)
 
     entry.runtime_data = coordinator
+    # Options as set up; a change of overlay colours alone needs no reload
+    coordinator.options_at_setup = dict(entry.options)
 
     # Register the parent before platforms add accessory entities concurrently.
     # Reuse the laser entities' metadata and keep the registry id for via_device_id.
@@ -412,7 +416,32 @@ async def async_unload_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> bo
 async def _async_options_updated(
     hass: HomeAssistant, entry: XtoolConfigEntry
 ) -> None:
-    """Reload integration when options change."""
+    """Reload integration when options change; use a new address in place."""
+    coordinator = getattr(entry, "runtime_data", None)
+    host = entry.data.get(CONF_HOST)
+    if coordinator is not None and host and host != coordinator.protocol.host:
+        # The config flow saved a new address (discovery or DHCP)
+        if not await coordinator.async_use_host(host):
+            await hass.config_entries.async_reload(entry.entry_id)
+        return
+    before = getattr(coordinator, "options_at_setup", None)
+    if before is not None and dict(entry.options) == dict(before):
+        # Only other entry data changed
+        return
+    if before is not None:
+        from .const import CONF_OVERLAY_COLORS
+
+        def others(options: Any) -> dict[str, Any]:
+            return {k: v for k, v in dict(options).items() if k != CONF_OVERLAY_COLORS}
+
+        if others(entry.options) == others(before):
+            # Only the overlay colours changed: draw the pictures again
+            from .protocols.ws_v2.entities import _thumbnail_registry
+
+            coordinator.options_at_setup = dict(entry.options)
+            for camera in list(_thumbnail_registry(coordinator).cameras.values()):
+                await camera.refresh_picture()
+            return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

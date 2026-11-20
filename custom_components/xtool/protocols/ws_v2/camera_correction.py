@@ -51,13 +51,40 @@ class CameraCalibration:
     dst_w: int
     dst_h: int
     points: tuple[tuple[float, float], ...]
+    # Width of the calibrated area on the work surface
+    area_mm: float = CALIBRATED_AREA_MM
+    # The grid's cells are square (the P2's are 10 mm), even when the
+    # straightened image is not a whole number of cells tall
+    square_cells: bool = False
+    # Height of the calibrated plane above the bed (the P2: thick0, 3 mm)
+    plane_mm: float = 0.0
+
+    @property
+    def area_h_mm(self) -> float:
+        return self.area_mm * self.dst_h / self.dst_w
+
+    @property
+    def cell_mm(self) -> tuple[float, float]:
+        """Millimetres per grid cell, across and down."""
+        across = self.area_mm / (self.grid_w - 1)
+        if self.square_cells:
+            return across, across
+        return across, self.area_h_mm / (self.grid_h - 1)
 
     def point(self, row: int, col: int) -> tuple[float, float]:
         return self.points[row * self.grid_w + col]
 
 
-def parse_calibration(raw: Any) -> CameraCalibration | None:
-    """Parse ``global_calib.json``; return None when it is not usable."""
+def parse_calibration(
+    raw: Any, pixels_per_mm: float | None = None,
+) -> CameraCalibration | None:
+    """Parse a calibration file; return None when it is not usable.
+
+    ``pixels_per_mm`` is the straightened image's scale, when the laser's
+    Studio extension names it (the P2: 4 for the overview camera, 20 for
+    the close camera); the calibrated area is then ``image_dst_w`` / it.
+    Without it the area is the F2 Ultra UV's measured 200 mm.
+    """
     try:
         data = raw if isinstance(raw, dict) else json.loads(raw)
         grid_w = int(data["grid_num_w"])
@@ -73,8 +100,14 @@ def parse_calibration(raw: Any) -> CameraCalibration | None:
             dst_w=int(data["image_dst_w"]),
             dst_h=int(data["image_dst_h"]),
             points=points,
+            area_mm=(
+                int(data["image_dst_w"]) / pixels_per_mm
+                if pixels_per_mm else CALIBRATED_AREA_MM
+            ),
+            square_cells=bool(pixels_per_mm),
+            plane_mm=float(data.get("thick0") or 0.0),
         )
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError, ZeroDivisionError):
         return None
     if (
         grid_w < 2
@@ -102,25 +135,300 @@ class CameraView:
     center_y_mm: float = 0.0
 
 
+@dataclass(frozen=True)
+class SurfaceLift:
+    """A material surface above (or below) the calibrated plane.
+
+    A camera sees a raised surface larger and shifted away from the point
+    straight below it. The camera's position is in the calibrated area's
+    millimetres (x, y of the point below it, and its height above the
+    calibrated plane). ``surface_mm`` is the surface's height above the
+    calibrated plane.
+    """
+
+    camera_x_mm: float
+    camera_y_mm: float
+    camera_height_mm: float
+    surface_mm: float = 0.0
+
+    def seen_at(self, x_mm: float, y_mm: float) -> tuple[float, float]:
+        """Where on the calibrated plane a point of the surface appears."""
+        scale = self.camera_height_mm / max(self.camera_height_mm - self.surface_mm, 1.0)
+        return (
+            self.camera_x_mm + (x_mm - self.camera_x_mm) * scale,
+            self.camera_y_mm + (y_mm - self.camera_y_mm) * scale,
+        )
+
+
+@dataclass(frozen=True)
+class Overlay:
+    """Shapes drawn on a straightened picture, in the calibrated area's mm.
+
+    ``areas``: (x, y, width, height, colour), an outline with a dot at its
+    origin (top left) and one at its centre, all in its colour.
+    ``lines``: (x0, y0, x1, y1, label), the label written at the lower
+    end. ``markers``: (x, y), a red target. ``spots``: (x, y, length,
+    width, angle), an outline whose inside is that size (mm), long along
+    ``angle`` (degrees from X toward Y), drawn 3 px wide outward like a ring. ``rings``: (x, y, diameter), a circle whose inside is that
+    diameter (mm), drawn 3 px wide outward, so a dot that size sits just
+    inside it. ``images``: (x, y, width, height, JPEG), a picture laid on
+    that area, under everything else. The colours are the lines', the
+    markers' and the spots' (also the rings').
+    """
+
+    areas: tuple[tuple[float, float, float, float, tuple[int, int, int]], ...] = ()
+    lines: tuple[tuple[float, float, float, float, str], ...] = ()
+    markers: tuple[tuple[float, float], ...] = ()
+    spots: tuple[tuple[float, float, float, float, float], ...] = ()
+    images: tuple[tuple[float, float, float, float, bytes], ...] = ()
+    rings: tuple[tuple[float, float, float], ...] = ()
+    line_color: tuple[int, int, int] = (0, 200, 255)
+    marker_color: tuple[int, int, int] = (255, 40, 40)
+    spot_color: tuple[int, int, int] = (255, 30, 30)
+
+
+OVERLAY_LABEL_BACKGROUND = (0, 0, 0)
+OVERLAY_RING_WIDTH = 3
+
+
+def _draw_overlay(
+    image: Any, overlay: Overlay, left_mm: float, top_mm: float, px_per_mm: float,
+) -> None:
+    from PIL import Image, ImageDraw, ImageFont  # Home Assistant ships Pillow
+
+    draw = ImageDraw.Draw(image)
+    width = max(2, round(image.width / 500))
+
+    def px(x_mm: float, y_mm: float) -> tuple[float, float]:
+        return (x_mm - left_mm) * px_per_mm, (y_mm - top_mm) * px_per_mm
+
+    for x, y, w, h, jpeg in overlay.images:
+        (a, b), (c, d) = px(x, y), px(x + w, y + h)
+        size = (round(c - a), round(d - b))
+        if size[0] < 1 or size[1] < 1:
+            continue
+        try:
+            picture = Image.open(io.BytesIO(jpeg)).convert("RGB").resize(
+                size, Image.Resampling.BILINEAR,
+            )
+        except Exception:  # noqa: BLE001 - a bad picture is left out
+            continue
+        image.paste(picture, (round(a), round(b)))
+    for x, y, length, breadth, angle in overlay.spots:
+        # An ellipse's outline, turned: the dot itself stays visible inside
+        cx, cy = px(x, y)
+        a = length * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        b = breadth * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        size = int(2 * max(a, b)) + 4
+        mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(mask).ellipse(
+            (size / 2 - a, size / 2 - b, size / 2 + a, size / 2 + b),
+            outline=255, width=OVERLAY_RING_WIDTH,
+        )
+        # Pillow turns counterclockwise on screen; Y points down
+        mask = mask.rotate(-angle, resample=Image.Resampling.BICUBIC)
+        x0, y0 = round(cx - size / 2), round(cy - size / 2)
+        image.paste(overlay.spot_color, (x0, y0, x0 + size, y0 + size), mask)
+    for x, y, diameter in overlay.rings:
+        # Pillow draws an outline inward from the box: the box is the
+        # outside, 3 px beyond the inside diameter
+        cx, cy = px(x, y)
+        r = diameter * px_per_mm / 2 + OVERLAY_RING_WIDTH
+        draw.ellipse(
+            (cx - r, cy - r, cx + r, cy + r),
+            outline=overlay.spot_color, width=OVERLAY_RING_WIDTH,
+        )
+
+    # Labels as large as the space between lines allows: white on black
+    label_xs = sorted(px(x1, y1)[0] for _, _, x1, y1, label in overlay.lines if label)
+    spacing = min((b - a for a, b in zip(label_xs, label_xs[1:]) if b > a), default=image.width)
+    size = round(min(max(12.0, min(image.height / 25, spacing * 0.8)), 64.0))
+    try:
+        font = ImageFont.load_default(size=size)
+    except TypeError:  # Pillow before 10.1
+        font = ImageFont.load_default()
+    labels = []
+    for x0, y0, x1, y1, label in overlay.lines:
+        start, end = px(x0, y0), px(x1, y1)
+        draw.line((start, end), fill=overlay.line_color, width=max(1, width // 2))
+        if label and -size < end[0] < image.width + size:
+            labels.append(((end[0], min(end[1], image.height) - 2), label))
+    for at, label in labels:
+        box = draw.textbbox(at, label, font=font, anchor="md")
+        pad = max(2, size // 8)
+        draw.rectangle(
+            (box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad),
+            fill=OVERLAY_LABEL_BACKGROUND,
+        )
+        # Bold: the letters drawn with an outline of their own colour
+        draw.text(
+            at, label, fill=(255, 255, 255), font=font, anchor="md",
+            stroke_width=max(1, size // 14), stroke_fill=(255, 255, 255),
+        )
+    dot = max(4.0, 1.2 * px_per_mm)
+    for x, y, w, h, color in overlay.areas:
+        (a, b), (c, d) = px(x, y), px(x + w, y + h)
+        draw.rectangle((a, b, c, d), outline=color, width=width)
+        for cx, cy in ((a, b), ((a + c) / 2, (b + d) / 2)):
+            draw.ellipse(
+                (cx - dot, cy - dot, cx + dot, cy + dot), fill=color, outline=(0, 0, 0),
+                width=max(1, width // 2),
+            )
+    for x, y in overlay.markers:
+        cx, cy = px(x, y)
+        r = max(6.0, 2.5 * px_per_mm)
+        draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=overlay.marker_color, width=width)
+        draw.line((cx - 2 * r, cy, cx + 2 * r, cy), fill=overlay.marker_color, width=max(1, width // 2))
+        draw.line((cx, cy - 2 * r, cx, cy + 2 * r), fill=overlay.marker_color, width=max(1, width // 2))
+
+
+# A camera seen as a lens: rotation (3), translation (3), focal length,
+# aspect, centre (2) and four fisheye terms, mapping work-surface mm to
+# photo pixels (the OpenCV fisheye model).
+LENS_PARAMETERS = 14
+
+
+def _rotate(rotation: Any, points: Any) -> Any:
+    import numpy as np  # Home Assistant ships numpy
+
+    angle = float(np.linalg.norm(rotation))
+    if angle < 1e-12:
+        return points
+    axis = rotation / angle
+    cos, sin = np.cos(angle), np.sin(angle)
+    return (
+        points * cos
+        + np.cross(axis, points) * sin
+        + np.outer(points @ axis, axis) * (1 - cos)
+    )
+
+
+def _lens_project(params: Any, mm: Any) -> Any:
+    """Photo pixels of work-surface points (N x 2 mm) through a lens."""
+    import numpy as np
+
+    points = np.column_stack([mm, np.zeros(len(mm))])
+    seen = _rotate(params[0:3], points) + params[3:6]
+    x, y = seen[:, 0] / seen[:, 2], seen[:, 1] / seen[:, 2]
+    r = np.hypot(x, y)
+    theta = np.arctan(r)
+    k = params[10:14]
+    theta_d = theta * (
+        1 + k[0] * theta**2 + k[1] * theta**4 + k[2] * theta**6 + k[3] * theta**8
+    )
+    scale = theta_d / np.maximum(r, 1e-12)
+    focal = params[6]
+    return np.column_stack([
+        focal * scale * x + params[8], focal * params[7] * scale * y + params[9],
+    ])
+
+
+def _fit_lens(mm: Any, pixels: Any, guess: tuple[float, ...]) -> Any:
+    """The lens that best maps the grid's points onto the photo.
+
+    Levenberg-Marquardt from a guess (a camera of the same model): the
+    calibration grid is only exact inside itself; the lens continues it
+    beyond the grid as the camera really sees.
+    """
+    import numpy as np
+
+    params = np.array(guess, dtype=float)
+    target = pixels.ravel()
+
+    def residual(p: Any) -> Any:
+        return _lens_project(p, mm).ravel() - target
+
+    current = residual(params)
+    damping = 1e-3
+    for _ in range(60):
+        jacobian = np.empty((len(current), len(params)))
+        for i in range(len(params)):
+            step = 1e-6 * max(1.0, abs(params[i]))
+            shifted = params.copy()
+            shifted[i] += step
+            jacobian[:, i] = (residual(shifted) - current) / step
+        normal = jacobian.T @ jacobian
+        gradient = jacobian.T @ current
+        while True:
+            change = np.linalg.solve(
+                normal + damping * np.diag(np.diag(normal)), -gradient,
+            )
+            trial = residual(params + change)
+            if trial @ trial < current @ current:
+                params, current = params + change, trial
+                damping = max(damping / 3, 1e-9)
+                break
+            damping *= 4
+            if damping > 1e9:
+                return params
+        if np.linalg.norm(change) < 1e-9 * max(1.0, np.linalg.norm(params)):
+            break
+    return params
+
+
+def _measured_bounds(calibration: CameraCalibration) -> tuple[int, int, int, int]:
+    """The part of the grid that was measured: first and last column and row.
+
+    A calibration grid can be wider than what was measured, its outer
+    points continued on straight, evenly spaced lines (the P2's overview
+    grid: 6 columns each side and 3 rows at the front). A lens bends
+    every line of points, so such points show as columns (rows) with far
+    less bend than the others. From each side, columns (rows) are left
+    out while their bend is under half the grid's median; the point they
+    were continued from stays. Nothing is left out of a small grid, or
+    when more than a quarter of a side would go.
+    """
+    import numpy as np
+
+    width, height = calibration.grid_w, calibration.grid_h
+    whole = (0, width - 1, 0, height - 1)
+    if width < 8 or height < 8:
+        return whole
+    points = np.array(calibration.points).reshape(height, width, 2)
+
+    def continued(bend: Any) -> tuple[int, int]:
+        """How many points at each end were continued."""
+        limit = 0.5 * float(np.median(bend))
+        counts = []
+        for values in (bend, bend[::-1]):
+            count = 0
+            while count < len(values) and values[count] < limit:
+                count += 1
+            # The run of straight points, and the grid's own edge point
+            counts.append(count + 1 if count else 0)
+        return counts[0], counts[1]
+
+    across = np.abs(points[:, :-2] - 2 * points[:, 1:-1] + points[:, 2:]).sum(-1).mean(0)
+    down = np.abs(points[:-2] - 2 * points[1:-1] + points[2:]).sum(-1).mean(1)
+    left, right = continued(across)
+    top, bottom = continued(down)
+    if max(left, right) > width // 4 or max(top, bottom) > height // 4:
+        return whole
+    return left, width - 1 - right, top, height - 1 - bottom
+
+
 class _SurfaceMap:
     """Where a point of the work surface (mm) is in the raw photo (pixels).
 
     Inside the calibrated area each grid cell is mapped bilinearly, as
     the calibration says. Outside it, the map continues from the nearest
-    edge point along a smooth (cubic) fit of the whole grid, so straight
-    lines stay smooth beyond the grid instead of following the small
-    differences between the outer cells.
+    edge point along a smooth fit of the whole grid, so straight lines
+    stay smooth beyond the grid instead of following the small
+    differences between the outer cells. With a lens guess the fit is the
+    camera's lens, which stays true much further beyond the grid than a
+    cubic fit does. The lens is fitted to the measured part of the grid
+    only (see ``_measured_bounds``) and also replaces the grid's
+    continued points, which a lens does not follow.
     """
 
-    def __init__(self, calibration: CameraCalibration) -> None:
+    def __init__(
+        self, calibration: CameraCalibration, lens: tuple[float, ...] | None = None,
+    ) -> None:
         self.cal = calibration
         self.cells_x = calibration.grid_w - 1
         self.cells_y = calibration.grid_h - 1
-        self.cell_mm_x = CALIBRATED_AREA_MM / self.cells_x
-        self.cell_mm_y = (
-            CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / self.cells_y
-        )
-        self.width_mm = CALIBRATED_AREA_MM
+        self.cell_mm_x, self.cell_mm_y = calibration.cell_mm
+        self.width_mm = calibration.area_mm
         self.height_mm = self.cell_mm_y * self.cells_y
         samples = [
             (col * self.cell_mm_x, row * self.cell_mm_y, calibration.point(row, col))
@@ -130,6 +438,30 @@ class _SurfaceMap:
         rows = [self._terms(u, v) for u, v, _ in samples]
         self._fit_x = _least_squares(rows, [point[0] for _, _, point in samples])
         self._fit_y = _least_squares(rows, [point[1] for _, _, point in samples])
+        self._lens = None
+        # The area the grid is used in (mm): all of it, or its measured part
+        self._bounds = (0.0, self.width_mm, 0.0, self.height_mm)
+        if lens is not None and len(lens) == LENS_PARAMETERS:
+            import numpy as np
+
+            col0, col1, row0, row1 = _measured_bounds(calibration)
+            bounds = (
+                col0 * self.cell_mm_x, col1 * self.cell_mm_x,
+                row0 * self.cell_mm_y, row1 * self.cell_mm_y,
+            )
+            measured = [
+                (u, v, point) for u, v, point in samples
+                if bounds[0] - 1e-6 <= u <= bounds[1] + 1e-6
+                and bounds[2] - 1e-6 <= v <= bounds[3] + 1e-6
+            ]
+            mm = np.array([(u, v) for u, v, _ in measured])
+            pixels = np.array([point for _, _, point in measured])
+            fitted = _fit_lens(mm, pixels, lens)
+            error = np.hypot(*(_lens_project(fitted, mm) - pixels).T)
+            # A lens that does not fit the grid is not used
+            if np.isfinite(error).all() and float(np.median(error)) < 0.02 * calibration.src_w:
+                self._lens = fitted
+                self._bounds = bounds
 
     def _terms(self, u_mm: float, v_mm: float) -> list[float]:
         s = (u_mm - self.width_mm / 2) / (self.width_mm / 2)
@@ -139,6 +471,11 @@ class _SurfaceMap:
         return [1.0, s, t, s * s, s * t, t * t, s ** 3, s * s * t, s * t * t, t ** 3]
 
     def _fitted(self, u_mm: float, v_mm: float) -> tuple[float, float]:
+        if self._lens is not None:
+            import numpy as np
+
+            x, y = _lens_project(self._lens, np.array([[u_mm, v_mm]]))[0]
+            return float(x), float(y)
         terms = self._terms(u_mm, v_mm)
         return (
             sum(c * k for c, k in zip(self._fit_x, terms)),
@@ -162,8 +499,9 @@ class _SurfaceMap:
 
     def photo_point(self, u_mm: float, v_mm: float) -> tuple[float, float]:
         """Raw-photo pixel (at the calibration's photo size) of a point."""
-        edge_u = min(max(u_mm, 0.0), self.width_mm)
-        edge_v = min(max(v_mm, 0.0), self.height_mm)
+        u_min, u_max, v_min, v_max = self._bounds
+        edge_u = min(max(u_mm, u_min), u_max)
+        edge_v = min(max(v_mm, v_min), v_max)
         x, y = self._grid(edge_u, edge_v)
         if (edge_u, edge_v) != (u_mm, v_mm):
             far_x, far_y = self._fitted(u_mm, v_mm)
@@ -172,24 +510,64 @@ class _SurfaceMap:
             y += far_y - near_y
         return x, y
 
+    def photo_points(self, points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """``photo_point`` of many points; the lens is evaluated in one go."""
+        if self._lens is None:
+            return [self.photo_point(u, v) for u, v in points]
+        import numpy as np
+
+        result: list[tuple[float, float]] = []
+        outside: list[int] = []
+        far: list[tuple[float, float]] = []
+        near: list[tuple[float, float]] = []
+        u_min, u_max, v_min, v_max = self._bounds
+        for u_mm, v_mm in points:
+            edge_u = min(max(u_mm, u_min), u_max)
+            edge_v = min(max(v_mm, v_min), v_max)
+            result.append(self._grid(edge_u, edge_v))
+            if (edge_u, edge_v) != (u_mm, v_mm):
+                outside.append(len(result) - 1)
+                far.append((u_mm, v_mm))
+                near.append((edge_u, edge_v))
+        if outside:
+            shift = _lens_project(self._lens, np.array(far)) - _lens_project(self._lens, np.array(near))
+            for index, (dx, dy) in zip(outside, shift):
+                x, y = result[index]
+                result[index] = (x + float(dx), y + float(dy))
+        return result
+
     def _in_photo(self, u_mm: float, v_mm: float) -> bool:
         x, y = self.photo_point(u_mm, v_mm)
         return 0 <= x <= self.cal.src_w and 0 <= y <= self.cal.src_h
 
     def _reach(self, fixed: float, start: float, step: float, across: bool) -> float:
-        """How far (whole mm) from ``start`` the photo goes one way."""
-        distance = 0
-        while distance < 1000:
-            nxt = start + (distance + 1) * step
-            point = (nxt, fixed) if across else (fixed, nxt)
-            if not self._in_photo(*point):
-                break
-            distance += 1
-        return float(distance)
+        """How far (whole mm, up to 1000) from ``start`` the photo goes one
+        way: a binary search, as the photo has no holes along a line."""
+
+        def inside(distance: int) -> bool:
+            nxt = start + distance * step
+            return self._in_photo(*((nxt, fixed) if across else (fixed, nxt)))
+
+        low, high = 0, 1000  # inside(low) holds; past high is not searched
+        if inside(high):
+            return float(high)
+        while high - low > 1:
+            middle = (low + high) // 2
+            if inside(middle):
+                low = middle
+            else:
+                high = middle
+        return float(low)
 
     def photo_size_mm(self) -> tuple[float, float]:
         """The widest area, centred on the calibrated area, that the photo
         fills: across every grid row, and down every grid column."""
+        size = getattr(self, "_photo_size", None)
+        if size is None:
+            size = self._photo_size = self._measure_photo_size()
+        return size
+
+    def _measure_photo_size(self) -> tuple[float, float]:
         cx = self.width_mm / 2
         cy = self.height_mm / 2
         half_w = min(
@@ -227,35 +605,46 @@ def _least_squares(rows: list[list[float]], values: list[float]) -> list[float]:
 
 
 @lru_cache(maxsize=4)
-def _surface_map(calibration: CameraCalibration) -> _SurfaceMap:
-    return _SurfaceMap(calibration)
+def _surface_map(
+    calibration: CameraCalibration, lens: tuple[float, ...] | None = None,
+) -> _SurfaceMap:
+    return _SurfaceMap(calibration, lens)
 
 
-def photo_size_mm(calibration: CameraCalibration) -> tuple[float, float]:
+def photo_size_mm(
+    calibration: CameraCalibration, lens: tuple[float, ...] | None = None,
+) -> tuple[float, float]:
     """The widest area the photo fills, in whole mm (a crop side of 0).
 
     Centred on the calibrated area, so no part of it is outside the
     photo across the calibrated rows (width) and columns (height).
     """
-    return _surface_map(calibration).photo_size_mm()
+    return _surface_map(calibration, lens).photo_size_mm()
 
 
 def correct_image(
     jpeg: bytes,
     calibration: CameraCalibration,
     view: CameraView | None = None,
+    lift: SurfaceLift | None = None,
+    overlay: Overlay | None = None,
+    lens: tuple[float, ...] | None = None,
 ) -> bytes:
     """Return the photo straightened onto the chosen area, as JPEG.
 
     Inside the calibrated area each grid cell is mapped exactly; outside
-    it the nearest cell is extended, which is less accurate. Runs in an
+    it the nearest cell is extended, which is less accurate. With a
+    ``lift`` the picture shows that surface to scale instead of the
+    calibrated plane. An ``overlay`` is drawn on the result. A ``lens``
+    guess continues the picture beyond the grid as the camera sees it
+    (see ``_SurfaceMap``). Runs in an
     executor: decoding and mapping take tens of milliseconds.
     """
     from PIL import Image  # Home Assistant ships Pillow
 
     view = view or CameraView()
     if view.width_mm <= 0 or view.height_mm <= 0:
-        photo_w, photo_h = photo_size_mm(calibration)
+        photo_w, photo_h = photo_size_mm(calibration, lens)
         view = CameraView(
             view.width_mm if view.width_mm > 0 else photo_w,
             view.height_mm if view.height_mm > 0 else photo_h,
@@ -272,24 +661,19 @@ def correct_image(
     cells_x = calibration.grid_w - 1
     cells_y = calibration.grid_h - 1
     # Millimetres per grid cell across and down.
-    cell_mm_x = CALIBRATED_AREA_MM / cells_x
-    cell_mm_y = CALIBRATED_AREA_MM * calibration.dst_h / calibration.dst_w / cells_y
-    area_h_mm = cell_mm_y * cells_y
+    cell_mm_x, cell_mm_y = calibration.cell_mm
+    # The view is centred on the straightened image's area
+    area_h_mm = calibration.area_h_mm
 
     px_per_mm = min(
         PIXELS_PER_MM, MAX_OUTPUT_SIDE / max(view.width_mm, view.height_mm),
     )
     width = max(1, round(view.width_mm * px_per_mm))
     height = max(1, round(view.height_mm * px_per_mm))
-    left_mm = CALIBRATED_AREA_MM / 2 + view.center_x_mm - view.width_mm / 2
+    left_mm = calibration.area_mm / 2 + view.center_x_mm - view.width_mm / 2
     top_mm = area_h_mm / 2 + view.center_y_mm - view.height_mm / 2
 
-    surface = _surface_map(calibration)
-
-    def src(x_mm: float, y_mm: float) -> tuple[float, float]:
-        """Photo pixel of a work-surface point."""
-        x, y = surface.photo_point(x_mm, y_mm)
-        return x * scale_x, y * scale_y
+    surface = _surface_map(calibration, lens)
 
     # Mesh boxes of about one grid cell, aligned with the grid.
     def edges(start_mm: float, size_mm: float, cell_mm: float, pixels: int) -> list[tuple[float, int]]:
@@ -303,20 +687,31 @@ def correct_image(
 
     xs = edges(left_mm, view.width_mm, cell_mm_x, width)
     ys = edges(top_mm, view.height_mm, cell_mm_y, height)
+    # Photo pixel of each mesh corner, each worked out once
+    corners = [
+        lift.seen_at(x_mm, y_mm) if lift is not None else (x_mm, y_mm)
+        for y_mm, _ in ys
+        for x_mm, _ in xs
+    ]
+    photo = [(x * scale_x, y * scale_y) for x, y in surface.photo_points(corners)]
+
+    def src(col: int, row: int) -> tuple[float, float]:
+        return photo[row * len(xs) + col]
+
     mesh = []
-    for (y0_mm, y0), (y1_mm, y1) in zip(ys, ys[1:]):
+    for row, ((_, y0), (_, y1)) in enumerate(zip(ys, ys[1:])):
         if y1 <= y0:
             continue
-        for (x0_mm, x0), (x1_mm, x1) in zip(xs, xs[1:]):
+        for col, ((_, x0), (_, x1)) in enumerate(zip(xs, xs[1:])):
             if x1 <= x0:
                 continue
             # Pillow's quad order: upper left, lower left, lower
             # right, upper right.
             quad = (
-                *src(x0_mm, y0_mm),
-                *src(x0_mm, y1_mm),
-                *src(x1_mm, y1_mm),
-                *src(x1_mm, y0_mm),
+                *src(col, row),
+                *src(col, row + 1),
+                *src(col + 1, row + 1),
+                *src(col + 1, row),
             )
             mesh.append(((x0, y0, x1, y1), quad))
     result = image.transform(
@@ -325,6 +720,8 @@ def correct_image(
         mesh,
         Image.Resampling.BILINEAR,
     )
+    if overlay is not None:
+        _draw_overlay(result, overlay, left_mm, top_mm, width / view.width_mm)
     out = io.BytesIO()
     result.save(out, "JPEG", quality=JPEG_QUALITY)
     return out.getvalue()

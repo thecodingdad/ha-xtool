@@ -19,6 +19,7 @@ CONF_POWER_SWITCH = "power_switch_entity_id"
 CONF_ENABLE_UPDATES = "enable_firmware_updates"
 
 # --- Polling intervals (overridable in the options flow) --------------------
+CONF_OVERLAY_COLORS = "overlay_colors"  # P2 camera overlay colours (RGB)
 CONF_SCAN_INTERVAL = "scan_interval"  # main poll cadence (seconds)
 CONF_FIRMWARE_CHECK_INTERVAL = "firmware_check_interval"  # cloud check (hours)
 CONF_STATS_POLL_INTERVAL = "stats_poll_interval"  # S1 M2008 (seconds)

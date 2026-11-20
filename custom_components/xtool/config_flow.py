@@ -15,7 +15,10 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.selector import (
+    ColorRGBSelector,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
@@ -26,6 +29,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_DONGLE_POLL_INTERVAL,
     CONF_ENABLE_UPDATES,
+    CONF_OVERLAY_COLORS,
     CONF_FIRMWARE_CHECK_INTERVAL,
     CONF_POWER_SWITCH,
     CONF_SCAN_INTERVAL,
@@ -88,7 +92,60 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         self, discovery_info: Any
     ) -> ConfigFlowResult:
         """Handle DHCP discovery of an xTool device."""
+        entry = self._entry_with_mac(discovery_info.macaddress)
+        if entry is not None:
+            return await self._async_follow_address(entry, discovery_info.ip)
         return await self._async_handle_discovery(discovery_info.ip)
+
+    @callback
+    def _entry_with_mac(self, mac: str) -> ConfigEntry | None:
+        """The laser already set up whose device has this MAC address."""
+        connection = (dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))
+        dev_reg = dr.async_get(self.hass)
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.unique_id and any(
+                connection in device.connections
+                for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+            ):
+                return entry
+        return None
+
+    async def async_step_integration_discovery(
+        self, discovery_info: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """The integration found a configured laser at an address.
+
+        Sent by the coordinator (``async_found_at``) after the laser
+        answered there with its serial number.
+        """
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(
+            DOMAIN, discovery_info["serial_number"],
+        )
+        if entry is None:
+            return self.async_abort(reason="already_configured")
+        return await self._async_follow_address(entry, discovery_info[CONF_HOST])
+
+    async def _async_follow_address(self, entry: ConfigEntry, host: str) -> ConfigFlowResult:
+        """A configured laser was seen at ``host``.
+
+        The address in use is kept while it answers, unless the new one is
+        the laser's preferred one (its Ethernet). Otherwise the entry gets
+        the new address, which the update listener uses without a reload.
+        A DHCP sighting is not asked first: the MAC address says which laser
+        it is, and the laser asks for its address before it answers.
+        """
+        await self.async_set_unique_id(entry.unique_id)
+        current = entry.data.get(CONF_HOST)
+        if host != current:
+            coordinator = getattr(entry, "runtime_data", None)
+            prefers = getattr(coordinator, "prefers_host", None)
+            if not (prefers is not None and prefers(host)) and await self._configured_host_answers(
+                entry.unique_id, host,
+            ):
+                return self.async_abort(reason="already_configured")
+        # The update listener moves the running laser to the new address
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host}, reload_on_update=False)
+        return self.async_abort(reason="already_configured")
 
     async def async_step_discovery(
         self, discovery_info: dict[str, Any]
@@ -111,14 +168,28 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason=conn_info or "cannot_connect")
 
         if conn_info.serial_number:
+            entry = self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, conn_info.serial_number,
+            )
+            if entry is not None:
+                return await self._async_follow_address(entry, host)
             await self.async_set_unique_id(conn_info.serial_number)
-            self._abort_if_unique_id_configured(updates={CONF_HOST: host})
 
         self._discovered_host = host
         self._discovered_name = conn_info.name or name
 
         self.context["title_placeholders"] = {"name": self._discovered_name}
         return await self.async_step_discovery_confirm()
+
+    async def _configured_host_answers(self, serial: str, host: str) -> bool:
+        """True when this laser's entry has another address that still answers."""
+        for entry in self._async_current_entries(include_ignore=False):
+            current = entry.data.get(CONF_HOST)
+            if entry.unique_id != serial or not current or current == host:
+                continue
+            info = await validate_connection(current)
+            return isinstance(info, ConnectionInfo) and info.serial_number == serial
+        return False
 
     async def async_step_discovery_confirm(
         self, user_input: dict[str, Any] | None = None
@@ -406,6 +477,19 @@ class XtoolOptionsFlow(OptionsFlow):
                     unit_of_measurement="s",
                     mode=NumberSelectorMode.BOX,
                 )
+            )
+
+        # P2: the camera overlays' colours, in a section that opens
+        if "overview" in (getattr(model, "camera_names", ()) or ()):
+            from .protocols.rest.p2_geometry import OVERLAY_COLORS
+
+            chosen = current_options.get(CONF_OVERLAY_COLORS) or {}
+            schema_dict[vol.Required(CONF_OVERLAY_COLORS)] = section(
+                vol.Schema({
+                    vol.Optional(key, default=list(chosen.get(key, default))): ColorRGBSelector()
+                    for key, default in OVERLAY_COLORS.items()
+                }),
+                {"collapsed": True},
             )
 
         return self.async_show_form(

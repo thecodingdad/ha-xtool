@@ -64,6 +64,8 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
         connections: set[tuple[str, str]] = set()
         if self.coordinator.mac_address:
             connections.add((CONNECTION_NETWORK_MAC, self.coordinator.mac_address))
+        for mac in self.coordinator.other_mac_addresses:
+            connections.add((CONNECTION_NETWORK_MAC, mac))
         return DeviceInfo(
             identifiers={(DOMAIN, self.coordinator.serial_number)},
             connections=connections,
@@ -76,7 +78,7 @@ class XtoolEntity(CoordinatorEntity[XtoolCoordinator]):
             model_id=(
                 f"{self.coordinator.sku[:11]} (EU)" if self.coordinator.eu_unit
                 else self.coordinator.sku[:11]
-            ) or None,
+            ) or self.coordinator.model_variant or None,
             serial_number=self.coordinator.serial_number,
             sw_version=self.coordinator.firmware_version,
             hw_version=self.coordinator._hardware_version or None,
