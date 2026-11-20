@@ -25,3 +25,4 @@ Thumbs.db
 
 # Tests
 .pytest_cache/
+.venv/
