@@ -376,6 +376,45 @@
           },
           "firmware": {
             "name": "Firmware"
+          },
+          "clean_water": {
+            "name": "Reinigungsflüssigkeit"
+          },
+          "cpu_temp": {
+            "name": "CPU-Temperatur"
+          },
+          "film_buffer_ready": {
+            "name": "Filmpuffer bereit"
+          },
+          "film_position_ready": {
+            "name": "Filmposition bereit"
+          },
+          "heater_connected": {
+            "name": "Heizung verbunden"
+          },
+          "heating_status": {
+            "name": "Heizstatus"
+          },
+          "ink_black": {
+            "name": "Tinte Schwarz"
+          },
+          "ink_cyan": {
+            "name": "Tinte Cyan"
+          },
+          "ink_magenta": {
+            "name": "Tinte Magenta"
+          },
+          "ink_white": {
+            "name": "Tinte Weiß"
+          },
+          "ink_yellow": {
+            "name": "Tinte Gelb"
+          },
+          "powder_loop_running": {
+            "name": "Pulverkreislauf läuft"
+          },
+          "waste_water": {
+            "name": "Abfallflüssigkeit"
           }
         }
       },
@@ -607,6 +646,33 @@
       },
       "measured_thickness_or_distance": {
         "name": "Gemessene Stärke oder Distanz"
+      },
+      "clean_water": {
+        "name": "Reinigungsflüssigkeit"
+      },
+      "cpu_temp": {
+        "name": "CPU-Temperatur"
+      },
+      "heating_status": {
+        "name": "Heizstatus"
+      },
+      "ink_black": {
+        "name": "Tinte Schwarz"
+      },
+      "ink_cyan": {
+        "name": "Tinte Cyan"
+      },
+      "ink_magenta": {
+        "name": "Tinte Magenta"
+      },
+      "ink_white": {
+        "name": "Tinte Weiß"
+      },
+      "ink_yellow": {
+        "name": "Tinte Gelb"
+      },
+      "waste_water": {
+        "name": "Abfallflüssigkeit"
       }
     },
     "binary_sensor": {
@@ -709,6 +775,18 @@
           "on": "Eingesetzt",
           "off": "Entfernt"
         }
+      },
+      "film_buffer_ready": {
+        "name": "Filmpuffer bereit"
+      },
+      "film_position_ready": {
+        "name": "Filmposition bereit"
+      },
+      "heater_connected": {
+        "name": "Heizung verbunden"
+      },
+      "powder_loop_running": {
+        "name": "Pulverkreislauf läuft"
       }
     },
     "camera": {
@@ -888,6 +966,9 @@
       },
       "overlay_red_dot_quick": {
         "name": "Overlay roter Punkt schnell"
+      },
+      "md_mode": {
+        "name": "Zugangskontrolle"
       }
     },
     "number": {
