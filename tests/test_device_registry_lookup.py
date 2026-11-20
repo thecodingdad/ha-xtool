@@ -17,7 +17,9 @@ from .common import COMPONENT
 DOMAIN = "xtool"
 
 
-@pytest.mark.parametrize("path", ["coordinator.py", "__init__.py"])
+@pytest.mark.parametrize(
+    "path", sorted(str(p.relative_to(COMPONENT)) for p in COMPONENT.rglob("*.py")),
+)
 def test_no_deprecated_lookups(path: str) -> None:
     text = (COMPONENT / path).read_text(encoding="utf-8")
     assert "devices.values()" not in text
