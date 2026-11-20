@@ -1508,7 +1508,8 @@ class WSV2FillLight(_WSV2FillLightBase):
     fill-light channel (or where surfacing two entities would be UX
     noise). Writes both ``fillLightBrightFront`` and
     ``fillLightBrightBack`` to the same value, mirroring Studio's
-    single-slider UX.
+    single-slider UX, or ``set_fill_light_bri`` on models that keep one
+    ``fillLightBrightness``.
     """
 
     _attr_translation_key = "fill_light"
@@ -1525,8 +1526,12 @@ class WSV2FillLight(_WSV2FillLightBase):
         self._set_unique_id("fill_light")
 
     async def _write_both(self, device_value: int) -> None:
-        await self.coordinator.protocol.set_config("fillLightBrightFront", device_value)
-        await self.coordinator.protocol.set_config("fillLightBrightBack", device_value)
+        protocol = self.coordinator.protocol
+        if self.coordinator.model.has_fill_light_bri:
+            await protocol.set_fill_light_bri(device_value)
+            return
+        await protocol.set_config("fillLightBrightFront", device_value)
+        await protocol.set_config("fillLightBrightBack", device_value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         device_value = self._turn_on_value(kwargs)

@@ -138,6 +138,10 @@ class XtoolDeviceModel:
     has_wrong_machine_info_mac: bool = False
     has_fill_light: bool = False
     has_fill_light_dual: bool = False  # F-family V2: separate Front + Back channels
+    # One fill light kept in the ``fillLightBrightness`` config and lit
+    # with ``set_bri`` on the ``fill_light`` peripheral, as Studio's
+    # F1 Ultra bundles do; the firmware rejects ``fillLightBrightFront``.
+    has_fill_light_bri: bool = False
     # Some V2 firmwares only drive the fill-light LED array above a
     # PWM floor (~20/255) — Studio applies a matching offset transform
     # (bundle helper ``Q7``: ``(device-20)*99/235+1`` on read,

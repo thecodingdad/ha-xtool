@@ -1603,7 +1603,7 @@ device model exposes the peripheral):
 | `laser_head` | Laser-head position X/Y/Z. **Requires `data:{action:"get_coord"}`** — plain GET returns `code 1: failed`. |
 | `ir_measure_distance` | Last distance reading. |
 | `digital_screen` | Display brightness. |
-| `fill_light` | Fill-light brightness (A/B channels, 0-255 native scale — V2 firmware does *not* normalise to 0-100). |
+| `fill_light` | Fill-light brightness (A/B channels, 0-255 native scale — V2 firmware does *not* normalise to 0-100). F1 Ultra firmware 40.52.018 reads `[{idx: 1, value}]` and is set with `PUT {action:"set_bri", idx:0, value}` (`idx` 0, though the read reports 1); Studio's F1 Ultra and F1 Ultra V2 bundles keep the brightness in the `fillLightBrightness` config and send `set_bri` with it. That firmware answers a config write of `fillLightBrightFront` with `code 1: failed`. |
 | `ir_led` | IR-LED state. **Requires `data:{index:"global"}`** to read — plain GET returns `code 1: failed`. |
 | `ext_purifier` | External-purifier speed + on/off. |
 

@@ -2195,6 +2195,7 @@ class WSV2Protocol(XtoolProtocol):
                 for src, dst in _config_keys:
                     if src in info:
                         self._latest[dst] = info[src]
+                self._latch_fill_light_brightness(info)
                 # ``workingMode`` is an enum string on F-series V2
                 # firmware. **Polarity confirmed inverted via Issue #4
                 # v2.5.4 retest**: ``NORMAL`` = Stops-when-moved on,
@@ -2500,7 +2501,10 @@ class WSV2Protocol(XtoolProtocol):
         """
         if self.PATH_CONFIGS_GET in self._unsupported_endpoints:
             return
-        key_list = {"alias": "config", "type": "user", "kv": list(CONFIG_READ_KEYS)}
+        keys = list(CONFIG_READ_KEYS)
+        if self._has_fill_light_bri():
+            keys.append("fillLightBrightness")
+        key_list = {"alias": "config", "type": "user", "kv": keys}
         bodies = [self._config_read_body] if self._config_read_known else [key_list, None]
         for body in bodies:
             try:
@@ -3086,6 +3090,22 @@ class WSV2Protocol(XtoolProtocol):
                 ptype, p,
             )
 
+    def _has_fill_light_bri(self) -> bool:
+        return self._model is not None and self._model.has_fill_light_bri
+
+    def _latch_fill_light_brightness(self, kv: dict[str, Any]) -> None:
+        if self._has_fill_light_bri() and "fillLightBrightness" in kv:
+            self._latest["fill_light_a"] = kv["fillLightBrightness"]
+
+    async def set_fill_light_bri(self, value: int) -> None:
+        """Set the one fill light as Studio's F1 Ultra bundles do.
+
+        The config keeps the value; ``set_bri`` lights the LEDs (channel
+        0, though the peripheral read reports the channel as 1).
+        """
+        await self.set_config("fillLightBrightness", value)
+        await self.set_peripheral("fill_light", "set_bri", idx=0, value=value)
+
     def _apply_configs(self, cfg: dict[str, Any]) -> None:
         """Latch `/v1/device/configs` GET response keys into `_latest`.
 
@@ -3131,6 +3151,7 @@ class WSV2Protocol(XtoolProtocol):
         for src, dst in _config_keys:
             if src in kv:
                 self._latest[dst] = kv[src]
+        self._latch_fill_light_brightness(kv)
         # ``workingMode`` enum → ``stops_when_moved`` bool mirror.
         # Polarity: ``NORMAL`` = stationary / enforcement on,
         # ``HANDLE`` = handheld override / enforcement off. The same as

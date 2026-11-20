@@ -66,6 +66,7 @@ XTOOL_F1_ULTRA_WSV2 = XtoolDeviceModel(
     has_camera_exposure=True,
     has_fill_light=True,
     fill_light_device_min=20,  # Studio F1Ultra bundle Q7 transform
+    has_fill_light_bri=True,
     has_fire_record=True,
     has_cover_sensor=True,  # gap peripheral works → cover entity
     # Statistics endpoint returns session counts only (no time-based
@@ -104,6 +105,7 @@ XTOOL_F1_ULTRA_V2_WSV2 = XtoolDeviceModel(
     has_camera_exposure=True,
     has_fill_light=True,
     fill_light_device_min=20,  # Studio GS003 bundle Q7 transform
+    has_fill_light_bri=True,
     has_fire_record=True,
     has_laser_head_position=True,
     has_cover_sensor=True,
