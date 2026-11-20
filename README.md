@@ -1,52 +1,40 @@
 # xTool
 
-Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P-family, MetalFab, Apparel Printer, O1 Omni, Retail Marker, …).
-
-This integration communicates directly with your xTool device over the local network using the reverse-engineered WebSocket and REST protocols. No cloud connection required.
+Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P family, MetalFab, Apparel Printer, O1 Omni, Retail Marker, …). It talks to the device on your local network; no cloud and no xTool account are needed.
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/thecodingdad/ha-xtool)](https://github.com/thecodingdad/ha-xtool/releases)
 
-> [!IMPORTANT] 
+> [!IMPORTANT]
 > **This is an independent community project and is not affiliated with or endorsed by xTool. The integration is provided as-is, without any warranty.** Operating a laser cutter, engraver or fiber-laser welder through Home Assistant carries real-world safety risks (fire, blindness, burns, electrical hazards) — automated control over a high-power laser is *your* responsibility. Use at your own risk; see the full [Disclaimer](#disclaimer) for details.
 
 > [!NOTE]
-> **The integration was developed and tested with an xTool S1.** Other protocols/models are supported based on reverse-engineering, but have not been tested with real hardware. Community feedback is welcome!
+> **Developed with an xTool S1.** The other models follow what xTool Studio does with them. Several have been tested by users on their own lasers, others not yet: feedback and debug logs are welcome.
 
 ## Features
 
-- Full local control — no cloud, no xTool account required
-- Monitor device status (idle, processing, paused, finished, error, ...)
-- Control light brightness, buzzer, exhaust + cooling fans, safety toggles
-- Job control buttons (pause, resume, cancel, ...)
-- Monitor various sensors (laser position, gyro/accelerometer, ...)
-- Lifetime statistics (working time, session count, standby time, laser module runtime)
-- Attached BT accessories as child devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, ...)
-- Camera support for P2 / P2S / F1 Ultra family / F2 family / P3 / MetalFab / M2 (overview + close camera, main + deep, or far + near + side depending on model, plus flame record on flame-detection-capable models).
-- Firmware update entity — checks the xTool cloud for new firmware, including changelog (install off by default, opt-in with confirmation)
-- Optional power switch linking (smart plug control)
-- Automatic reconnect on network interruption
-- Multi-model support with auto-detected protocol
+- Device status, job control (pause, resume, cancel, homing) and job, error and fire events for automations
+- Fill lights, buzzer, fans, safety settings, cameras and sensors (position, temperatures, lifetime statistics, …)
+- Bluetooth accessories as their own devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …)
+- Firmware update entity with the release notes from xTool's cloud (installing is opt-in)
+- Optional power switch (smart plug) with automatic power-off
+- Model and firmware detected automatically; follows the laser when its address changes
 
 ## Prerequisites
 
 - Home Assistant 2025.10.0 or newer
-- xTool device on the same local network, connected via WiFi
+- xTool device on the same local network
 
 ## Supported Devices
 
-The integration supports four protocol families that cover all current xTool models:
+| Family | Models |
+|--------|--------|
+| S1 | S1 |
+| D series | D1, D1 Pro, D1 Pro 2.0 |
+| V1 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) |
+| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1, M1 Ultra, M2 (JS002), P2, P2S, P3, MetalFab, Apparel Printer, O1 Omni (DT002) |
 
-| Protocol | Models | Communication |
-|----------|--------|---------------|
-| WebSocket M-code | S1 | bidirectional WS (port 8081) + HTTP fallback (port 8080) |
-| HTTP REST + status push WS | D1, D1 Pro, D1 Pro 2.0 | HTTP `/cmd` writes (port 8080) + read-only WS status push (port 8081) |
-| REST API (V1 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) | HTTP REST (ports 8080 main / 8087 firmware / 8329 camera) |
-| WS-V2 (V2 firmware) | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1, M1 Ultra, M2 (JS002), P2, P2S, P3, MetalFab, Apparel Printer, O1 Omni (DT002) | TLS WebSocket (port 28900) — three concurrent channels: instruction (JSON request/response + push events), file_stream (binary uploads), media_stream (camera frames) |
-
-V1/V2 selection is automatic. UDP discovery tags each device as V1 or V2 (legacy plain probe vs. encrypted multicast).
-
-O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check. Job control, settings and the Pixel-Scan image are not exposed yet.
+Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
 
 ## Installation
 
@@ -73,169 +61,107 @@ Or add manually:
 
 1. Go to **Settings** > **Devices & Services** > **Add Integration**
 2. Search for **xTool**
-3. The integration scans your network for xTool devices via UDP broadcast
-4. Select a discovered device from the list, or choose **Enter IP address manually**
-5. Confirm to add the device
+3. Select a discovered device, or choose **Enter IP address manually**
+4. When the model cannot be detected, pick it from the list
 
-**When the laser's address changes.** When a laser that is already set up asks your router for an address (DHCP), Home Assistant sees it and the integration moves to the new address, also while the laser is still starting. The address in use is kept while it answers, except that a P2 moves to its Ethernet address when it has one. When a laser that is turned on stops answering, the integration looks for it with xTool's own discovery, as xTool Studio does, and moves to the address where it answers with its serial number. This finds a laser at any address, also when Home Assistant did not see it ask for one.
+**Address changes.** The integration follows a laser to a new address: when Home Assistant sees it ask the router for one (DHCP), or, when a laser that is on stops answering, by searching for its serial number as xTool Studio does. A P2 uses its Ethernet address when it has one.
 
 ### Pairing (newer V2 firmware)
 
-Some V2 firmware (first seen on the M2 with `40.141.012.01.ht05`) only accepts paired clients. When the device asks for it, setup shows a pairing step: click **Submit**, then press the button on the device to confirm. The device hands out a token that the integration stores and presents on every later connection.
-
-If the device rejects the stored token later (e.g. after a reset), Home Assistant shows **Re-authentication required** for the integration. Open it and press the button on the device again. Your device, entities and history stay as they are.
-
-To change the IP address or pair again at any time, use **Reconfigure** on the integration entry.
+Some V2 firmware (first seen on the M2 with `40.141.012.01.ht05`) only accepts paired clients. Setup then shows a pairing step: click **Submit**, then press the button on the device. If the device later rejects the pairing (e.g. after a reset), Home Assistant asks for **re-authentication**; press the button again. Your device, entities and history stay as they are. **Reconfigure** on the integration entry changes the IP address or pairs again.
 
 ### Options
 
-After adding a device, you can configure it under **Settings** > **Devices & Services** > **xTool** > **Configure**:
-
-The available options are gated by the device's protocol family — only relevant fields appear.
+**Settings** > **Devices & Services** > **xTool** > **Configure**. Only the options that apply to the model are shown.
 
 | Option | Description |
 |--------|-------------|
-| Power switch | Link an existing switch entity (e.g. a smart plug) that controls the laser's power supply. When the switch is off the status sensor reports "Off" and **control entities** (buttons, switches, numbers, cameras) become unavailable. Sensors and binary sensors become unavailable too, like whenever the laser cannot be reached; only the lifetime totals (Working time, Operating times, Standby time, Tool runtime) keep their last value. After the switch turns on, the status sensor reports "Initializing" until the laser answers (at most 3 minutes). While the switch is on and the laser does not answer after that, the status sensor reports "Not responding" instead of "Off". |
-| Polling interval | Main coordinator polling cadence in seconds (default 5). Lower = more responsive, higher network usage. |
-| Enable firmware updates | _(only when the model has a known firmware ID)._ Off by default — the firmware update entity only reports whether an update is available. Enabling this option arms the install action. |
-| Firmware-update check interval | _(only when firmware updates are supported.)_ How often the cloud is polled for new firmware (default 6 h). |
-| AP2 air cleaner | **S1 only.** Opt-in toggle that adds the AP2 air-cleaner sensors (running / connected / speed / filter remaining / dust sensors) and starts polling the air-cleaner push frame. Leave off if you do not own an AP2. |
-| AP2 air-cleaner polling interval | **S1 only.** How often the AP2 push frame is queried (default 30 s). |
-| Lifetime-stats polling interval | **S1 only.** How often `M2008` is polled for working time / session count / standby / runtime (default 300 s). |
-| Accessory polling interval | **S1 only.** How often the accessory subsystem is refreshed (`M1098` slot-array walk for USB accessories like Air Pump and Fire Extinguisher. Default 60 s. |
+| Power switch | A switch (e.g. a smart plug) that powers the laser. While it is off, Status shows "Off" and the other entities are unavailable; only the lifetime totals keep their value. After it turns on, Status shows "Initializing" until the laser answers (at most 3 minutes), then "Not responding" while the laser does not answer |
+| Polling interval | How often the laser is read, in seconds (default 5) |
+| Enable firmware updates | Off by default: the update entity only reports new firmware. On: it can install it |
+| Firmware-update check interval | How often xTool's cloud is asked for new firmware (default 6 h) |
+| Overlay colors | **P2.** The colors of the camera overlays |
+| AP2 air cleaner | **S1.** Adds the AP2 air-cleaner entities. Leave off without an AP2 |
+| AP2 air-cleaner polling interval | **S1.** Default 30 s |
+| Lifetime-stats polling interval | **S1.** Working time, session count, standby time, tool runtime. Default 300 s |
+| Accessory polling interval | **S1.** Wired accessories such as the Air Pump and Fire Extinguisher. Default 60 s |
 
 ## Entities
 
-> **Note:** Not every entity is available on every model. The integration auto-detects the device model and connected accessories and only creates entities for supported features. The tables below are a reference for what each entity does — if an entity is missing, your model simply does not expose that feature.
+Only the entities the model and its connected accessories support are created.
+
+**Entity IDs** have the form `<platform>.xtool_<model>_<serial>_<key>` (for example `sensor.xtool_s1_mxdk101001241104ebb4cc3_status`), whatever language Home Assistant uses. Entities created by an earlier version keep their entity IDs.
 
 ### Sensor
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available — shows "Off" when the device is unreachable, or "Not responding" when a Power switch is linked and on. **F2 Ultra UV** also shows, as Studio does: Focusing (autofocus), Warming up (the UV laser is not ready yet) and Laser overheat |
-| Task ID | Active or last loaded job ID. Stays at the last value while idle (no reset on job end) |
-| Task time | Job elapsed time (seconds). On V2 firmware only emitted at end of job via `/work/result WORK_FINISHED` push — no live update during a job |
-| Last job time | Last completed job duration. **F2 Ultra UV:** from the laser's job result, after each job; kept across Home Assistant restarts |
-| Working mode | Current working mode (cut / engrave / knife / inkjet / …). REST V1 + D-series only — V2 firmware uses this field as a `HANDLE`/`NORMAL` enum surfaced through the *Stops when moved* switch instead |
-| Working time | Lifetime working hours |
-| Session count | Lifetime job-start count |
-| Standby time | Lifetime standby hours |
-| Tool runtime | Lifetime laser-module runtime |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available: "Off" when the laser cannot be reached, "Not responding" when a linked Power switch is on but the laser does not answer. **F2 Ultra UV** also: Focusing, Warming up, Laser overheat |
+| Task ID | Current or last job |
+| Task time | Elapsed time of the current or last job |
+| Last job time | Duration of the last finished job (**F2 Ultra UV**: kept across restarts) |
+| Working mode | Cut / engrave / knife / inkjet / … (V1 firmware, D series) |
+| Working time / Session count / Standby time / Tool runtime | Lifetime totals |
 | Laser position X / Y / Z | Laser-head position in mm |
-| Fire level | Current flame-detection level reported by device |
-| Air-Assist level | Current Air-Assist gear (0-4) |
-| Workhead | Detected workhead identity (laser / knife / inkjet / …) |
-| Workhead Z height | Workhead Z-height offset in mm |
-| Z-axis temperature | Z-axis NTC temperature |
-| Water temperature / Water flow rate | Water-cooling loop sensors |
-| Gyro X / Y / Z | 3-axis accelerometer |
-| Print tool type | Print-tool kind reported by device |
-| Hardware type | Hardware revision string |
-| AP2 filter (pre / medium / carbon / dense carbon / HEPA) | Remaining filter capacity (requires AP2 air cleaner) |
-| AP2 sensor D / AP2 sensor S | Particle sensors (requires AP2 air cleaner) |
-| Purifier speed (sensor) | Current AP2 speed reading (requires AP2 air cleaner) |
-| Ink level cyan / magenta / yellow / black | **M2 only.** Remaining ink volume per CMYK channel. Unit is best-effort PERCENTAGE until a real-hardware measurement confirms the firmware's scale. |
-| *&lt;cartridge&gt;* ink (e.g. UV Cyan ink, DTG White ink) | **O1 Omni only.** Remaining % per installed cartridge, one entity per slot (the set depends on the edition). Attributes: installed, low, remaining_ml, capacity_ml |
-| Moisturizing fluid 1 / 2 | **O1 Omni only.** Remaining % of each moisturizing-fluid tank |
-| Print head 1 / 2 temperature | **O1 Omni only.** Print-head temperature per ink path |
-| Ambient temperature / humidity | **Apparel Printer, O1 Omni.** Enclosure environment |
-| Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni only.** Active print job and queue length |
-| Active alarms | **O1 Omni only.** Number of active alarms; the `alarms` attribute lists code / level / message (codes match xTool Studio) |
-| UV lamp runtime / Air purifier runtime | **O1 Omni only.** Lifetime counters (diagnostic) |
-| Engraving lens | **F2 Ultra UV**: the fitted lens: Surface, Inner, or None (Studio's Surface engraving lens, Inner engraving lens, or no lens detected) |
+| Fire level | Flame-detection level |
+| Air-Assist level | Air-Assist gear (0-4) |
+| Workhead / Workhead Z height | Fitted workhead and its Z offset |
+| Z-axis temperature / Water temperature / Water flow rate / Gyro X / Y / Z | As reported by the laser |
+| Print tool type / Hardware type | As reported by the laser |
+| AP2 filters / AP2 sensor D / S / Purifier speed | AP2 air cleaner: filter remaining, particle sensors, speed |
+| Ink level cyan / magenta / yellow / black | **M2.** Remaining ink |
+| *&lt;cartridge&gt;* ink / Moisturizing fluid 1 / 2 | **O1 Omni.** Remaining % per cartridge and tank |
+| Print head 1 / 2 temperature / Job name / Job progress / Job time remaining / Queued jobs | **O1 Omni** |
+| Active alarms | **O1 Omni.** Number of alarms; the `alarms` attribute lists them as in xTool Studio |
+| UV lamp runtime / Air purifier runtime | **O1 Omni.** Lifetime totals |
+| Ambient temperature / humidity | **Apparel Printer, O1 Omni** |
+| Engraving lens | **F2 Ultra UV.** Surface, Inner or None |
 
-#### Diagnostic Sensors
-
-| Entity | Description |
-|---|---|
-| Wi-Fi signal | **F2 Ultra UV**: Wi-Fi signal strength in dBm |
-| Connection | **F2 Ultra UV**: how Home Assistant reaches the laser (Ethernet or Wi-Fi), from the laser's own interface list (the interface with the address in use). Diagnostic. No state while no interface has that address |
-| Calibration | **F2 Ultra UV**: when Studio last calibrated the camera. Attributes: the stored Z, focus and laser offsets (read only; the integration never changes them) |
-| IP address | Device IP address |
-| Laser power | Laser-module power in watts |
-| Laser module | Laser-module type (e.g. "Diode", "IR") |
-| SD card | SD-card inserted / not inserted |
-| Workspace size | Build dimensions (e.g. "498 × 330 × 58 mm") |
-| Active connections | Number of WebSocket clients currently connected to the laser (HA + XCS app + …). Useful to spot when the XCS app has kicked the integration |
-| Origin offset X / Y | Last set work-area origin offset |
-| Last distance | Last IR-distance measurement result |
-| Riser base | **S1 only.** Identifies which riser base is mounted (reads `M1098` slot, mapped through `RISER_BASE_NAMES`). |
-| Inkjet head serial / firmware / toner serial | **M2 only.** Inkjet-head identity blob from `/v1/project/inkjet/info`. |
+**Diagnostic:** IP address, Laser power, Laser module, SD card, Workspace size, Active connections (clients connected to the laser, such as XCS), Origin offset X / Y, Last distance (IR measurement), Riser base (**S1**), Inkjet head serial / firmware and toner serial (**M2**), and on the **F2 Ultra UV** Wi-Fi signal, Connection (Ethernet or Wi-Fi) and Calibration (when Studio last calibrated the camera; the stored offsets as attributes, never changed).
 
 ### Binary Sensor
 
 | Entity | Description |
 |---|---|
-| Cover | Cover / lid open detection |
-| Front door / Rear door | **O1 Omni only.** Door open detection |
-| Waste ink tank full / Waste ink tank installed | **O1 Omni only.** Waste-ink tank state |
-| Air filter installed | **O1 Omni only.** Air-filter presence (diagnostic) |
-| Drawer | Front-drawer position |
-| Safety key | USB safety-key presence (PLUG device class — `on` = plugged in / armed, `off` = unplugged / lockout). Sourced from `/peripheral/machine_lock` and the `/machine_lock/status` push |
-| Air-Assist running | Air is actually flowing (laser commanded `A=1` **and** `gear > 0`) |
-| Air-Assist connected | Air-Assist hardware is plugged into the laser (raw `A=1` flag from `M15`) |
-| Cooling fan | Cooling fan currently running |
-| Exhaust fan | Smoke-extraction fan currently running (not on the F2 Ultra UV) |
-| Exhaust fan installation | **F2 Ultra UV only.** OK, or Problem when the laser reports no exhaust fan installed (Studio warns "Exhaust fan installation abnormal" before a job) |
-| CPU fan | CPU cooling fan currently running |
-| UV fire sensor | UV-based flame-detector trip |
-| Water pump | Water-cooling pump running |
-| Water line | Water-cooling line OK |
-| Flame alarm enabled | Flame-alarm config flag |
-| Beep enabled | Beep config flag |
-| Gap check enabled | Cover-safety enforcement enabled |
-| Lock check enabled | Machine-lock safety enforcement enabled |
-| Alarm | Generic problem flag — on when device reports any active alarm |
-| XCS compatibility mode | On when the XCS desktop app holds the WebSocket and writes are routed via HTTP `/cmd` |
-| Inkjet head capped / Toner installed / Inkjet head calibrated | **M2 only.** Read-only inkjet-head status from `/v1/project/inkjet/{cap-status,ink-status,info}`. |
+| Cover / Drawer / Front door / Rear door | Open or closed (doors: **O1 Omni**) |
+| Safety key | The access-control key is plugged in |
+| Air-Assist running / connected | Air is flowing / the Air-Assist is plugged in |
+| Cooling fan / Exhaust fan / CPU fan / Water pump | Running |
+| Water line / UV fire sensor | Water flow OK / UV flame detector tripped |
+| Exhaust fan installation | **F2 Ultra UV.** Problem when the laser reports no exhaust fan (Studio warns before a job) |
+| Flame alarm / Beep / Gap check / Lock check enabled | The laser's settings |
+| Alarm | Any active alarm |
+| XCS compatibility mode | On while the XCS desktop app holds the laser's connection |
+| Waste ink tank full / installed, Air filter installed | **O1 Omni** |
+| Inkjet head capped / Toner installed / Inkjet head calibrated | **M2** |
 
-Connected BT accessories surface as their own **child devices** hanging off the laser (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) and carry their own sensor / binary-sensor / switch / number / select set — gear, running flag, filter wear, connection status, post-run timeout, buzzer toggle, and so on. See the laser device page under **Devices** to navigate into the linked accessories.
+Bluetooth accessories (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) are devices of their own, connected to the laser, with their own entities: gear, running, filter wear, connection, post-run time, buzzer and so on.
 
 #### SafetyPro IF2 2.0 fan
 
-The IF2 2.0 has one fan entity: Off and Manual speeds 1-4, plus the presets **Auto Regular** and **Auto Quiet**.
-
-In Auto, the IF2 spins only from the start of a job until the post-run time ("Exhaust time after processing") ends. The fan entity shows On at the reported speed during that time, and Off while Auto is idle, with the preset still shown.
-
-The Auto speed comes from the job itself. When xTool Studio processes a job and sends it to the laser, it writes the speed into the job: 3 for Auto Regular and 2 for Auto Quiet by default. Some processing modes may use a different speed. The IF2 reports only the speed, not the Auto preset. The fan entity therefore shows speeds 1-2 as Auto Quiet and 3-4 as Auto Regular.
-
-| IF2 setting when the job starts | Job sent with Auto Regular | Job sent with Auto Quiet |
-|---|---|---|
-| Auto Regular or Auto Quiet | Runs at speed 3, shown as Auto Regular | Runs at speed 2, shown as Auto Quiet |
-| Manual 1-4 | Keeps its Manual speed | Keeps its Manual speed |
-
-During a job you can:
-
-- choose Auto Regular (speed 3) or Auto Quiet (speed 2) to change the running speed;
-- turn the fan off or on, or set a speed, which switches the IF2 to Manual.
-
-Choosing a preset while no job is running only stores its speed; the next job replaces it with its own.
-
-The IF2 2.0 also has an **Alert** event entity. It fires **Fan stall** or **Cleaning needed** when the IF2 reports that alert (the same alerts Studio shows), so an automation can notify you. Alerts already present when Home Assistant starts are not fired again.
+One fan entity: Off, Manual speeds 1-4 and the presets **Auto Regular** and **Auto Quiet**. In Auto the IF2 runs from the start of a job until its post-run time ends, at the speed the job carries (Studio writes 3 for Auto Regular and 2 for Auto Quiet). The IF2 reports only the speed, so speeds 1-2 show as Auto Quiet and 3-4 as Auto Regular. During a job, a preset changes the speed; turning the fan on or off or setting a speed switches the IF2 to Manual. A preset chosen while no job runs only stores its speed. The **Alert** event entity fires **Fan stall** or **Cleaning needed** when the IF2 reports them.
 
 ### Switch
 
 | Entity | Description |
 |---|---|
-| Power | Linked smart plug (only when configured in integration options) |
-| Buzzer reminders / Beep | Audio feedback enable |
-| Move stop | Emergency-movement-stop toggle |
-| Exhaust fan | Manual smoke-extraction fan toggle. The F2 Ultra UV never reports whether the fan runs, so it shows off after the laser connects and then follows HA's own commands |
-| Cooling fan | Manual cooling-fan toggle |
-| Purifier check / Drawer check | Safety-enforcement toggles — require accessory present before starting a job |
-| Purifier auto-continue | Keep purifier running after job ends |
-| Red dot / Red dot close | Red-dot pointer (`mdi:laser-pointer`) plus, on V1 dual-LED models, the close camera's IR LED. On V2 lasers the red dot shows on after the laser connects (it is always on when the laser powers on), unless the laser reports otherwise, and then follows HA's own commands |
-| Cover lock | Digital cover lock |
-| Tilt stop / Limit stop | Per-sensor safety toggles |
-| Flame alarm | Flame-alarm config toggle (single on/off — no separate sensitivity Select). **Warning (per xTool Studio):** disabling this switch means no flame alarm will be triggered. Fires may cause serious injuries and property damage. Disabled in the entity registry by default — enable explicitly if you need programmatic control. Attribute `flame_record` (**F2 Ultra UV**): true while the laser stores a photo from a fire alarm (Studio offers it) |
-| Stops when enclosure opened | Cover-safety enforcement — pauses the job when the lid opens mid-run |
-| Stops when moved | V2 only. Engages when the device is moved mid-job (backed by the `workingMode` enum: `HANDLE` = on, `NORMAL` = off) |
-| Access control | Toggles `mdMode`. **Per xTool Studio:** when on, each job needs the access control check at the machine before it starts (open the enclosure, press the button on the machine, close the enclosure, then start), and autofocus, framing and offline processing are turned off. Only on the units Studio offers it on; see [Access control](#access-control). Disabled in the entity registry by default; the laser keeps it off until it is turned on |
-| Device sleep | V2 only (F1 / F2 family). Toggles `autoSleepEnable` so the device powers down on idle. **Note (per xTool Studio):** if the device doesn't enter sleep mode, heat may affect performance — it is recommended to keep the sleep feature enabled |
+| Power | The Power switch from the options |
+| Buzzer / Beep | Sounds |
+| Move stop / Tilt stop / Limit stop | Stop on movement, tilt or limit |
+| Stops when moved | **V2 firmware.** A job stops when the laser is moved |
+| Stops when enclosure opened | A job pauses when the lid opens |
+| Exhaust fan / Cooling fan | Fans. The **F2 Ultra UV** does not report its exhaust fan, so the switch shows what Home Assistant set last |
+| Purifier check / Drawer check | A job needs the accessory or a closed drawer |
+| Purifier auto-continue | Purifier keeps running after a job |
+| Red dot / Red dot close | Red-dot pointer and, on V1 firmware dual-camera models, the close camera's IR LED |
+| Cover lock | Locks the cover |
+| Flame alarm | **Warning (per xTool Studio):** with it off, no flame alarm is triggered. Disabled by default. **F2 Ultra UV** attribute `flame_record`: a photo of a fire alarm is stored |
+| Access control | As xTool Studio: each job needs the access-control check at the machine, and autofocus, framing and offline processing are off. Only on the units Studio offers it on, see below. Disabled by default |
+| Device sleep | **V2 firmware, F1 / F2 family.** The laser sleeps when idle (xTool recommends keeping it on) |
 
 #### Access control
 
-Access control is the Safety Enhancement Mode of xTool's Access Control Key (the key the Safety key sensor reports), for the EU Machinery Directive 2006/42/EC. xTool offers it only on units sold in the EU ([xTool: Access-Control Key](https://support.xtool.com/article/1367)). Like xTool Studio, the integration tells them apart by the SKU the laser reports (shown as the Model ID on the device page), and adds the switch only when the SKU starts with one of these:
+Access control is the Safety Enhancement Mode of xTool's Access Control Key, for the EU Machinery Directive 2006/42/EC, offered only on units sold in the EU ([xTool: Access-Control Key](https://support.xtool.com/article/1367)). As in xTool Studio, the switch is added only when the SKU the laser reports (the Model ID on the device page) starts with one of these:
 
 | Model | SKUs |
 |---|---|
@@ -246,36 +172,33 @@ Access control is the Safety Enhancement Mode of xTool's Access Control Key (the
 | F1 Ultra | P0101000604, P0101000599 |
 | P3 | Machine style `lowCost_europe` |
 
-The F2 Ultra UV (Class 1) has the switch on every unit. Until the laser has reported its SKU once, the switch is shown; it is removed when the SKU shows it does not apply.
+The F2 Ultra UV (Class 1) has it on every unit. Until the laser has reported its SKU, the switch is shown.
 
 ### Number
 
 | Entity | Description |
 |---|---|
-| Auto power-off | Only with a Power switch linked in the options. Turns the Power switch off after the laser has been Idle or Sleeping for this many minutes (0 = never, up to 1440). Going between Idle and Sleeping does not restart the count; anything else does (a job, framing, the laser going offline), and so does changing the minutes |
-| Air-assist post-run | Time air-assist stays on after a job ends (0-600 s) |
-| Exhaust post-run | Time exhaust fan stays on after a job ends (1-600 s) |
-| Sleep timeout | Idle sleep timeout (0-3600 s) |
-| Sleep timeout (cover open) | Idle sleep timeout while cover is open (0-3600 s) |
-| IR-light auto-off | IR illumination auto-off (0-3600 s) |
-| Purifier auto-off | Air-purifier auto-off delay (0-3600 s) |
-| Camera exposure (overview / close camera) | Camera exposure values (0-255) |
-| Camera thumbnail refresh interval | WS-V2 cameras, one per camera (on the camera's own device as "Thumbnail refresh interval" when the laser has several cameras). How often the camera's picture on the device page refreshes, 5 s to 10 min (Home Assistant's standard is 5 min). Each refresh is a new camera state sent to every open Home Assistant screen, and a photo from the laser for each screen showing it |
-| Crop width / height / center X / center Y | **F2 Ultra UV**, on the Main camera device. The part of the work surface the straightened main camera shows, in mm. Default: the 200 × 200 mm calibrated area. A width or height of 0 shows the widest area the photo fills that way. The centre moves from the centre of that area (X right, Y down). Areas outside the calibrated area are extended from its edge and are less accurate. A wider shape (for example 267 × 200 mm) fits camera dialogs without scrolling |
-| Air-Assist gear (cut / engrave) | Default Air-Assist gear written to user config — applied to next job (0-4). Requires Air-Assist accessory |
-| Display brightness | Built-in touchscreen brightness (0-100 %) |
-| Tilt threshold / Movement threshold | Tilt- and motion-sensor sensitivities (0-255) |
-| Work area limit (left / right / up / down) | M311 work-area limits (mm) |
-| Focus height | F2 Ultra UV: the material thickness the laser is focused on (0-150 mm), as xTool Studio shows it. Setting it moves the head as Studio's manual focus does; moves are refused while a job runs, while the laser focuses or measures, or when it reports an error. Only with the surface lens, as in Studio: with the inner engraving lens the job sets the height from the material's size, so Focus height is Unknown and moves and Autofocus are refused. Nothing is stored on the laser |
+| Auto power-off | With a Power switch only. Turns it off after the laser has been Idle or Sleeping for this many minutes (0 = never, up to 1440). Anything else (a job, framing, going offline) or a new value restarts the count |
+| Air-assist post-run / Exhaust post-run | How long it runs after a job |
+| Sleep timeout / Sleep timeout (cover open) | Idle time before the laser sleeps |
+| IR-light auto-off / Purifier auto-off | Auto-off delays |
+| Camera exposure | Camera exposure |
+| Camera thumbnail refresh interval | **V2 firmware cameras.** How often the picture on the device page refreshes (5 s to 10 min); each refresh takes a photo for every open screen showing it |
+| Crop width / height / center X / center Y | **F2 Ultra UV** main camera: the part of the work surface shown, in mm (default: the calibrated 200 × 200 mm; 0 = as wide as the photo reaches) |
+| Air-Assist gear (cut / engrave) | Default gear for the next job (0-4) |
+| Display brightness | Touchscreen brightness |
+| Tilt threshold / Movement threshold | Sensor sensitivities |
+| Work area limit (left / right / up / down) | Work-area limits in mm |
+| Focus height | **F2 Ultra UV.** The material thickness the laser is focused on (0-150 mm). Setting it moves the head like Studio's manual focus; refused during a job, while focusing or measuring, on an error, and with the inner engraving lens |
 
 #### Action `xtool.camera`
 
-Sets the crop of a straightened main camera (F2 Ultra UV) and refreshes its picture. Give any of `crop_width`, `crop_height`, `crop_center_x` and `crop_center_y` in mm; the others stay. A width or height of 0 shows the whole photo that way. The Crop numbers show the new values.
+Sets the crop of a straightened main camera (**F2 Ultra UV**) and refreshes its picture. Give any of `crop_width`, `crop_height`, `crop_center_x` and `crop_center_y` in mm; the others stay.
 
 ```yaml
 action: xtool.camera
 target:
-  entity_id: camera.xtool_f2_ultra_uv_main_camera
+  entity_id: camera.xtool_f2ultrauv_<serial>_camera_main
 data:
   crop_width: 267
   crop_height: 200
@@ -283,12 +206,12 @@ data:
 
 #### Action `xtool.focus`
 
-Moves the focus of a laser with a Focus height entity, like Studio's manual focus. Give either a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move that would pass 0 or 150 mm stops at that limit. The action can return a response: `focus_height` is the height it moved to. When a step move stops at a limit, the head moves there and the action then reports an error that says so (for example "Focus moved to 0.0 mm, the lower limit. 35 steps of -1.0 mm from 34.0 mm would have gone to -1.0 mm."), so Home Assistant shows it; an automation stops at that action unless it continues on error.
+Moves the focus of a laser with a Focus height entity: a signed `step` in mm (positive moves up), optionally repeated `steps` times, or a `thickness` to move to. A move stops at 0 or 150 mm and then reports an error that says so. The response has `focus_height`, the height it moved to.
 
 ```yaml
 action: xtool.focus
 target:
-  entity_id: number.xtool_f2_ultra_uv_focus_height
+  entity_id: number.xtool_f2ultrauv_<serial>_focus_height
 data:
   step: -0.5
   steps: 2
@@ -298,150 +221,83 @@ data:
 
 | Entity | Description |
 |---|---|
-| Purifier speed | Off / Low / Medium / High — AP2 / external purifier speed |
-| Perspective | **F2 Ultra UV**, on the Deep camera device. Uncorrected: the photo as the camera takes it (upside down and at an angle). Rotated: turned upright. Straightened (default): turned upright and its perspective corrected, so a flat surface looks straight and square from above. Kept by Home Assistant; the laser is not involved |
-| Flame alarm mode | Mode 1-4 — flame-detection mode preset |
+| Purifier speed | Off / Low / Medium / High |
+| Flame alarm mode | Flame-detection mode 1-4 |
 | Red-cross mode | Cross-laser pointer / Low-light mode |
+| Perspective | **F2 Ultra UV** deep camera: Uncorrected, Rotated (upright) or Straightened (default: upright and seen square from above) |
 
 ### Light
 
 | Entity | Description |
 |---|---|
-| Fill light | Dimmable work light (0-100 %). Single entity on most models |
-| Fill light front / Fill light back | F2 family (dual-LED enclosure) — separate front/back channels driven by `fillLightBrightFront` / `fillLightBrightBack` |
+| Fill light | Dimmable work light (0-100 %) |
+| Fill light front / Fill light back | **F2 family.** The two fill lights, each on its own |
 
 ### Camera
 
-On a laser with several cameras, each camera and its settings are on their own device, connected to the laser (for example "xTool F2 Ultra UV Main camera"). Entity IDs are the same as when they were on the laser's device.
+On a laser with several cameras, each camera and its settings have their own device, connected to the laser. Cameras on V2 firmware have no live video: their live view is built from photos (about 2.5 per second), and their state is Streaming while one is open.
 
 | Entity | Description |
 |---|---|
-| Camera | Single workspace camera (single-camera V2 models such as F1 Ultra V2). Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
-| Main camera | Wide-angle workspace camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, photos are straightened with the laser's own camera calibration, as in Studio. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
-| Deep camera | Close-up / depth camera (F2 family + MetalFab on V2 firmware). On the F2 Ultra UV, the camera is mounted upside down, about 28.5 degrees off, and looks at the bed at an angle; its Perspective select turns the photos upright and, by default, also straightens them, so the grid of a cutting mat comes out straight and square. Live view built from photos (about 2.5 per second; these lasers have no live video). State is Streaming while a live view is open, otherwise Idle |
-| Overview camera | Wide-angle workspace camera (P-family + V1-firmware dual-camera devices) |
-| Close camera | Detail camera (P-family + V1-firmware dual-camera devices) |
-| Global / Local / Side camera | M2 exposes three cameras: `far` (global / overview), `near` (local / close camera) and `side` (process-side view) |
-| Flame record | Snapshot of the most recent flame-detection event |
-| Calibration (image) | **F2 Ultra UV**, on the Main camera device (diagnostic): the raw main camera photo with Studio's camera calibration grid drawn on it, showing the calibrated area and how the lens bends it. Made once after Home Assistant starts, when first shown |
+| Camera | Workspace camera of single-camera models (e.g. F1 Ultra V2) |
+| Main camera / Deep camera | **F2 family, MetalFab.** Workspace and close-up camera. On the **F2 Ultra UV** the main camera is straightened with the laser's calibration and the deep camera turned upright (see Perspective) |
+| Overview camera / Close camera | **P family, V1 firmware dual-camera models.** On the **P2** straightened, with crop presets and overlays, see [P2 cameras](#p2-cameras) |
+| Global / Local / Side camera | **M2** |
+| Flame record | Photo of the last flame alarm |
+| Calibration (image) | **F2 Ultra UV** (diagnostic): the main camera photo with Studio's calibration grid |
 
-### P2: cameras, crop presets and overlays
+#### P2 cameras
 
-The P2's Overview camera and Close camera are straightened with the P2's own camera calibration (the files Studio reads; the integration only reads them). Positions are in the laser's coordinates, as on Studio's canvas: millimetres from home (0, 0), X to the right and Y toward the front. Home is the top left corner of the Process on slats area, 20.5 mm from the bed's left wall and 40.5 mm from its back wall. "Laser position X/Y" is where the laser fires.
-
-The P2's overview calibration is measured only in the middle of the bed (on the P2 tested: X 60–540, Y 0–280); the rest of its grid is filled in with straight lines, which a wide-angle lens does not follow. The integration finds the measured part, uses the calibration there, and continues the picture outside it with the camera's lens fitted to that part. Checked with a ruled mat, the picture then stays within about 1 mm out to where the camera can see. At slat level the camera does not see the last 15 mm or so at the left wall and 25 mm at the right wall (the side rails hide them).
-
-**Overview camera Crop presets.** A preset fills in the four crop numbers; changing a number selects Custom. A width or height of 0 shows as far as the photo reaches.
-
-| Crop preset | Area origin (X, Y) | Size (W × H, mm) | Crop center X, Y written |
-|---|---|---|---|
-| Uncropped | (whole photo) | about 938 × 498 | 305, 152.5 (width and height 0) |
-| Sync to Mode | the selected Mode's area (below) | | |
-| Work bed | −20.5, −40.5 | 684 × 376 | 321.5, 147.5 |
-| Process on slats | 0, 0 | 600 × 305 | 300, 152.5 |
-| Honeycomb panel | 0, 0 | 600 × 305 | 300, 152.5 |
-| Slats removed | 50, 0 | 500 × 250 | 300, 125 |
-| Close camera (uncropped) | follows the laser | about 182 × 138 | Laser position X/Y + (125, 20) |
-| Close camera (Studio) | Laser position X/Y + (55, −30) | 140 × 100 | Laser position X/Y + (125, 20) |
-| Close camera (custom) | the Close camera's own crop | | |
-| Custom | the numbers as set | | |
-
-Ranges: Crop width 0–915, Crop height 0–458, Crop center X 0–610, Crop center Y 0–305 (Studio's straightened overview picture is 610 × 305 mm; the calibration grid itself reaches Y 310).
-
-**Close camera Crop presets.** The center is relative to the center of Studio's close picture, which is at Laser position X/Y + (125, 20).
-
-| Crop preset | Size (W × H, mm) | Crop center X, Y |
-|---|---|---|
-| Uncropped | about 182 × 138 (width and height 0) | 0, 0 |
-| Studio | 140 × 100 | 0, 0 |
-| Custom | the numbers as set | |
-
-Ranges: Crop width 0–210, Crop height 0–150, Crop center X −70 to 70, Crop center Y −50 to 50.
-
-**Overlays.** Each overlay is a switch on the camera's device; any number can be on, and all start off. An area overlay draws its outline with a dot at its origin and one at its center, all in the area's color. The Overview camera has the three Mode areas (Overlay mode process on slats, honeycomb panel, slats removed) and Laser target (where the laser fires; that point is never in the Close camera's picture); the Close camera has Studio and Custom. Both have Slat lines (every slat, odd numbers labeled), Red dot close (a ring as large as the Laser target, the dot visible inside it) and Red dot quick (an outline the dot sits just inside). **Overlay close camera** lays the Close camera's last picture, as that camera shows it (its crop and its own overlays), on the Overview camera where it was taken. Overlay colors are set in the integration's options.
-
-**Overlays select.** Each camera has an **Overlays** select (configuration): **Integration** (default) draws the overlays on the picture; **Card** draws none (Overlay close camera is still laid on, as it is a photo), so a dashboard card can draw them in its own style. Either way each overlay switch has two attributes for the picture last taken, left out of the history:
-
-- `position`: where the overlay is, in the same millimetres as that camera's crop numbers (Overview: the laser's, from home; Close: from the center of the close camera's area). Each key holds a list of entries with named values: `areas` (x, y, width, height), `slats` (x0, y0, x1, y1, label), `target` (x, y), `close` (x, y, diameter), `quick` (x, y, length, width, angle in degrees from X toward Y).
-- Each camera has a `view` attribute, also left out of the history: the area its last picture shows (x, y, width, height), in the same millimetres, for every Crop.
-- `style`: how the integration draws it: `color` [r, g, b], `line` (pixels of the picture), `style` (solid), `icon` (the mark at a point, if any) and `size` (that icon's size in mm).
-
-**Mode and Thickness or distance.** Mode (Process on slats, Honeycomb panel, Slats removed) and one Thickness or distance number, read as Studio reads it in that Mode: the material's thickness on the slats, otherwise the distance down from 25 mm above the slats. The overview picture is straightened for that height. **Measure thickness or distance** (with the Measured sensor, on the Overview camera's device, since the result only sets that camera's picture) reads the IR sensor under the close red dot (turning the dot on for the reading if needed) and fills in Thickness or distance; it can be changed after. A reading the selected Mode cannot take (for example with nothing under the red dot) is refused with a message, and Thickness or distance keeps its value.
-
-**Exposure.** Each camera's Exposure is 10 to 1000; higher is brighter. The P2 does not report its exposure, so the number shows the value Home Assistant set last. When the Power switch turns the P2 on, Home Assistant sets Studio's values (Overview camera 100, Close camera 150). The number is unknown when the P2 was turned on any other way, until a value is set here; a value Studio sets is not shown. The camera takes a new photo two seconds after a change.
-
-**Moving the laser.** Set Laser position X and Y (the numbers show the values set, with the attribute `waiting` until the laser moves), then press **Move laser**. The `xtool.move` action takes the P2 device and moves to X and Y, or by signed steps. The P2 moves the laser while it sleeps too; it moves the laser home a minute before it sleeps and when it wakes.
-
-**Fill lights and settings.** Each P2 fill light keeps its own brightness and turns on at it. Studio has one brightness for the right and left lights, so they are kept in step: a change to either writes the brighter of the two to Studio's setting, and a change made in Studio sets both. A settings change made in Studio is not pushed by the P2, so the settings are read on every poll.
-
-**Left out on the P2.** Studio does not offer these on the P2, so there is no entity for them: Filter check, Purifier check, Purifier continue (the Exhaust fan setting covers it, as in Studio), Baseplate detection (stored in Studio only), Purifier speed, the cooling fan switch, Time sync and the water line reading. These tell nothing on the P2 and are left out too: Tool type and Working mode (never reported), Gyro X/Y/Z (0 while the laser stands still), Laser power and Laser module (fixed for the model) and Last distance (the Measured sensor has it as its `sensor_distance` attribute). Task ID, CPU temperature, Cooling fan running and Water pump running are disabled by default.
+The P2's cameras are straightened with its own calibration. Each has Crop presets, overlay switches (also as attributes, for dashboard cards drawing their own), an Overlays select and an Exposure; the overview picture follows Mode and Thickness or distance, which **Measure thickness or distance** can fill in. Laser position X / Y with **Move laser** or the `xtool.move` action move the laser. [docs/P2.md](docs/P2.md) has the details, and the P2 entities left out because Studio does not offer them.
 
 ### Button
 
 | Entity | Description |
 |---|---|
-| Pause | Pause the current processing job |
-| Resume job | Resume a paused job |
-| Cancel | Cancel and stop the current job |
-| Home all axes | Move laser head to home position (all axes) |
-| Home XY | Move laser head to XY home |
-| Home Z | Move laser head to Z home |
-| Home laser | Move the laser head back to (0, 0) |
-| Wake | P2: wake a sleeping P2 so its cameras take photos again (the P2 has no wake command; a photo wakes it, and Home Assistant takes none while it sleeps) |
-| Z-axis homing | F2 Ultra UV. Triggers Studio's z-axis homing routine |
-| Measure distance | Trigger an IR distance measurement |
-| Autofocus | F2 Ultra UV: start the laser's autofocus, as Studio's Autofocus button and the laser's own button do. Focus height shows the result. Refused whenever Studio would refuse it. Nothing is stored on the laser |
-| Reboot | Soft reboot |
-| Sync time | Push HA local time to device |
-| Quit LightBurn | Leave LightBurn standby mode |
+| Pause / Resume job / Cancel | Job control |
+| Home all axes / Home XY / Home Z / Home laser / Z-axis homing | Homing |
+| Measure distance | IR distance measurement |
+| Autofocus | **F2 Ultra UV.** As Studio's Autofocus; Focus height shows the result |
+| Wake | **P2.** Wakes a sleeping P2 so its cameras take photos again |
+| Reboot / Sync time / Quit LightBurn | Restart, set the laser's clock, leave LightBurn standby |
 
 ### Update
 
 | Entity | Description |
 |---|---|
-| Firmware | Installed + latest firmware version via the xTool cloud (re-checked on reconnect and every 6 h. Release notes from the cloud are shown as the changelog. Install is disabled by default; enable **Enable firmware updates** in the integration options to arm it. |
+| Firmware | Installed and latest firmware from xTool's cloud, with its release notes. Installing needs **Enable firmware updates** in the options |
 
 ### Event
 
-Transient-event entities — fire once on edge transitions (rather than holding state) so they can be used as automation triggers without polling the Status sensor or template-history.
+Events fire once on each change, for automation triggers.
 
 | Entity | Event types | Description |
 |---|---|---|
-| Button | `short_press`, `long_press`, `double_press` | Physical front-panel button press. Source: WS-V2 push (`/button/status`) or REST poll diff. Includes a `raw_type` attribute so unrecognised firmware labels are still inspectable |
-| Job | `started`, `paused`, `resumed`, `cancelled`, `finished`, `failed`, `framing_started`, `framing_finished` | Job-lifecycle transitions derived from Status sensor edges. `task_id` and (where available) job `duration` are exposed as event attributes. `failed` (V2 firmware): the laser reported the job as failed, for example after a power cut stopped it |
-| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop`, `temperature`, `gyro`, `laser_head_fault`, `z_axis_fault`, `u_axis_fault`, `conveyor_fault`, `board_fault`, `camera_fault`, `dongle_fault`, `udisk_fault`, `machine_lock_md_fault` | Error-state transitions. `tilt` / `moving` are D-series only; `emergency_stop` plus the `*_fault` and hardware-alarm types are V2 only (driven by per-subsystem `/.../alarm` pushes — `/emergency/status` on MetalFab and `/emergency_stop/status` on the F-series are both routed to `emergency_stop`) |
-| Fire warning | `triggered`, `cleared` | Flame-detector edge — separate entity so safety automations can target it directly. Source: `M340` push (S1), `ERROR_FIRE_WARNING` status edge (REST + D-series), or `state.alarm_present` / `/v1/device/alarms` / `/fire/alarm` push (WS-V2) |
+| Button | `short_press`, `long_press`, `double_press` | The laser's own button |
+| Job | `started`, `paused`, `resumed`, `cancelled`, `finished`, `failed`, `framing_started`, `framing_finished` | Job changes, with `task_id` and, where available, the `duration`. `failed`: the laser reported the job as failed, e.g. after a power cut |
+| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop`, `temperature`, `gyro`, `laser_head_fault`, `z_axis_fault`, `u_axis_fault`, `conveyor_fault`, `board_fault`, `camera_fault`, `dongle_fault`, `udisk_fault`, `machine_lock_md_fault` | Errors as the laser reports them (`tilt` / `moving`: D series; `emergency_stop` and the faults: V2 firmware) |
+| Fire warning | `triggered`, `cleared` | Flame alarm, for safety automations |
+
+Event entities show Unknown until their first event.
 
 ## Device Information
 
-The device page in Home Assistant shows:
+The device page shows the manufacturer, the model, the Model ID (the SKU's product part on V2 firmware, e.g. P0101000393, with (EU) for the SKUs under [Access control](#access-control)), the serial number and the firmware version.
 
-- **Manufacturer:** xTool
-- **Model:** e.g. xTool S1
-- **Model ID:** the product part of the SKU, when the laser reports one (WS-V2 lasers), e.g. P0101000393. EU units (the SKUs in [Access control](#access-control)) show (EU) after it, e.g. P0101000396 (EU)
-- **Serial Number:** Device serial number
-- **Firmware:** firmware version
+## Using xTool Studio alongside Home Assistant
 
-## Using xTool studio alongside Home Assistant
-
-When running xTool Studio app, formerly xTool Creative Space (XCS), and this integration in parallel, it can cause WebSocket disconnects, which in turn can cause delayed entity updates.
+Running xTool Studio (or XCS) at the same time can disconnect the integration now and then, which delays updates.
 
 ## Technical Details
 
-The integration speaks four protocol families, all reverse-engineered from the xTool XCS Android app and the newer xTool Studio Windows app (the current primary source):
+The protocols were worked out from xTool's own apps, mainly xTool Studio. The integration uses these ports on the laser:
 
-- **UDP port 20000** — device discovery via broadcast (`{"requestId": <int>}`)
-- **WebSocket port 8081** (S1) — bidirectional G-code RPC + push state updates
-- **HTTP port 8080** — S1 file upload + `/cmd` fallback; D-series + REST family main API
-- **WebSocket port 8081** (D-series) — read-only status push (`ok:IDLE`, `err:flameCheck`, …)
-- **HTTP port 8087** (REST family) — firmware handshake + flash
-- **HTTP port 8329** (REST family) — camera snap + exposure
-- **TLS WebSocket port 28900** (WS-V2 family, V2 firmware ≥ 40.51) — three concurrent channels (`function=instruction` JSON request/response + push events, `function=file_stream` binary uploads, `function=media_stream` camera frames). Replaces the legacy REST API on devices running V2 firmware
-- **BT-accessory tunnel** (`uart485` + F0F7 envelope) — wraps BT-accessory M-codes (`M9033` purifier, `M9082` duct fan, `M9098` dongle, …) for transport over the laser's main API. The endpoint is `/passthrough` (REST + D-series, port 8080) or `/v1/parts/control` (WS-V2 instruction channel). **The S1 does not have this tunnel** — its BT accessories are reached over the raw M-code WS
+- UDP 20000 and encrypted multicast (5353, 5354, 25353, 25354, 25454): discovery
+- TCP 8080 / 8081: S1 and D series (HTTP, WebSocket); V1 firmware main API
+- TCP 8087 / 8329: V1 firmware firmware updates and cameras
+- TCP 28900: V2 firmware (TLS WebSocket)
 
-The firmware-update entity hits the public xTool cloud API (`api.xtool.com`) on the `atomm` namespace using `xTool-*-firmware` content IDs.
-
-A complete reference of all M-codes, HTTP endpoints, JSON formats, status mappings, capability flags per model, and the firmware-update cloud API is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Firmware updates are checked with xTool's cloud API (`api.xtool.com`). [docs/PROTOCOL.md](docs/PROTOCOL.md) describes the protocols in full.
 
 ## Multilanguage Support
 

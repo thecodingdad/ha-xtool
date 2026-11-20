@@ -22,6 +22,7 @@ custom_components/xtool/
         entities.py        the family's entities and build_<family>_<platform>()
         models.py          one XtoolDeviceModel per supported device
 docs/PROTOCOL.md           wire-level reference
+docs/P2.md                 P2 camera details for users (linked from the README)
 tests/                     feature tests
 tests/core/                shared behaviour: config flow, entry life, model detection
 tests/models/              one module per model confirmed on hardware
