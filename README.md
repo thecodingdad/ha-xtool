@@ -30,7 +30,7 @@ This integration communicates directly with your xTool device over the local net
 
 ## Prerequisites
 
-- Home Assistant 2025.1.0 or newer
+- Home Assistant 2025.10.0 or newer
 - xTool device on the same local network, connected via WiFi
 
 ## Supported Devices
