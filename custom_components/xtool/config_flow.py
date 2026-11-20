@@ -438,6 +438,21 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._pair_error = None
             return await self.async_step_pair()
+        return self._pair_confirm_form()
+
+    async def async_step_pair_failed(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show why pairing failed; only a new submit starts it again.
+
+        Home Assistant passes the input that started the pairing on to the
+        step after the progress. Taken as a submit, a pairing that ends
+        before its first await (such as an unknown model) would start
+        again at once, in a loop that blocks Home Assistant.
+        """
+        return self._pair_confirm_form()
+
+    def _pair_confirm_form(self) -> ConfigFlowResult:
         errors = {"base": self._pair_error} if self._pair_error else {}
         return self.async_show_form(
             step_id="pair_confirm",
@@ -464,7 +479,7 @@ class XtoolConfigFlow(ConfigFlow, domain=DOMAIN):
             self._pair_result = result
             return self.async_show_progress_done(next_step_id="pair_finish")
         self._pair_error = result or "cannot_connect"
-        return self.async_show_progress_done(next_step_id="pair_confirm")
+        return self.async_show_progress_done(next_step_id="pair_failed")
 
     async def _async_pair(self) -> ConnectionInfo | str:
         host = self._pair_host or ""
