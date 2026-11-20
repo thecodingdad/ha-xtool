@@ -1563,6 +1563,7 @@ WSV2_JOB_EVENT_TYPES: tuple[str, ...] = (
     "resumed",
     "cancelled",
     "finished",
+    "failed",
     "framing_started",
     "framing_finished",
 )

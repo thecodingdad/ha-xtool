@@ -289,6 +289,7 @@
               "resumed": "Resumed",
               "cancelled": "Cancelled",
               "finished": "Finished",
+              "failed": "Failed",
               "framing_started": "Framing started",
               "framing_finished": "Framing finished"
             }
