@@ -102,7 +102,7 @@ class AccessoryEntitySpec:
        accessory.
     """
 
-    platform: str  # "sensor" / "binary_sensor" / "switch" / "select" / "button" / "number"
+    platform: str  # "sensor" / "binary_sensor" / "switch" / "select" / "button" / "number" / "fan" / "event"
     key: str
     field: str | None = None  # AccessoryState.fields["..."] lookup
     icon: str | None = None
@@ -131,6 +131,11 @@ class AccessoryDefinition:
     info_mcode: str | None
     parse_info: Callable[[str], dict[str, Any]]
     entities: tuple[AccessoryEntitySpec, ...]
+    # (platform, spec key) pairs of entities an earlier release created
+    # and this one no longer does. Their registry entries are removed
+    # when the accessory's entities are built, so they do not stay
+    # behind as unavailable.
+    retired_entities: tuple[tuple[str, str], ...] = ()
 
 
 # ── M-code parser helpers ──────────────────────────────────────────

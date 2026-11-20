@@ -192,6 +192,9 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         # entities for in this session.
         self._platform_callbacks: dict[str, "AddEntitiesCallback"] = {}
         self._known_accessory_keys: set[str] = set()
+        # Accessory serial number by its Bluetooth MAC, as read from its
+        # info M-code; used when that read does not answer
+        self._accessory_serials: dict[str, str] = {}
 
     # --- Generic helpers ----------------------------------------------------
 
@@ -430,6 +433,7 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
                 continue
             mac_sn = str(row.get("sn") or row.get("type_id_raw") or "unknown")
             fields: dict[str, Any] = {}
+            info_reply = None
             if definition.info_mcode:
                 try:
                     info_reply = await passthrough(
@@ -461,18 +465,32 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
             # UX. Fall back to MAC when the info-mcode poll didn't
             # yield an SN (e.g. older DuctFanV1 without that field).
             product_sn = str(fields.get("sn") or "").strip()
+            if product_sn:
+                self._accessory_serials[mac_sn] = product_sn
+            elif definition.info_mcode and not info_reply:
+                # No reply (often right after power on): keyed by the MAC
+                # here, it would get a second device and a second set of
+                # entities. Keep it under its serial number, or leave it
+                # out until its info answers.
+                product_sn = self._accessory_serials.get(mac_sn, "")
+                prior = (state.connected_accessories or {}).get(f"{type_id}:{product_sn}")
+                if prior is None:
+                    _LOGGER.debug(
+                        "Accessory %s (mac=%s) left out until %s answers",
+                        type_id, mac_sn, definition.info_mcode,
+                    )
+                    continue
+                fields = dict(prior.fields)
             sn = product_sn or mac_sn
             key = f"{type_id}:{sn}"
-            # Carry forward sticky fields the poll reply can't
-            # populate but push events / set-handlers cache (e.g.
-            # DuctFanV3's ``auto_submode`` — Auto Regular vs Quiet
-            # is unrecoverable from the M9082 poll, only the
-            # write-side knows). Without this, every 5 s poll would
-            # wipe the cache and the Select would drift to the
-            # default Auto Regular.
+            # Carry forward fields the poll reply cannot populate but
+            # push events and HA writes cache: DuctFanV3's Auto preset
+            # (``auto_submode``), Auto gear (``auto_gear``) and job flag
+            # (``job_active``) are not in the M9082 reply. Without this,
+            # every poll would wipe them.
             prior = (state.connected_accessories or {}).get(key)
             if prior is not None:
-                for sticky in ("auto_submode",):
+                for sticky in ("auto_submode", "auto_gear", "job_active"):
                     if sticky not in fields and sticky in prior.fields:
                         fields[sticky] = prior.fields[sticky]
             _LOGGER.debug(
