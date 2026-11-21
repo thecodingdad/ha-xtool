@@ -1,8 +1,8 @@
 """The xTool X1 (JS001), as a real X1 behaves.
 
 Built from what an X1 on firmware 40.140.003.01.ht18 answered (see
-x1_capture.py) and, for the pushes it did not send while captured (lid,
-feeder sensors, job notices), from the shapes Studio's X1 extension
+x1_capture.py) and, for the pushes it did not send while captured
+(feeder sensors, job notices), from the shapes Studio's X1 extension
 (``xcs-ext-js001``) reads. The X1 shares the M2's platform 2.0 code:
 when one of these tests fails after a change made for the M2, that
 change reached the X1.
@@ -28,6 +28,8 @@ from .x1_capture import (
     FIRMWARE,
     HOST,
     KEY_NOTICE,
+    LID_CLOSED_REPORT,
+    LID_OPENED_REPORT,
     SECURE_CONFIRM_REPORT,
     SERIAL,
     STATE_REPORT,
@@ -277,11 +279,22 @@ def test_waiting_for_the_pairing_button_is_idle() -> None:
 
 def test_lid_and_safety_key_pushes() -> None:
     protocol = _protocol()
-    protocol._dispatch_push(_report("/v1/project/peripheral/lid", {"state": True, "automationId": "null"}))
+    protocol._dispatch_push(LID_OPENED_REPORT)
     protocol._dispatch_push(_report("/v1/project/peripheral/usbkey", {"state": False}))
     assert (protocol._latest["cover_open"], protocol._latest["machine_lock"]) == (True, False)
-    protocol._dispatch_push(_report("/v1/project/peripheral/lid", {"state": False}))
+    protocol._dispatch_push(LID_CLOSED_REPORT)
     assert protocol._latest["cover_open"] is False
+
+
+async def test_the_cover_follows_the_lid_at_once(hass: HomeAssistant, x1) -> None:
+    """Opened and closed on the X1: the report shows without a poll."""
+    _, protocol = x1
+    protocol._dispatch_event(LID_OPENED_REPORT)
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id("binary_sensor.cover_open")).state == "on"
+    protocol._dispatch_event(LID_CLOSED_REPORT)
+    await hass.async_block_till_done()
+    assert hass.states.get(entity_id("binary_sensor.cover_open")).state == "off"
 
 
 def test_fill_light_push_changes_only_its_light() -> None:

@@ -77,6 +77,16 @@ FILL_LIGHT_REPORT = {
     "data": {"/v1/project/peripheral/fill-light": {"count": 1, "fillLights": [{"brightness": 0, "name": "left"}]}},
 }
 
+# The lid opened and closed (the reports come at once; lid-status follows).
+LID_OPENED_REPORT = {
+    "type": "request", "method": "REPORT", "params": {}, "timestamp": 1795302841000,
+    "data": {"/v1/project/peripheral/lid": {"automationId": "null", "state": True}},
+}
+LID_CLOSED_REPORT = {
+    "type": "request", "method": "REPORT", "params": {}, "timestamp": 1795302855000,
+    "data": {"/v1/project/peripheral/lid": {"automationId": "null", "state": False}},
+}
+
 # Each (method, URL) the integration sends, and the X1's reply.
 REPLIES: dict[tuple[str, str], Any] = {
     ("GET", "/v1/platform/device/machine-info"): MACHINE_INFO,
