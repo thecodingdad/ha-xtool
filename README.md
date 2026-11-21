@@ -32,7 +32,7 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 | S1 | S1 |
 | D series | D1, D1 Pro, D1 Pro 2.0 |
 | V1 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) |
-| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1, M1 Ultra, M2 (JS002), P2, P2S, P3, MetalFab, Apparel Printer, O1 Omni (DT002) |
+| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1 Ultra, M2 (JS002), P2S, P3, MetalFab, Apparel Printer, O1 Omni (DT002) |
 
 Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
 
