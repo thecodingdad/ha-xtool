@@ -201,6 +201,8 @@ class XtoolDeviceModel:
     has_limit_switch: bool = False
     has_lid_sensor: bool = False
     has_machine_lock: bool = False
+    # Only the Safety key sensor: no Stops-when-moved switch (the X1).
+    has_safety_key: bool = False
     has_ir_led: bool = False
     has_digital_lock: bool = False
     has_distance_measure: bool = False

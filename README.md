@@ -1,6 +1,6 @@
 # xTool
 
-Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P family, MetalFab, Apparel Printer (Plus), O1 Omni, Retail Marker, …). It talks to the device on your local network; no cloud and no xTool account are needed.
+Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, X1, P family, MetalFab, Apparel Printer (Plus), O1 Omni, Retail Marker, …). It talks to the device on your local network; no cloud and no xTool account are needed.
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/thecodingdad/ha-xtool)](https://github.com/thecodingdad/ha-xtool/releases)
@@ -32,9 +32,9 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 | S1 | S1 |
 | D series | D1, D1 Pro, D1 Pro 2.0 |
 | V1 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) |
-| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1 Ultra, M2 (JS002), P2S, P3, MetalFab, Apparel Printer, Apparel Printer Plus (DT003), O1 Omni (DT002) |
+| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1 Ultra, M2 (JS002), P2S, P3, MetalFab, Apparel Printer, Apparel Printer Plus (DT003), O1 Omni (DT002), X1 (JS001) |
 
-Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
+Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check. X1 (JS001) support is new and not tested on a laser yet: status, job events and job control, lid, safety key, lifetime statistics, Exhaust post-run, the far, near and side cameras and the firmware-update check.
 
 ## Installation
 
@@ -242,7 +242,7 @@ On a laser with several cameras, each camera and its settings have their own dev
 | Camera | Workspace camera of single-camera models (e.g. F1 Ultra V2) |
 | Main camera / Deep camera | **F2 family, MetalFab.** Workspace and close-up camera. On the **F2 Ultra UV** the main camera is straightened with the laser's calibration and the deep camera turned upright (see Perspective) |
 | Overview camera / Close camera | **P family, V1 firmware dual-camera models.** On the **P2** straightened, with crop presets and overlays, see [P2 cameras](#p2-cameras) |
-| Global / Local / Side camera | **M2** |
+| Global / Local / Side camera | **M2, X1** |
 | Flame record | Photo of the last flame alarm |
 | Calibration (image) | **F2 Ultra UV** (diagnostic): the main camera photo with Studio's calibration grid |
 

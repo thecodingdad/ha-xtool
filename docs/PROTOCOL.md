@@ -36,7 +36,7 @@ USB, `needConnectAlive: false`, no heartbeat).
 | `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
 | `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
 | `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
-| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
+| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)); X1 (JS001, CO2 gantry with flying galvo — see [X1 protocol](#x1-protocol-js001)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
 
 V1- and V2-firmware lines for the same hardware coexist — discovery +
 the port-28900 probe pick the right family at config-flow time. See
@@ -2864,6 +2864,91 @@ their respective sub-controllers via the on-device upgrade service.
 Cloud-side the whole thing ships as a single content_id — the
 on-device upgrade service does the per-controller dispatch.
 
+
+---
+
+## X1 protocol (JS001)
+
+xTool X1 (Studio `deviceCode` `JS001`, `machineType` `LASER`,
+V2 firmware only): a 55 W CO2 gantry with a flying galvo head, optional
+20 W diode galvo and swappable 30 W fiber, 60 W MOPA or 5 W UV sources,
+three cameras plus a laser distance meter, a motorised bed and an
+optional feeder. The hardware has little in common with the M2, but the
+X1 speaks the same platform 2.0 interface: the routes in the first table
+below and the `REPORT` push envelope are those of the
+[M2 protocol](#m2-protocol). Sources: Studio 1.11.9's X1 extension
+(`xcs-ext-js001` 0.2.30) and replies captured from an X1.
+
+### Discovery and connection
+
+V2 discovery answers with `deviceCode:"JS001"`, `platformVersion:"2.0"`
+and a `deviceName` such as `xTool_X1_<suffix>`. Port 28900, the parity
+handshake and the button pairing are those of every V2 device
+(`userID` `mk-guest`, the fixed `userKey`, the stored `token`; `406`
+→ button press → `/v1/user/auth-status`).
+
+### Routes shared with the M2
+
+| Route | Method | Notes |
+|---|---|---|
+| `/v1/platform/device/machine-info` | GET | `sn`, `firmware.version`, `firmware.modules[]` (a `Printhead` module has its own version) |
+| `/v1/platform/device/state/sync` | POST | Replies `{}`; the state arrives in the `/v1/platform/device/state` push it triggers |
+| `/v1/platform/device/config` | GET / PUT | GET with `data:{kv:[<keys>]}`; PUT with a flat `{key: value}` body |
+| `/v1/project/device/control` | POST | `params:{action}` with `START`, `PAUSE`, `RESUME` or `CANCEL` |
+| `/v1/project/control/home` | POST | `params:{axis:"ALL"}` |
+| `/v1/project/control/absolute-move` | POST | `{coor:{x, y, v, u, a, b}, speed}` (speed 2400 with `v`, else 30000) |
+| `/v1/project/device/coordinate` | GET | Head position |
+| `/v1/project/laser-head/info` | GET | `{type, manufacture}` |
+| `/v1/project/process/statistics` | GET | `totalTime`, `standbyTime` (seconds), `count` |
+| `/v1/project/peripheral/lid`, `/pallet` | GET | `{state}` |
+| `/v1/platform/camera/snap` | POST | `params:{name}` → `{filename}`, then the file_stream download |
+| `/v1/camera/fire-record` | GET / POST | Flame record photo / reset |
+
+### X1 routes
+
+| Route | Method | Notes |
+|---|---|---|
+| `/v1/platform/camera/list` | GET | `[{id, name, format, width, height, fps, version}]`; an X1 lists `far` (3840 × 2160 nv12), `near` (4208 × 3120 jpeg), `side` (1600 × 1200 nv12) and `ldm` (640 × 32, the laser distance meter) |
+| `/v1/project/peripheral/lid-status` | GET | `{lidStatus}`, `true` = open |
+| `/v1/project/peripheral/usbkey` | GET | `{usbKey}`, `true` = the safety key is plugged in |
+| `/v1/project/peripheral/fill-light` | GET / PUT | GET → `{fillLights:[{name, brightness}]}` with `left`, `right`, `near`; PUT `params:{name}`, `data:{brightness}`. Studio sets them for each photo, to match the camera's exposure |
+| `/v1/project/peripheral/galvo-cover`, `/galvo-exist`, `/laserbag-info` | GET | Galvo cover type, whether the diode galvo is fitted, the laser source module |
+| `/v1/project/peripheral/air-nozzle`, `/uv-heated`, `/uv-heated-status` | POST / GET | Air nozzle, UV source pre-heating |
+| `/v1/project/feeder/info`, `/v1/project/peripheral/feeder-*` | GET / POST | Feeder |
+| `/v1/project/printhead/*` | GET / POST | Print head module |
+| `/v1/project/device/power-on-duration`, `/motion-status` | GET | Uptime; `{isMoving}` |
+| `/v1/project/alarm/records` | GET | `{"alarms-list": [], "alarms-record": []}` |
+| `/v1/project/control/wakeup` | POST | Wake a sleeping X1 |
+| `/v1/platform/accessories/list`, `/control`, `/upgrade` | GET / POST | Accessory slots `[{dev_id, status, common_status, name, bootloader_status, version}]` |
+
+Studio's settings (config keys): `smokeFanTimeout` (exhaust time after
+processing, 1-600 s), `smokeFanSpeed`, `beepEnable`, `flameSensitivity`,
+`laserCleanTipEnable`, `mdMode`, `automationEnable`, `dirtyCheckEnable`
+and `hostCustomData` (a JSON string, e.g. `nearFillLightEnabled`,
+`nearFillLightBrightness`).
+
+### State and pushes
+
+`/v1/platform/device/state` push: `{mode, type, taskId, gohomeState,
+moveState, automationId, processInfo}`, for example
+`{"mode":"Idle","moveState":"idle","gohomeState":"finish","processInfo":null}`.
+`mode` is one of `Initial`, `Idle`, `Busy`, `Measure`, `Autowork`,
+`WorkReady`, `WorkPlay`, `WorkPause`, `Sleep`, `Upgrade`, `Error`,
+`Leveling`, `Calibration`, `Network`, `SecureConfirm`.
+
+Pushes shared with the M2: `/v1/platform/device/alarm`, `/process`,
+`/v1/project/peripheral/lid` (`{state, automationId}`, `true` = open),
+`/v1/project/device/go-home/*`, `/move/finish`, `/measure`,
+`/v1/project/event/key`, `/v1/project/automation/id`. X1 only:
+`/v1/project/peripheral/usbkey` (`{state}`, `true` = plugged in),
+`/fill-light` (`{fillLights}`), `/air-nozzle`, `/galvo-cover`,
+`/v1/project/device/feeder*`, `/print-head`, `/backplate`,
+`/upgrade-progress`, `/uv-prewarm`, `/dirty-check`,
+`/v1/project/event/firebox-spray` (the M2 sends it under
+`/v1/project/accessory/`), `/mdmode-restrict`, `/focus-detect-*`,
+`/v1/project/printhead/abnormal-alert` and `/v1/platform/stream/qos`.
+
+Firmware: cloud content ID `xTool-X1-firmware`.
 
 ---
 

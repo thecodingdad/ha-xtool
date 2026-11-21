@@ -2679,7 +2679,7 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.DOOR,
             )(coordinator)
         )
-    if model.has_machine_lock:
+    if model.has_machine_lock or model.has_safety_key:
         # ``/peripheral/machine_lock`` reports the USB safety-key
         # presence, *not* a lid lock — Studio's transformResult is
         # ``{state:s} => ({UsbKeyLockStatus: s === "on"})``. Render

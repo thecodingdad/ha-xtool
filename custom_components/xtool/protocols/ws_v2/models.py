@@ -24,6 +24,7 @@ from .protocol_dt001 import DT001WSV2Protocol
 from .protocol_dt002 import DT002WSV2Protocol
 from .protocol_m2 import M2WSV2Protocol
 from .protocol_p2s import P2SWSV2Protocol
+from .protocol_x1 import X1WSV2Protocol
 
 
 XTOOL_F1_WSV2 = XtoolDeviceModel(
@@ -659,6 +660,29 @@ XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
 )
 
 
+# xTool X1 (JS001): CO2 gantry with a flying galvo head. Platform 2.0
+# interface like the M2, its own hardware (see X1WSV2Protocol).
+XTOOL_X1_WSV2 = XtoolDeviceModel(
+    model_id="X1",
+    name="xTool X1",
+    protocol_class=X1WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_camera=True,
+    # /v1/platform/camera/list on an X1 (PR #61): far, near, side and
+    # ldm, the laser distance meter's 640 x 32 sensor.
+    camera_names=("far", "near", "side"),
+    has_cover_sensor=True,
+    has_safety_key=True,
+    has_runtime_stats=True,
+    has_bt_accessories=False,
+    firmware_content_id="xTool-X1-firmware",
+    firmware_machine_type="JS001",
+    protocol_version="V2",
+    # Discovery reports deviceCode "JS001" and deviceName "xTool_X1_…".
+    discovery_match=("JS001", "X1"),
+)
+
+
 WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_F1_WSV2,
     XTOOL_F1_ULTRA_WSV2,
@@ -680,4 +704,5 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_APPAREL_PRINTER_PLUS_WSV2,
     XTOOL_M2_WSV2,
     XTOOL_O1_OMNI_WSV2,
+    XTOOL_X1_WSV2,
 )

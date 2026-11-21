@@ -27,6 +27,7 @@ from .models import (
     XTOOL_O1_OMNI_WSV2,
     XTOOL_P2S_WSV2,
     XTOOL_P3_WSV2,
+    XTOOL_X1_WSV2,
 )
 from .protocol import (
     WSV2_HEARTBEAT_SECONDS,
@@ -64,5 +65,6 @@ __all__ = [
     "XTOOL_O1_OMNI_WSV2",
     "XTOOL_P2S_WSV2",
     "XTOOL_P3_WSV2",
+    "XTOOL_X1_WSV2",
     "probe_v2",
 ]
