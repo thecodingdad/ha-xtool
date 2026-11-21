@@ -1,7 +1,7 @@
 """xTool V2 protocol family — TLS WebSocket-tunneled REST API on port 28900.
 
 Used by F1 / F1 Ultra / F1 Ultra V2 / F1 Lite / F2 family / M1 Ultra / P2S /
-P3 / MetalFab / Apparel Printer / M2 / O1 Omni when their firmware is recent enough to
+P3 / MetalFab / Apparel Printer / M2 / O1 Omni / X1 when their firmware is recent enough to
 expose the ``/v1/...`` API surface (xTool Studio / xTool Creative Space
 "V2" protocol). Older firmware on the same hardware keeps using the
 legacy REST family on port 8080.
@@ -27,6 +27,7 @@ from .models import (
     XTOOL_O1_OMNI_WSV2,
     XTOOL_P2S_WSV2,
     XTOOL_P3_WSV2,
+    XTOOL_X1_WSV2,
 )
 from .protocol import (
     WSV2_HEARTBEAT_SECONDS,
@@ -64,5 +65,6 @@ __all__ = [
     "XTOOL_O1_OMNI_WSV2",
     "XTOOL_P2S_WSV2",
     "XTOOL_P3_WSV2",
+    "XTOOL_X1_WSV2",
     "probe_v2",
 ]

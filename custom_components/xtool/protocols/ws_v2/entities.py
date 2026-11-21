@@ -177,8 +177,8 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
 
 _INKJET_STATUS_OPTIONS = ["normal", "low", "empty"]
 
-# Lifetime-counter descriptions shared by ``has_runtime_stats`` and
-# ``has_lifetime_counters``.
+# Lifetime-counter descriptions shared by ``has_runtime_stats``,
+# ``has_lifetime_counters`` and ``has_process_statistics``.
 _LAST_JOB_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     key="last_job_time",
     translation_key="last_job_time",
@@ -231,6 +231,32 @@ _AMBIENT_HUMIDITY_DESCRIPTION = XtoolSensorEntityDescription(
     value_fn=lambda state, _: state.ambient_humidity,
 )
 
+_WIFI_SIGNAL_DESCRIPTION = XtoolSensorEntityDescription(
+    key="wifi_signal",
+    translation_key="wifi_signal",
+    device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+    native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    state_class=SensorStateClass.MEASUREMENT,
+    entity_category=EntityCategory.DIAGNOSTIC,
+    value_fn=lambda state, _: state.wifi_signal,
+)
+_POSITION_X_DESCRIPTION = XtoolSensorEntityDescription(
+    key="position_x",
+    translation_key="laser_position_x",
+    icon="mdi:axis-x-arrow",
+    native_unit_of_measurement=UnitOfLength.MILLIMETERS,
+    state_class=SensorStateClass.MEASUREMENT,
+    value_fn=lambda state, _: state.position_x,
+)
+_POSITION_Y_DESCRIPTION = XtoolSensorEntityDescription(
+    key="position_y",
+    translation_key="laser_position_y",
+    icon="mdi:axis-y-arrow",
+    native_unit_of_measurement=UnitOfLength.MILLIMETERS,
+    state_class=SensorStateClass.MEASUREMENT,
+    value_fn=lambda state, _: state.position_y,
+)
+
 # Sensors that are gated by capability flags
 _GATED_SENSOR_DESCRIPTIONS: tuple[
     tuple[XtoolSensorEntityDescription, str], ...
@@ -248,39 +274,24 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
         ),
         "has_laser_info",
     ),
+    (_WIFI_SIGNAL_DESCRIPTION, "has_laser_info"),
+    (_WIFI_SIGNAL_DESCRIPTION, "has_wifi_signal"),
+    (_POSITION_X_DESCRIPTION, "has_laser_head_position"),
+    (_POSITION_X_DESCRIPTION, "has_xy_position"),
+    (_POSITION_Y_DESCRIPTION, "has_laser_head_position"),
+    (_POSITION_Y_DESCRIPTION, "has_xy_position"),
     (
+        # X1: the laser backpack fitted (Studio's badges B1-B4)
         XtoolSensorEntityDescription(
-            key="wifi_signal",
-            translation_key="wifi_signal",
-            device_class=SensorDeviceClass.SIGNAL_STRENGTH,
-            native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-            state_class=SensorStateClass.MEASUREMENT,
+            key="laser_backpack",
+            translation_key="laser_backpack",
+            icon="mdi:bag-personal",
+            device_class=SensorDeviceClass.ENUM,
+            options=["none", "fiber_30w", "mopa_60w", "uv_5w", "uv_mopa"],
             entity_category=EntityCategory.DIAGNOSTIC,
-            value_fn=lambda state, _: state.wifi_signal,
+            value_fn=lambda state, _: state.laser_backpack,
         ),
-        "has_laser_info",
-    ),
-    (
-        XtoolSensorEntityDescription(
-            key="position_x",
-            translation_key="laser_position_x",
-            icon="mdi:axis-x-arrow",
-            native_unit_of_measurement=UnitOfLength.MILLIMETERS,
-            state_class=SensorStateClass.MEASUREMENT,
-            value_fn=lambda state, _: state.position_x,
-        ),
-        "has_laser_head_position",
-    ),
-    (
-        XtoolSensorEntityDescription(
-            key="position_y",
-            translation_key="laser_position_y",
-            icon="mdi:axis-y-arrow",
-            native_unit_of_measurement=UnitOfLength.MILLIMETERS,
-            state_class=SensorStateClass.MEASUREMENT,
-            value_fn=lambda state, _: state.position_y,
-        ),
-        "has_laser_head_position",
+        "has_laser_modules",
     ),
     (
         XtoolSensorEntityDescription(
@@ -585,6 +596,9 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     # because the slot layout differs between O1 editions.
     (_AMBIENT_TEMP_DESCRIPTION, "has_ambient_sensors"),
     (_AMBIENT_HUMIDITY_DESCRIPTION, "has_ambient_sensors"),
+    (_LAST_JOB_TIME_DESCRIPTION, "has_process_statistics"),
+    (_WORKING_TIME_DESCRIPTION, "has_process_statistics"),
+    (_STANDBY_TIME_DESCRIPTION, "has_process_statistics"),
     (_LAST_JOB_TIME_DESCRIPTION, "has_lifetime_counters"),
     (_WORKING_TIME_DESCRIPTION, "has_lifetime_counters"),
     (_WORKING_TIME_DESCRIPTION, "has_machine_info_worktime"),
@@ -1203,6 +1217,45 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         )
 
 
+class _WSV2ConfigSelect(XtoolEntity, SelectEntity):
+    """Select backed by one config key, with the values Studio writes."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        coordinator: XtoolCoordinator,
+        key: str,
+        config_key: str,
+        state_attr: str,
+        values: dict[str, int],
+        icon: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id(key)
+        self._attr_translation_key = key
+        self._attr_icon = icon
+        self._config_key = config_key
+        self._state_attr = state_attr
+        self._values = values
+        self._attr_options = list(values)
+
+    @property
+    def current_option(self) -> str | None:
+        d = self.coordinator.data
+        if d is None:
+            return None
+        value = getattr(d, self._state_attr)
+        return next((option for option, v in self._values.items() if v == value), None)
+
+    async def async_select_option(self, option: str) -> None:
+        value = self._values[option]
+        await self.coordinator.async_write(
+            {self._state_attr: value},
+            self.coordinator.protocol.set_config(self._config_key, value),
+        )
+
+
 class WSV2FocusHeight(XtoolEntity, NumberEntity):
     """Focus height as Studio's manual focus: the material thickness in mm.
 
@@ -1578,6 +1631,84 @@ class WSV2FillLightBack(_WSV2FillLightBase):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator)
         self._set_unique_id("fill_light_back")
+
+
+class WSV2NamedFillLight(XtoolEntity, LightEntity, RestoreEntity):
+    """One of the fill lights set by name (X1: left, right, near).
+
+    Shows the laser's own value as a percentage of ``full`` (the device
+    value at 100 %) and sets at most ``highest``, the brightest Studio
+    sets (the close-up light: 50 %).
+    """
+
+    _attr_color_mode = ColorMode.BRIGHTNESS
+    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+
+    # The names the P2's three lights have (close, right, left)
+    _TRANSLATION_KEYS = {"near": "fill_light_1", "right": "fill_light_2", "left": "fill_light_3"}
+
+    def __init__(
+        self, coordinator: XtoolCoordinator, name: str, full: int, highest: int,
+    ) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id(f"fill_light_{name}")
+        self._attr_translation_key = self._TRANSLATION_KEYS[name]
+        self._light = name
+        self._state_attr = f"fill_light_{name}"
+        self._full = full
+        self._highest = highest
+        # The value it last had while on, as _WSV2FillLightBase keeps it
+        self._last_on: int | None = None
+
+    def _value(self) -> int | None:
+        d = self.coordinator.data
+        return None if d is None else getattr(d, self._state_attr)
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self._value()
+        return None if value is None else value > 0
+
+    @property
+    def brightness(self) -> int | None:
+        value = self._value()
+        if value is None:
+            return None
+        return max(0, min(255, _js_round(value * 255 / self._full)))
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        extra = await self.async_get_last_extra_data()
+        value = extra.as_dict().get("last_on") if extra is not None else None
+        if isinstance(value, int) and value > 0:
+            self._last_on = value
+
+    @property
+    def extra_restore_state_data(self) -> _LastBrightness:
+        return _LastBrightness(self._last_on)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        value = self._value()
+        if isinstance(value, int) and value > 0:
+            self._last_on = value
+        super()._handle_coordinator_update()
+
+    async def _write(self, value: int) -> None:
+        await self.coordinator.async_write(
+            {self._state_attr: value},
+            self.coordinator.protocol.set_named_fill_light(self._light, value),
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        if ATTR_BRIGHTNESS in kwargs:
+            value = _js_round(int(kwargs[ATTR_BRIGHTNESS]) * self._full / 255)
+        else:
+            value = self._last_on or self._highest
+        await self._write(max(1, min(self._highest, value)))
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._write(0)
 
 
 # --- Buttons ------------------------------------------------------------
@@ -2679,7 +2810,7 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.DOOR,
             )(coordinator)
         )
-    if model.has_machine_lock:
+    if model.has_machine_lock or model.has_safety_key:
         # ``/peripheral/machine_lock`` reports the USB safety-key
         # presence, *not* a lid lock — Studio's transformResult is
         # ``{state:s} => ({UsbKeyLockStatus: s === "on"})``. Render
@@ -2696,6 +2827,34 @@ def build_wsv2_binary_sensors(
                 BinarySensorDeviceClass.PLUG,
             )(coordinator)
         )
+    if model.has_feeder:
+        # X1 conveyor feeder. Its sensors are blocked by material
+        # (Studio warns "no material" when the rear one clears mid-job).
+        entities.extend([
+            _bool_sensor_factory(
+                "feeder_installed", "feeder_installed",
+                BinarySensorDeviceClass.PLUG, EntityCategory.DIAGNOSTIC,
+            )(coordinator),
+            _bool_sensor_factory(
+                "feeder_front_blocked", "feeder_front_sensor",
+                BinarySensorDeviceClass.OCCUPANCY,
+            )(coordinator),
+            _bool_sensor_factory(
+                "feeder_rear_blocked", "feeder_rear_sensor",
+                BinarySensorDeviceClass.OCCUPANCY,
+            )(coordinator),
+        ])
+    if model.has_laser_modules:
+        entities.extend([
+            _bool_sensor_factory(
+                "diode_laser_installed", "diode_laser_installed",
+                BinarySensorDeviceClass.PLUG, EntityCategory.DIAGNOSTIC,
+            )(coordinator),
+            _bool_sensor_factory(
+                "inkjet_module_installed", "inkjet_module_installed",
+                BinarySensorDeviceClass.PLUG, EntityCategory.DIAGNOSTIC,
+            )(coordinator),
+        ])
     # ``air_assist_connected`` migrated to the AirPump / AirPumpV2
     # accessory child device (see ``protocols/accessories/air_pump``).
     # The laser-state ``state.air_assist_enabled`` is merged into the
@@ -2855,8 +3014,12 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
         # one is currently paired (laser-state values are merged via
         # ``WSV2Coordinator._poll_accessories``).
     ]
+    settings = model.protocol_class.SETTINGS
     if not model.is_read_only:
-        entities.extend(baseline_switches)
+        entities.extend(
+            switch for switch in baseline_switches
+            if settings is None or switch._config_key in settings
+        )
     if model.has_flame_alarm:
         # Disabled by default in the entity registry — disabling
         # this switch means no flame alarm will be triggered per
@@ -3042,6 +3205,18 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
         for key, name in _camera_keys(coordinator)
         if any(spec[0] == name for spec in getattr(model, "camera_perspectives", ()) or ())
     ]
+    if model.has_exhaust_fan_speed:
+        # Studio's X1 setting: 75 / 90 / 100 % as 750 / 900 / 1000
+        entities.append(_WSV2ConfigSelect(
+            coordinator, "exhaust_fan_speed", "smokeFanSpeed", "exhaust_fan_speed",
+            {"75": 750, "90": 900, "100": 1000}, "mdi:fan",
+        ))
+    if model.has_flame_sensitivity:
+        # Studio's X1 flame alarm setting (FLAME_LEVEL: LOW 1, HIGH 3)
+        entities.append(_WSV2ConfigSelect(
+            coordinator, "flame_alarm_sensitivity", "flameSensitivity",
+            "flame_sensitivity", {"low": 1, "high": 3}, "mdi:fire-alert",
+        ))
     # ``WSV2FlameAlarmSelect`` removed in v2.5.4 — firmware types
     # ``flameAlarm`` strictly as boolean, the writable switch already
     # covers it. ``WSV2FlameLevelSelect`` removed in v2.5.4 (firmware
@@ -3054,6 +3229,11 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
     model = coordinator.model
+    if model.named_fill_lights:
+        return [
+            WSV2NamedFillLight(coordinator, name, full, highest)
+            for name, full, highest in model.named_fill_lights
+        ]
     if model.has_fill_light_dual:
         return [
             WSV2FillLightFront(coordinator),

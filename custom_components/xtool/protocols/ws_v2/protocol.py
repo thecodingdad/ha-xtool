@@ -706,6 +706,11 @@ class WSV2Protocol(XtoolProtocol):
     PATH_CAMERA_SNAP = "/v1/camera/snap"
     PATH_UPGRADE_MODE = "/v1/device/upgrade-mode"
 
+    # The config keys the firmware has, where Studio's extension lists
+    # them; the shared setting switches of other keys are left out.
+    # None: not listed, every shared switch is made.
+    SETTINGS: frozenset[str] | None = None
+
     def _apply_latest_to_state(self, state: XtoolDeviceState) -> None:
         """Drain push-cached ``self._latest`` values into ``state``.
 
