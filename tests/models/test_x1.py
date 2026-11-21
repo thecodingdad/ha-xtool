@@ -183,6 +183,29 @@ async def test_the_entities_show_what_the_x1_reports(hass: HomeAssistant, x1) ->
     assert shown["select.flame_alarm_sensitivity"].attributes["options"] == ["low", "high"]
 
 
+async def test_firmware_is_reported_but_not_installed(hass: HomeAssistant) -> None:
+    """Even with firmware updates enabled: the X1 updates by its own path, not built yet."""
+    from homeassistant.components.update import UpdateEntityFeature
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=SERIAL, title="xTool X1",
+        data={
+            "host": HOST, "serial_number": SERIAL, "device_name": "xTool_X1_000000",
+            "firmware_version": FIRMWARE, "laser_power_watts": 0,
+            "model_key": "X1_V2", "pairing_token": "test-token",
+        },
+        options={"enable_firmware_updates": True},
+    )
+    entry.add_to_hass(hass)
+    with patch.object(X1, "protocol_class", FakeX1):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        features = hass.states.get(entity_id("update.firmware_update")).attributes["supported_features"]
+        assert not features & UpdateEntityFeature.INSTALL
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
 async def test_the_device_page(hass: HomeAssistant, x1) -> None:
     from homeassistant.helpers import device_registry as dr
 

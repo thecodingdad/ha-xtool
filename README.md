@@ -36,7 +36,7 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 
 Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
 
-**X1 (JS001).** Pairs with a button press (see [Pairing](#pairing-newer-v2-firmware)): the X1 waits only about 15 seconds for it, so start the setup standing at the laser. Checked on an X1 with firmware 40.140.003.01.ht18; job events and the job buttons follow Studio but have not run during a job yet.
+**X1 (JS001).** Pairs with a button press (see [Pairing](#pairing-newer-v2-firmware)): the X1 waits only about 15 seconds for it, so start the setup standing at the laser. Checked on an X1 with firmware 40.140.003.01.ht18; job events and the job buttons follow Studio but have not run during a job yet. New X1 firmware is reported, but not installed from Home Assistant yet: the X1 updates by its own path.
 
 ## Installation
 

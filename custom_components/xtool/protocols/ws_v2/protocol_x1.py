@@ -150,6 +150,10 @@ class X1WSV2Protocol(M2WSV2Protocol):
     # Studio's X1 config key list: no ``gapCheck`` (Cover check).
     SETTINGS = frozenset(X1_SETTINGS)
 
+    # Studio updates the X1 with its own requests, not the F family's
+    # ``/v1/device/upgrade-mode`` that ``flash_firmware`` sends.
+    FIRMWARE_INSTALL = False
+
     # Settings, modules and statistics change rarely: every sixth poll.
     _SLOW_POLL_EVERY = 6
 
