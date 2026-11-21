@@ -3088,6 +3088,50 @@ level, info, content, timestamp}` (`NOTIFY`).
 | `/v1/platform/device/alarm` | notice | `info:[{info:{code, message}, level}]` |
 | `/v1/project/event/key` | notice | `info:{key_type}` — 4: the laser's button |
 
+### Firmware update
+
+As Studio's X1 extension installs the main package (its
+`uploadMainFirmware`; there is no `upgrade-mode` handshake):
+
+1. Upload the package (the cloud's `contents[0]`, checked against its
+   `md5`) as `package.zip`, file type 2, the way Studio's FileUploader
+   sends any file: the X1 pulls it.
+   - Open the `file_stream` socket first
+     (`function=file_stream`, same session id).
+   - `PUT /v1/filetransfer/upload` on the instruction socket:
+     `{filetype, filename, filesize, digesttype: 1 (MD5), digestdata:
+     <md5 hex>, channel: 1-255 (never 0), packetsize: 1048576}`; the
+     reply's `packetsize` caps the packets.
+   - The X1 sends FILE_REQUEST packets (protocol type 33, payload
+     `[1, channel, offset (5 bytes BE), window size (3 bytes BE)]`); the
+     client answers with FILE_DATA packets (protocol type 33, CRC off:
+     `[0x81, channel, offset (5 bytes BE), data]`) of at most the packet
+     size.
+   - The X1 ends it with `{url: "/v1/filetransfer/finish", method: "PUT",
+     data: {channel, code, message}}` on the instruction socket; `code` 0
+     is success, else Studio's -1 channel occupied, -2 receive timeout,
+     -3 no space, -4 file type not supported, -5 digest type not
+     supported, -6 file in use, -7 file not found, -8 MD5 check failed,
+     -9 aborted (the client sends -9 to abort).
+   - Studio pings the file socket every 5 s with a type-33 payload `0x02`
+     (answer `0x82`), and gives up after 120 s without progress or 30 min.
+2. `POST /v1/platform/device/upgrade` `{filename: "package.zip",
+   fileCheckType: 1, checksum: <md5>}` starts the update.
+3. The X1 restarts to install it. Studio waits up to 10 min for the
+   disconnect, reconnects every 3 s, then waits up to 5 min for
+   `mode: "Idle"`, and compares the versions in machine-info with the
+   cloud's (also the sub-versions of MotionController, VAxisController,
+   XYUAxisController and ZAxisController). `/v1/project/device/upgrade-progress`
+   `{progress}` and the notice `/v1/project/device/upgrade` are only
+   logged.
+
+The upload was checked on an X1 with a 2.5 MB text file (finish `code 0`,
+`message "success"`, no update started). The printhead (inkjet module)
+has its own package and path (`POST /v1/project/printhead/upgrade`).
+Accessories: upload with the file name = md5, then `POST
+/v1/platform/accessories/upgrade?id=<dev_id>` `{filename}`; progress in
+the REPORT `/v1/project/accessory/upgrade-progress` `{progress}` (0-1).
+
 ### Accessories
 
 The X1 lists its accessories itself, Bluetooth (through its dongle) and

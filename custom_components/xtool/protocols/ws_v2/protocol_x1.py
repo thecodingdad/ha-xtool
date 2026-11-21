@@ -19,11 +19,32 @@ Checked on an X1 with firmware 40.140.003.01.ht18.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import hashlib
+import json
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
+import aiohttp
+
 from ...const import XtoolStatus
-from ..base import XtoolDeviceState
+from ..base import FirmwareFile, XtoolDeviceState
+from .protocol import (
+    WSV2_FILE_DEFAULT_PACKET,
+    WSV2_FILE_DIGEST_MD5,
+    WSV2_FILE_OP_DATA,
+    WSV2_FILE_OP_REQUEST,
+    WSV2_PATH,
+    WSV2_PROTOCOL_FILE_TRANSFER,
+    WSV2_PROTOCOL_JSON,
+    _CLIENT_SESSION_ID,
+    _decode_frames,
+    _encode_frame,
+    _ssl_context,
+)
 from .protocol_m2 import (
     M2_PATH_CONFIG,
     M2_PATH_COORDINATE,
@@ -55,6 +76,39 @@ X1_PATH_ACCESSORY_MESSAGE = "/v1/project/accessory/message"  # push only
 
 # Studio's X1 alarm code for a fire (``nd.FIRE``)
 X1_ALARM_FIRE = 1001
+
+X1_PATH_FILE_UPLOAD = "/v1/filetransfer/upload"
+X1_PATH_FILE_FINISH = "/v1/filetransfer/finish"
+
+# Studio's FileUploader: no progress for 120 s, or 30 min in all, ends an
+# upload; it pings the file socket every 5 s (FILE_TRANSFER payload 2).
+UPLOAD_STALL_SECONDS = 120.0
+UPLOAD_TOTAL_SECONDS = 1800.0
+UPLOAD_PING_SECONDS = 5.0
+_UPLOAD_PING = b"\x02"
+# Studio's FileTransferErrorMap for the finish codes
+UPLOAD_ERRORS = {
+    -1: "channel occupied", -2: "receive timeout", -3: "no space",
+    -4: "file type not supported", -5: "digest type not supported",
+    -6: "file in use", -7: "file not found", -8: "MD5 check failed", -9: "aborted",
+}
+
+
+class UploadFailed(RuntimeError):
+    """The X1 ended a file upload with an error code."""
+
+
+X1_PATH_DEVICE_UPGRADE = "/v1/platform/device/upgrade"
+# Studio's X1 firmware upload: file type 2, always as package.zip
+X1_FIRMWARE_FILE_TYPE = 2
+X1_FIRMWARE_FILE_NAME = "package.zip"
+# Studio's waits after starting the update: up to 10 min for the X1 to
+# go away (it restarts to install), reconnecting every 3 s, then up to
+# 5 min for it to report Idle.
+RESTART_DOWN_SECONDS = 600.0
+RESTART_UP_SECONDS = 600.0
+RESTART_IDLE_SECONDS = 300.0
+RECONNECT_SECONDS = 3.0
 
 # Every setting Studio's X1 extension reads (its ``getConfigs`` key list).
 X1_SETTINGS = (
@@ -157,9 +211,9 @@ class X1WSV2Protocol(M2WSV2Protocol):
     # Studio's X1 config key list: no ``gapCheck`` (Cover check).
     SETTINGS = frozenset(X1_SETTINGS)
 
-    # Studio updates the X1 with its own requests, not the F family's
-    # ``/v1/device/upgrade-mode`` that ``flash_firmware`` sends.
-    FIRMWARE_INSTALL = False
+    # Studio updates the X1 with its own requests (``flash_firmware``
+    # below), not the F family's ``/v1/device/upgrade-mode``.
+    FIRMWARE_INSTALL = True
 
     # Settings, modules and statistics change rarely: every sixth poll.
     _SLOW_POLL_EVERY = 6
@@ -170,6 +224,8 @@ class X1WSV2Protocol(M2WSV2Protocol):
         # (accessory id, M-code report) from the accessory message pushes,
         # until the coordinator applies them
         self.pending_accessory_messages: list[tuple[int, str]] = []
+        # The running uploads by channel, each with the finish it waits for
+        self._upload_finish: dict[int, asyncio.Future[dict[str, Any]]] = {}
 
     # --- Polling -----------------------------------------------------------
 
@@ -297,6 +353,192 @@ class X1WSV2Protocol(M2WSV2Protocol):
             return None
         return result.strip().removeprefix(mcode.split(" ", 1)[0]).strip() or None
 
+    # --- File upload -------------------------------------------------------
+
+    async def upload_file(
+        self, data: bytes, file_type: int, filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Send a file the way Studio's FileUploader does: the X1 pulls it.
+
+        The ``file_stream`` socket opens first; ``PUT /v1/filetransfer/upload``
+        announces the size and MD5 on a channel; the X1 asks for windows
+        (FILE_REQUEST: channel, 5-byte offset, 3-byte size) and gets
+        FILE_DATA packets (0x81, channel, 5-byte offset, data) of at most
+        the packet size; it ends with ``/v1/filetransfer/finish``
+        ``{code, channel}`` on either socket, 0 when the MD5 matched.
+        Raises :class:`UploadFailed` with Studio's name for the code.
+        """
+        if not self._connected or self._session is None:
+            await self.connect()
+        # Channel 0 is never used (Studio's channelCounter)
+        channel = self._next_file_channel() or self._next_file_channel()
+        finish: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._upload_finish[channel] = finish
+        url = (
+            f"wss://{self.host}:{self._port}{WSV2_PATH}"
+            f"?id={_CLIENT_SESSION_ID}&function=file_stream"
+        )
+        try:
+            async with self._session.ws_connect(
+                url, ssl=_ssl_context(), timeout=aiohttp.ClientTimeout(total=30),
+                heartbeat=None, max_msg_size=0,
+            ) as ws:
+                reply = await self.request(X1_PATH_FILE_UPLOAD, "PUT", data={
+                    "filetype": file_type, "filename": filename, "filesize": len(data),
+                    "digesttype": WSV2_FILE_DIGEST_MD5,
+                    "digestdata": hashlib.md5(data).hexdigest(),
+                    "channel": channel, "packetsize": WSV2_FILE_DEFAULT_PACKET,
+                })
+                packet = WSV2_FILE_DEFAULT_PACKET
+                if isinstance(reply, dict) and isinstance(reply.get("packetsize"), int):
+                    packet = min(packet, reply["packetsize"])
+                serving = asyncio.ensure_future(
+                    self._serve_upload(ws, data, channel, packet, finish, progress_cb),
+                )
+                pinging = asyncio.ensure_future(self._ping_upload(ws))
+                try:
+                    result = await asyncio.wait_for(asyncio.shield(finish), UPLOAD_TOTAL_SECONDS)
+                except TimeoutError:
+                    with contextlib.suppress(Exception):
+                        await self.request(X1_PATH_FILE_FINISH, "PUT", data={
+                            "code": -9, "message": "File transfer aborted", "channel": channel,
+                        })
+                    raise
+                finally:
+                    serving.cancel()
+                    pinging.cancel()
+        finally:
+            self._upload_finish.pop(channel, None)
+        code = result.get("code")
+        if code != 0:
+            raise UploadFailed(f"{filename}: {UPLOAD_ERRORS.get(code, code)}")
+
+    async def _serve_upload(
+        self, ws: Any, data: bytes, channel: int, packet: int,
+        finish: asyncio.Future[dict[str, Any]],
+        progress_cb: Callable[[float], None] | None,
+    ) -> None:
+        """Answer the X1's FILE_REQUESTs; a stall ends the upload."""
+        buffer = b""
+        while not finish.done():
+            try:
+                message = await asyncio.wait_for(ws.receive(), UPLOAD_STALL_SECONDS)
+            except TimeoutError:
+                finish.set_result({"code": -2, "channel": channel})
+                return
+            if message.type != aiohttp.WSMsgType.BINARY:
+                if not finish.done():
+                    finish.set_exception(ConnectionError(f"file socket closed: {message.type}"))
+                return
+            frames, buffer = _decode_frames(buffer + message.data)
+            for frame_type, payload in frames:
+                if frame_type == WSV2_PROTOCOL_JSON:
+                    self._note_upload_finish(payload)
+                elif (
+                    frame_type == WSV2_PROTOCOL_FILE_TRANSFER and len(payload) >= 10
+                    and payload[0] == WSV2_FILE_OP_REQUEST and payload[1] == channel
+                ):
+                    offset = int.from_bytes(payload[2:7], "big")
+                    end = min(len(data), offset + int.from_bytes(payload[7:10], "big"))
+                    for start in range(offset, end, packet):
+                        chunk = data[start:min(end, start + packet)]
+                        await ws.send_bytes(_encode_frame(
+                            bytes([WSV2_FILE_OP_DATA, channel]) + start.to_bytes(5, "big") + chunk,
+                            protocol_type=WSV2_PROTOCOL_FILE_TRANSFER, cal_crc16=False,
+                        ))
+                        if progress_cb is not None:
+                            progress_cb((start + len(chunk)) / max(len(data), 1))
+
+    async def _ping_upload(self, ws: Any) -> None:
+        while True:
+            await asyncio.sleep(UPLOAD_PING_SECONDS)
+            await ws.send_bytes(_encode_frame(_UPLOAD_PING, protocol_type=WSV2_PROTOCOL_FILE_TRANSFER))
+
+    def _note_upload_finish(self, payload: bytes | dict[str, Any]) -> None:
+        """``{url: /v1/filetransfer/finish, data: {code, channel}}`` from the X1."""
+        if isinstance(payload, (bytes, bytearray)):
+            try:
+                payload = json.loads(payload)
+            except ValueError:
+                return
+        if not isinstance(payload, dict) or payload.get("url") != X1_PATH_FILE_FINISH:
+            return
+        result = payload.get("data")
+        if isinstance(result, dict):
+            finish = self._upload_finish.get(result.get("channel"))
+            if finish is not None and not finish.done():
+                finish.set_result(result)
+
+    # --- Firmware ------------------------------------------------------------
+
+    async def flash_firmware(
+        self,
+        files: list[FirmwareFile],
+        blobs: list[bytes],
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Install X1 firmware as Studio does (its ``uploadMainFirmware``).
+
+        The package goes up as ``package.zip`` (file type 2), then ``POST
+        /v1/platform/device/upgrade`` ``{filename, fileCheckType: 1,
+        checksum: <md5>}`` starts the update. The X1 restarts to install
+        it; this returns once it is back and Idle, so the update entity
+        reads the new version.
+        """
+        if not files or len(files) != len(blobs):
+            raise RuntimeError("X1 flash: no firmware package")
+
+        def report(fraction: float) -> None:
+            if progress_cb is not None:
+                progress_cb(max(0.0, min(1.0, fraction)))
+
+        for fw_file, blob in zip(files, blobs):
+            if fw_file.md5 and hashlib.md5(blob).hexdigest() != fw_file.md5.lower():
+                raise RuntimeError(f"X1 flash: {fw_file.name} does not match its MD5")
+        share = 0.5 / len(files)
+        for index, (fw_file, blob) in enumerate(zip(files, blobs)):
+            await self.upload_file(
+                blob, X1_FIRMWARE_FILE_TYPE, X1_FIRMWARE_FILE_NAME,
+                lambda f, base=index * share: report(base + share * f),
+            )
+            reply = await self.request(X1_PATH_DEVICE_UPGRADE, "POST", data={
+                "filename": X1_FIRMWARE_FILE_NAME, "fileCheckType": 1,
+                "checksum": fw_file.md5 or hashlib.md5(blob).hexdigest(),
+            }, timeout=120.0)
+            _LOGGER.info("X1 firmware update started (%s): %r", fw_file.name, reply)
+            report(0.55)
+            await self._wait_for_restart(report)
+        report(1.0)
+
+    async def _wait_for_restart(self, report: Callable[[float], None]) -> None:
+        """The X1 goes away to install, comes back, and reports Idle."""
+        deadline = time.monotonic() + RESTART_DOWN_SECONDS
+        while self.connected:
+            if time.monotonic() > deadline:
+                raise TimeoutError("the X1 did not restart to install the firmware")
+            await asyncio.sleep(RECONNECT_SECONDS)
+        # The mode from before the restart says nothing about after it
+        self._latest.pop("status", None)
+        report(0.65)
+        deadline = time.monotonic() + RESTART_UP_SECONDS
+        while True:
+            try:
+                await self.connect()
+                break
+            except Exception as err:  # noqa: BLE001
+                if time.monotonic() > deadline:
+                    raise TimeoutError("the X1 did not come back after the firmware update") from err
+                await asyncio.sleep(RECONNECT_SECONDS)
+        report(0.85)
+        deadline = time.monotonic() + RESTART_IDLE_SECONDS
+        while self._latest.get("status") != XtoolStatus.IDLE:
+            if time.monotonic() > deadline:
+                raise TimeoutError("the X1 did not report Idle after the firmware update")
+            with contextlib.suppress(Exception):
+                await self.request(M2_PATH_STATE_SYNC, method="POST")
+            await asyncio.sleep(RECONNECT_SECONDS)
+
     # --- Writes ------------------------------------------------------------
 
     async def set_config(self, key: str, value: Any) -> dict[str, Any]:
@@ -339,6 +581,9 @@ class X1WSV2Protocol(M2WSV2Protocol):
         their state (``REPORT``) or to an event's content. The method
         name does not matter to Studio.
         """
+        if event.get("url") == X1_PATH_FILE_FINISH:
+            self._note_upload_finish(event)
+            return
         data = event.get("data")
         if isinstance(data, list):
             for notice in data:
