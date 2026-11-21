@@ -141,6 +141,14 @@ _M2_JOB_ACTION_TABLE: dict[str, str] = {
 }
 
 
+# The F family's config keys that the shared entities write, as the
+# platform 2.0 firmware names them. Studio's setFanSmokeExhaustTime
+# writes the exhaust post-run time as ``smokeFanTimeout``.
+_M2_CONFIG_KEYS: dict[str, str] = {
+    "purifierTimeout": "smokeFanTimeout",
+}
+
+
 class M2WSV2Protocol(WSV2Protocol):
     """WS-V2 protocol with the M2 (JS002) URL surface.
 
@@ -525,14 +533,19 @@ class M2WSV2Protocol(WSV2Protocol):
         (safe on M2 — its schema hasn't been observed rejecting
         int, unlike some F2 UV firmwares).
         """
+        key = _M2_CONFIG_KEYS.get(key, key)
         coerced: Any = value
         if isinstance(value, bool):
             coerced = 1 if value else 0
-        return await self.request(
+        result = await self.request(
             M2_PATH_CONFIG,
             "PUT",
             data={key: coerced},
         )
+        # Kept as the laser's own: the settings are read only every
+        # sixth poll.
+        self._apply_m2_configs({key: value})
+        return result
 
     # --- Peripheral writes (replaces base /v1/peripheral/param dispatch) --
 
