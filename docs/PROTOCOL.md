@@ -3057,7 +3057,7 @@ string of Studio's own settings), `laserDotSelfCheckTime`,
 exhaust time after processing `smokeFanTimeout` 1-600 s; exhaust fan
 speed `smokeFanSpeed` 750 / 900 / 1000 (75 / 90 / 100 %); buzzer
 `beepEnable` (bool); flame alarm `flameSensitivity` 1 (low) or 3 (high);
-defocus detection `focusDetectControlEnable` (bool).
+"Smart trial run check" `focusDetectControlEnable` (bool, default on; Studio: for the 20 W diode, 30 W fiber and 60 W MOPA modules, the X1 checks for anomalies before a job and reports `/v1/project/event/focus-detect-enable` / `focus-detect-result`). Feed lead `feederRadius` 28.23-28.3613 mm, written with four decimals.
 
 ### Writes
 
@@ -3067,6 +3067,8 @@ defocus detection `focusDetectControlEnable` (bool).
 | PUT `/v1/project/peripheral/fill-light?name=<near\|left\|right>` | `{brightness}` | Studio's `setFillLight`. `left` / `right` 0-100; `near` in tenths of a percent, Studio offers 100-500 (10-50 %) and lights it at 200 for close photos |
 | POST `/v1/project/device/control?action=<START\|PAUSE\|RESUME\|CANCEL>` | — | Studio's `startProcess`, `pausePrint`, `resumePrint`, `cancelPrint` |
 | POST `/v1/project/control/home?axis=ALL` | — | Studio's `resetLaserHead`; it only homes all axes at once |
+| POST `/v1/project/peripheral/feeder-home` | — | Studio's "Release material" (`feederRelease`); notices `/v1/project/device/feeder` `info:{code, goHome:"running"}` then `"finish"` (about 4 s); Studio waits 60 s for the finish |
+| POST `/v1/project/peripheral/feeder-press` | `{distance, speed:4}` | Studio's clamp for a thickness (`feederPress`): `distance = -(29 + hardness - thickness)`, hardness 2 rigid / 0 flexible, thickness 0-68.9; notices `feedPress` `start`, `running`, `finish` (about 6 s for 10 mm). Studio guards both: connected, not initial / sleeping / leveling / busy / moving, feeder connected (Studio counts SecureConfirm as not busy) |
 | POST `/v1/platform/camera/snap?name=<far\|near>` | — | `{filename}`, then the file over `file_stream` as on the M2. Studio's `captureImage` uses `far` and `near` only; `side` returns a black picture, `ldm` answers `code -1 "snap failed"` |
 
 ### Pushes

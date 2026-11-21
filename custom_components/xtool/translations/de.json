@@ -1157,6 +1157,9 @@
       },
       "md_mode": {
         "name": "Zugangskontrolle"
+      },
+      "trial_run_check": {
+        "name": "Intelligente Vorlaufprüfung"
       }
     },
     "number": {
@@ -1547,6 +1550,9 @@
       },
       "accessory_purifier_reset_filter": {
         "name": "Filter zurücksetzen"
+      },
+      "feeder_release": {
+        "name": "Material freigeben"
       }
     },
     "image": {
@@ -1742,6 +1748,24 @@
           "description": "Der P2, dessen Laserkopf sich bewegt."
         }
       }
+    },
+    "feeder_clamp": {
+      "name": "Förderband-Material klemmen",
+      "description": "Klemmt das Material im Förderband des X1 für seine Dicke, wie xTool Studio im Förderband-Modus nach Eingabe der Dicke. Nur mit eingebautem Förderband und wenn der Laser bereit ist. „Material freigeben“ löst es wieder.",
+      "fields": {
+        "device_id": {
+          "name": "Laser",
+          "description": "Der X1."
+        },
+        "thickness": {
+          "name": "Dicke",
+          "description": "Materialdicke in mm (0-68,9)."
+        },
+        "material": {
+          "name": "Material",
+          "description": "Starr (Holz, Acryl) oder flexibel (Leder, Filz), wie Studios Materialhärte."
+        }
+      }
     }
   },
   "exceptions": {
@@ -1765,6 +1789,20 @@
     },
     "move_wrong_device": {
       "message": "Wähle einen xTool P2: Nur sein Laserkopf kann bewegt werden."
+    },
+    "feeder_wrong_device": {
+      "message": "Wähle einen X1 mit Förderband."
+    },
+    "feeder_refused": {
+      "message": "Das Förderband hat sich nicht bewegt: {reason}."
+    }
+  },
+  "selector": {
+    "feeder_material": {
+      "options": {
+        "rigid": "Starres Material",
+        "flexible": "Flexibles Material"
+      }
     }
   }
 }

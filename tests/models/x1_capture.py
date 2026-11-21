@@ -95,7 +95,8 @@ REPLIES: dict[tuple[str, str], Any] = {
     ("GET", "/v1/project/peripheral/usbkey"): {"usbKey": True},
     ("GET", "/v1/project/device/coordinate"): {"a": 30.0, "b": 30.0, "u": 0.0, "v": 0.0, "x": 0.0, "y": 0.0},
     ("GET", "/v1/platform/device/config"): {
-        "beepEnable": True, "flameSensitivity": 3, "smokeFanSpeed": 750, "smokeFanTimeout": 20,
+        "beepEnable": True, "flameSensitivity": 3, "focusDetectControlEnable": True,
+        "smokeFanSpeed": 750, "smokeFanTimeout": 20,
     },
     ("GET", "/v1/project/process/statistics"): {"count": 13, "singleTime": 0, "standbyTime": 18022, "totalTime": 4734},
     ("GET", "/v1/project/peripheral/fill-light"): {"count": 4, "fillLights": [

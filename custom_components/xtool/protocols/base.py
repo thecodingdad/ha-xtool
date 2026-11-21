@@ -216,6 +216,11 @@ class XtoolDeviceModel:
     # X1 conveyor feeder: whether it is fitted and whether its front and
     # rear sensors are blocked, as Studio reads them.
     has_feeder: bool = False
+    # X1 feeder controls as Studio's feeder panel: Release material and
+    # the feeder_clamp action (clamp for a thickness), only while idle.
+    has_feeder_control: bool = False
+    # X1 "Smart trial run check" (config ``focusDetectControlEnable``)
+    has_trial_run_check: bool = False
     # X1 modules: the diode galvo, the laser backpack (fiber, MOPA, UV)
     # and the inkjet module, as Studio detects them.
     has_laser_modules: bool = False
@@ -507,6 +512,7 @@ class XtoolDeviceState:
     inkjet_module_installed: bool | None = None
     exhaust_fan_speed: int | None = None  # 750, 900 or 1000 (per mille)
     flame_sensitivity: int | None = None  # 1 = low, 3 = high
+    trial_run_check: bool | None = None
 
     # DT002 (O1 Omni) — populated by ``DT002WSV2Protocol``. Cartridge
     # dicts are keyed "<ink path>_<slot>" (1-based) and carry

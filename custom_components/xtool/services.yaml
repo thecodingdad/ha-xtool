@@ -128,3 +128,31 @@ camera:
           step: 1
           unit_of_measurement: mm
           mode: box
+
+feeder_clamp:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - integration: xtool
+              model: xTool X1
+    thickness:
+      required: true
+      example: 3
+      selector:
+        number:
+          min: 0
+          max: 68.9
+          step: 0.1
+          unit_of_measurement: mm
+          mode: box
+    material:
+      default: rigid
+      selector:
+        select:
+          translation_key: feeder_material
+          options:
+            - rigid
+            - flexible
