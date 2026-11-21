@@ -687,9 +687,14 @@ XTOOL_X1_WSV2 = XtoolDeviceModel(
     has_wifi_signal=True,
     has_exhaust_fan_speed=True,
     has_flame_sensitivity=True,
-    # Alarms are any of Studio's X1 alarm codes, not only fire.
+    # Alarms are any of Studio's X1 alarm codes; the fire alarm (1001)
+    # fires the fire warning.
     has_generic_alarms=True,
+    has_fire_alarm_code=True,
+    # The X1 lists its accessories itself (the AP2 over Bluetooth, the
+    # Fire Safety Set 2 wired) and passes M-codes to them by id.
     has_bt_accessories=False,
+    has_platform_accessories=True,
     firmware_content_id="xTool-X1-firmware",
     firmware_machine_type="JS001",
     protocol_version="V2",

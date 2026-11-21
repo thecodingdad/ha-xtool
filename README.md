@@ -15,7 +15,7 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 
 - Device status, job control (pause, resume, cancel, homing) and job, error and fire events for automations
 - Fill lights, buzzer, fans, safety settings, cameras and sensors (position, temperatures, lifetime statistics, …)
-- Bluetooth accessories as their own devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …)
+- Bluetooth and wired accessories as their own devices (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set (2), …)
 - Firmware update entity with the release notes from xTool's cloud (installing is opt-in)
 - Optional power switch (smart plug) with automatic power-off
 - Model and firmware detected automatically; follows the laser when its address changes
@@ -36,7 +36,7 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 
 Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
 
-**X1 (JS001).** Pairs with a button press (see [Pairing](#pairing-newer-v2-firmware)): the X1 waits only about 15 seconds for it, so start the setup standing at the laser. Checked on an X1 with firmware 40.140.003.01.ht18; job events and the job buttons follow Studio but have not run during a job yet. New X1 firmware is reported, but not installed from Home Assistant yet: the X1 updates by its own path.
+**X1 (JS001).** Pairs with a button press (see [Pairing](#pairing-newer-v2-firmware)): the X1 waits only about 15 seconds for it, so start the setup standing at the laser. Checked on an X1 with firmware 40.140.003.01.ht18; job events and the job buttons follow Studio but have not run during a job yet. The X1 shows a connected SafetyPro AP2 and Fire Safety Set 2 as their own devices, read only for now (no controls, no firmware install), and a fire alarm of the X1 fires the Fire warning event. New X1 firmware is reported, but not installed from Home Assistant yet: the X1 updates by its own path.
 
 ## Installation
 
@@ -141,6 +141,8 @@ Only the entities the model and its connected accessories support are created.
 | Inkjet head capped / Toner installed / Inkjet head calibrated | **M2** |
 
 Bluetooth accessories (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) are devices of their own, connected to the laser, with their own entities: gear, running, filter wear, connection, post-run time, buzzer and so on.
+
+The **Fire Safety Set 2** shows Extinguishing (on while it sprays), Gas cylinder, Gas level (0-3, as Studio shows it), the Problem sensors Gas reserve, Extinguisher drive and Cylinder calibration, and Gas remaining (diagnostic, the raw value Studio reads).
 
 #### SafetyPro IF2 2.0 fan
 
@@ -284,7 +286,7 @@ Events fire once on each change, for automation triggers.
 | Button | `short_press`, `long_press`, `double_press` | The laser's own button |
 | Job | `started`, `paused`, `resumed`, `cancelled`, `finished`, `failed`, `framing_started`, `framing_finished` | Job changes, with `task_id` and, where available, the `duration`. `failed`: the laser reported the job as failed, e.g. after a power cut |
 | Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop`, `temperature`, `gyro`, `laser_head_fault`, `z_axis_fault`, `u_axis_fault`, `conveyor_fault`, `board_fault`, `camera_fault`, `dongle_fault`, `udisk_fault`, `machine_lock_md_fault` | Errors as the laser reports them (`tilt` / `moving`: D series; `emergency_stop` and the faults: V2 firmware) |
-| Fire warning | `triggered`, `cleared` | Flame alarm, for safety automations |
+| Fire warning | `triggered`, `cleared` | Flame alarm, for safety automations (**X1**: `triggered` on the X1's fire alarm) |
 
 Event entities show Unknown until their first event.
 

@@ -860,12 +860,16 @@ def build_accessory_entities(
         return []
     out: list[Any] = []
     fields = accessory.fields
-    has_update_entity = bool(definition.firmware_content_id)
+    # A read-only accessory has no controls and no firmware install
+    # (and so no update entity: its version sensor shows the firmware).
+    has_update_entity = bool(definition.firmware_content_id) and not accessory.read_only
     for spec in definition.entities:
         cls = _PLATFORM_TO_CLASS.get(spec.platform)
         if cls is None:
             continue
         if spec.field is not None and spec.field not in fields:
+            continue
+        if accessory.read_only and (spec.write_mcode is not None or spec.write_action is not None):
             continue
         # When an update entity surfaces the firmware version, suppress
         # the redundant ``version`` sensor — the user already sees the

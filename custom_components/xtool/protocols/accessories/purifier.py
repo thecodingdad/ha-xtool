@@ -192,4 +192,6 @@ PURIFIER = AccessoryDefinition(
     info_mcode=MCODE_PURIFIER_INFO,
     parse_info=parse_purifier_info,
     entities=PURIFIER_ENTITIES,
+    # Studio's BigPurifier: firmware 40.212.x.4528, the same prefix
+    platform_id=69,
 )

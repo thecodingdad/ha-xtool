@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import replace as dataclass_replace
 from typing import TYPE_CHECKING, Any
@@ -9,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from ...coordinator import XtoolCoordinator
-from ..base import XtoolDeviceState
+from ..base import AccessoryState, XtoolDeviceState
 from .protocol import WSV2PairingFailed, WSV2PairingRequired
 
 if TYPE_CHECKING:
@@ -97,6 +98,12 @@ class WSV2Coordinator(XtoolCoordinator):
         pushes refresh entities instantly, mirroring how laser
         pushes already do post-v2.5.7).
         """
+        if self.model.has_platform_accessories:
+            messages = self.protocol.pending_accessory_messages
+            if messages:
+                self.protocol.pending_accessory_messages = []
+                self._merge_platform_accessory_messages(state, messages)
+            return
         pending = getattr(self.protocol, "_pending_accessory_updates", None)
         if not pending:
             return
@@ -205,6 +212,10 @@ class WSV2Coordinator(XtoolCoordinator):
         skipped and the accessory keeps its pure BT-tunneled
         wire surface.
         """
+        if self.model.has_platform_accessories:
+            await self._poll_platform_accessories(state)
+            self._drain_pending_accessory_pushes(state)
+            return
         await super()._poll_accessories(state)
         # Drain queued `/accessory/status` push updates. Shared
         # helper used by ``_on_protocol_push`` too — see comment
@@ -259,6 +270,93 @@ class WSV2Coordinator(XtoolCoordinator):
                     acc.fields["post_run_seconds"] = int(
                         state.smoking_fan_duration
                     )
+
+    async def _poll_platform_accessories(self, state: XtoolDeviceState) -> None:
+        """Accessories the laser lists itself (X1), read by accessory id.
+
+        Studio's platform 2.0 path: the connected entries of
+        ``/v1/platform/accessories/list``, then each one's info M-code
+        through ``/v1/platform/accessories/control``. Read only: their
+        writes on this path are not confirmed yet.
+        """
+        from ..accessories import ACCESSORY_DEFINITIONS
+
+        by_id = {
+            definition.platform_id: definition
+            for definition in ACCESSORY_DEFINITIONS.values()
+            if definition.platform_id is not None
+        }
+        try:
+            listed = await self.protocol.platform_accessories()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Accessory list failed: %s", err)
+            return
+        prior = state.connected_accessories or {}
+        now = asyncio.get_running_loop().time()
+        found: dict[str, AccessoryState] = {}
+        for entry in listed:
+            definition = by_id.get(entry.get("dev_id"))
+            if definition is None or not entry.get("status"):
+                continue
+            fields: dict[str, Any] = {}
+            version = (entry.get("version") or {}).get("app_version")
+            if version:
+                fields["version"] = version
+            reply = None
+            if definition.info_mcode:
+                try:
+                    reply = await self.protocol.accessory_command(
+                        definition.platform_id, definition.info_mcode,
+                    )
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("Accessory %s %s failed: %s", definition.type_id, definition.info_mcode, err)
+            if reply:
+                try:
+                    fields.update(definition.parse_info(reply))
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("Accessory %s parse failed: %s — raw=%r", definition.type_id, err, reply)
+            previous = next((a for a in prior.values() if a.type_id == definition.type_id), None)
+            sn = str(fields.get("sn") or "") or (previous.sn if previous else "")
+            if not sn:
+                # Keyed by its serial number only: left out until its
+                # info answers, or it would get a second device later
+                _LOGGER.debug("Accessory %s left out until %s answers", definition.type_id, definition.info_mcode)
+                continue
+            if not reply and previous is not None:
+                fields = {**previous.fields, **fields}
+            found[f"{definition.type_id}:{sn}"] = AccessoryState(
+                type_id=definition.type_id, sn=sn, fields=fields,
+                last_seen=now, read_only=True,
+            )
+        state.connected_accessories = found
+
+    def _merge_platform_accessory_messages(
+        self,
+        state: XtoolDeviceState,
+        messages: list[tuple[int, str]],
+    ) -> None:
+        """Apply the accessories' own reports (``/v1/project/accessory/message``).
+
+        A report counts when it is the accessory's info M-code, e.g. the
+        Fire Safety Set 2's ``M9033`` about every 2 s; other heads (the
+        purifier's ``M9039``) are left to the poll.
+        """
+        from ..accessories import get_definition
+
+        for accessory_id, message in messages:
+            head, _, payload = message.strip().partition(" ")
+            for acc in (state.connected_accessories or {}).values():
+                definition = get_definition(acc.type_id)
+                if (
+                    definition is None
+                    or definition.platform_id != accessory_id
+                    or definition.info_mcode != head
+                ):
+                    continue
+                try:
+                    acc.fields.update(definition.parse_info(payload.strip()))
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("Accessory %s report parse failed: %s — raw=%r", acc.type_id, err, message)
 
     def _merge_accessory_push_updates(
         self,

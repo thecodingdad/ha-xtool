@@ -837,6 +837,18 @@
           "uv_5w": "5 W UV",
           "uv_mopa": "5 W UV + 60 W MOPA"
         }
+      },
+      "accessory_purifier_version": {
+        "name": "Firmware"
+      },
+      "accessory_safetyfireboxpro_version": {
+        "name": "Firmware"
+      },
+      "accessory_safetyfireboxpro_gas_level": {
+        "name": "Gasfüllstand"
+      },
+      "accessory_safetyfireboxpro_gas_remaining": {
+        "name": "Restgas"
       }
     },
     "binary_sensor": {
@@ -972,6 +984,21 @@
       },
       "inkjet_module_installed": {
         "name": "Inkjet-Modul"
+      },
+      "accessory_safetyfireboxpro_spraying": {
+        "name": "Löscht"
+      },
+      "accessory_safetyfireboxpro_cylinder_installed": {
+        "name": "Gasflasche"
+      },
+      "accessory_safetyfireboxpro_gas_low": {
+        "name": "Gasvorrat"
+      },
+      "accessory_safetyfireboxpro_drive_fault": {
+        "name": "Löschantrieb"
+      },
+      "accessory_safetyfireboxpro_calibration_needed": {
+        "name": "Gasflaschen-Kalibrierung"
       }
     },
     "camera": {

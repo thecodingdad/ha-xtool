@@ -3391,7 +3391,7 @@ def build_wsv2_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
         WSV2JobEvent(coordinator),
         WSV2ErrorEvent(coordinator),
     ]
-    if not coordinator.model.has_generic_alarms:
+    if not coordinator.model.has_generic_alarms or coordinator.model.has_fire_alarm_code:
         entities.append(WSV2FireWarningEvent(coordinator))
     if coordinator.model.has_button_event:
         entities.insert(0, WSV2ButtonEvent(coordinator))

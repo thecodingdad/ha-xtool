@@ -115,6 +115,10 @@ class AccessoryState:
     sn: str
     fields: dict[str, Any] = field(default_factory=dict)
     last_seen: float = 0.0
+    # Read only: no controls and no firmware install, where the laser
+    # reaches the accessory by a path whose writes are not confirmed
+    # (the X1's ``/v1/platform/accessories``).
+    read_only: bool = False
 
 
 @dataclass
@@ -304,6 +308,13 @@ class XtoolDeviceModel:
     # ``/passthrough`` or ``/v1/parts/control`` route) opt out
     # explicitly with ``has_bt_accessories=False``.
     has_bt_accessories: bool = True
+    # The laser lists its accessories (Bluetooth and wired) itself and
+    # passes M-codes to them by accessory id: ``/v1/platform/accessories``
+    # (X1). Read only for now.
+    has_platform_accessories: bool = False
+    # A fire warning from the alarm Studio treats as fire (X1: code 1001),
+    # on a model whose other alarms are generic.
+    has_fire_alarm_code: bool = False
     firmware_content_id: str = ""
     firmware_multi_package: bool = False
     firmware_board_ids: tuple[str, ...] = ()
