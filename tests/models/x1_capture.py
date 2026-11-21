@@ -123,6 +123,20 @@ FIRE_BOX_REPORT = {
     }},
 }
 
+# The AP2's own report as its level was set on the purifier: Auto (C0,
+# idle), levels 1-4 (A1-A4), Off (A0). Its M9039 between these carries
+# the same codes.
+AP2_REPORTS = {
+    gear: {
+        "type": "request", "method": "REPORT", "params": {},
+        "data": {"/v1/project/accessory/message": {
+            "dev_id": 69,
+            "message": f'M9033 V40.212.007.4528.01 B03 {gear} D0 H98 I99 J100 K100 L100 S0 E:"{AP2_SERIAL}"',
+        }},
+    }
+    for gear in ("C0", "A1", "A2", "A3", "A4", "A0")
+}
+
 # Each (method, URL) the integration sends, and the X1's reply.
 REPLIES: dict[tuple[str, str], Any] = {
     ("GET", "/v1/platform/device/machine-info"): MACHINE_INFO,

@@ -276,8 +276,7 @@ class WSV2Coordinator(XtoolCoordinator):
 
         Studio's platform 2.0 path: the connected entries of
         ``/v1/platform/accessories/list``, then each one's info M-code
-        through ``/v1/platform/accessories/control``. Read only: their
-        writes on this path are not confirmed yet.
+        through ``/v1/platform/accessories/control``.
         """
         from ..accessories import ACCESSORY_DEFINITIONS
 
@@ -326,7 +325,7 @@ class WSV2Coordinator(XtoolCoordinator):
                 fields = {**previous.fields, **fields}
             found[f"{definition.type_id}:{sn}"] = AccessoryState(
                 type_id=definition.type_id, sn=sn, fields=fields,
-                last_seen=now, read_only=True,
+                last_seen=now, via_platform=True,
             )
         state.connected_accessories = found
 

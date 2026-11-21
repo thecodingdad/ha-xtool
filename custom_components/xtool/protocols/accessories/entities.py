@@ -809,6 +809,10 @@ async def _passthrough_write(entity: _AccessoryEntity, mcode: str) -> None:
     alongside the rest of the BT-accessory M-code constants.
     """
     proto = entity.coordinator.protocol
+    if entity.coordinator.model.has_platform_accessories:
+        # The laser passes it to the accessory by its id
+        await proto.accessory_command(entity._definition.platform_id, mcode)
+        return
     head = mcode.split(" ", 1)[0]
     tunnel = getattr(proto, "parts_control", None) or getattr(
         proto, "passthrough", None,
@@ -860,16 +864,21 @@ def build_accessory_entities(
         return []
     out: list[Any] = []
     fields = accessory.fields
-    # A read-only accessory has no controls and no firmware install
-    # (and so no update entity: its version sensor shows the firmware).
-    has_update_entity = bool(definition.firmware_content_id) and not accessory.read_only
-    for spec in definition.entities:
+    specs = definition.entities
+    if accessory.via_platform:
+        # Only the controls confirmed on the platform 2.0 path, and no
+        # firmware install (so no update entity: the version sensor
+        # shows the firmware)
+        specs = definition.platform_entities if definition.platform_entities is not None else tuple(
+            spec for spec in definition.entities
+            if spec.write_mcode is None and spec.write_action is None
+        )
+    has_update_entity = bool(definition.firmware_content_id) and not accessory.via_platform
+    for spec in specs:
         cls = _PLATFORM_TO_CLASS.get(spec.platform)
         if cls is None:
             continue
         if spec.field is not None and spec.field not in fields:
-            continue
-        if accessory.read_only and (spec.write_mcode is not None or spec.write_action is not None):
             continue
         # When an update entity surfaces the firmware version, suppress
         # the redundant ``version`` sensor — the user already sees the

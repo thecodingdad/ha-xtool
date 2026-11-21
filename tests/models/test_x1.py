@@ -25,7 +25,10 @@ from custom_components.xtool.protocols.base import XtoolDeviceState
 
 from custom_components.xtool.protocols.accessories.fire_extinguisher import parse_fire_box_info
 
+from custom_components.xtool.protocols.accessories.purifier import parse_purifier_info
+
 from .x1_capture import (
+    AP2_REPORTS,
     AP2_SERIAL,
     FIRE_BOX_REPORT,
     FIRE_BOX_SERIAL,
@@ -89,6 +92,8 @@ EXPECTED_ENTITIES = {
         "version", "sn", "gear", "filter_pre", "filter_medium", "filter_carbon",
         "filter_dense_carbon", "filter_hepa",
     )),
+    ("binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running"),
+    ("select", f"accessory_purifier_{AP2_SERIAL}_level_select"),
     *(("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_{key}") for key in (
         "version", "sn", "gas_level", "gas_remaining",
     )),
@@ -100,6 +105,9 @@ EXPECTED_ENTITIES = {
 # The accessories' states: (platform, key) → state.
 EXPECTED_ACCESSORY_STATES = {
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_version"): "V40.212.007.4528.01 B03",
+    ("sensor", f"accessory_purifier_{AP2_SERIAL}_gear"): "auto",
+    ("binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running"): "off",
+    ("select", f"accessory_purifier_{AP2_SERIAL}_level_select"): "auto",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_pre"): "98.0",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_medium"): "99.0",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_hepa"): "100.0",
@@ -488,6 +496,50 @@ async def test_a_fire_box_report_shows_at_once(hass: HomeAssistant, x1) -> None:
     assert _accessory_state(hass, *spraying).state == "on"
     assert _accessory_state(hass, "binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_low").state == "on"
     assert _accessory_state(hass, "sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_level").state == "1"
+
+
+@pytest.mark.parametrize(("code", "shown", "running"), [
+    ("C0", "auto", "off"), ("A1", "1", "on"), ("A2", "2", "on"), ("A3", "3", "on"), ("A4", "4", "on"),
+    ("A0", "off", "off"),
+])
+async def test_the_ap2_level_shows_at_once(hass: HomeAssistant, x1, code: str, shown: str, running: str) -> None:
+    """Set on the AP2 itself (A = manual, C = Auto): its report shows the level without a poll."""
+    _, protocol = x1
+    protocol._dispatch_event(AP2_REPORTS[code])
+    await hass.async_block_till_done()
+    assert _accessory_state(hass, "sensor", f"accessory_purifier_{AP2_SERIAL}_gear").state == shown
+    assert _accessory_state(hass, "select", f"accessory_purifier_{AP2_SERIAL}_level_select").state == shown
+    assert _accessory_state(hass, "binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running").state == running
+
+
+@pytest.mark.parametrize(("code", "gear", "running"), [
+    ("C0", "auto", False), ("C2", "auto", True), ("C5", "auto", True), ("C-1", "auto", False),
+    ("A0", "off", False), ("A3", "3", True),
+])
+def test_purifier_level_codes(code: str, gear: str, running: bool) -> None:
+    fields = parse_purifier_info(f"V40.212.007.4528.01 B03 {code} D0 H98 I99 J100 K100 L100 S0")
+    assert (fields["gear"], fields["running"]) == (gear, running)
+
+
+def test_other_purifier_gears_stay_as_reported() -> None:
+    fields = parse_purifier_info("V40.212.007.4528.01 B03 2 H98 I99 J100 K100 L100")
+    assert fields["gear"] == "2"
+    assert "running" not in fields
+
+
+@pytest.mark.parametrize(("option", "command"), [
+    ("off", "M9039 A0"), ("1", "M9039 A1"), ("4", "M9039 A4"), ("auto", "M9039 C-1"),
+])
+async def test_the_ap2_level_is_set_as_studio_sets_it(hass: HomeAssistant, x1, option: str, command: str) -> None:
+    _, protocol = x1
+    protocol.sent.clear()
+    entity = er.async_get(hass).async_get_entity_id(
+        "select", DOMAIN, f"{SERIAL}_accessory_purifier_{AP2_SERIAL}_level_select",
+    )
+    await hass.services.async_call(
+        "select", "select_option", {ATTR_ENTITY_ID: entity, "option": option}, blocking=True,
+    )
+    assert ("POST", "/v1/platform/accessories/control", {"id": 69}, {"command": command}) in protocol.sent
 
 
 async def test_the_purifier_report_is_left_to_the_poll(hass: HomeAssistant, x1) -> None:

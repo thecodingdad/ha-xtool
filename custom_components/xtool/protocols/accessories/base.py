@@ -138,6 +138,9 @@ class AccessoryDefinition:
     # accessory type: ``dev_id`` in ``/v1/platform/accessories/list``,
     # ``id`` for ``/v1/platform/accessories/control``). None: not known.
     platform_id: int | None = None
+    # The entities when reached that way, with the controls Studio's
+    # platform 2.0 path uses. None: the entities without controls.
+    platform_entities: tuple[AccessoryEntitySpec, ...] | None = None
     # (platform, spec key) pairs of entities an earlier release created
     # and this one no longer does. Their registry entries are removed
     # when the accessory's entities are built, so they do not stay
