@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from .models import (
     WSV2_MODELS,
+    XTOOL_APPAREL_PRINTER_PLUS_WSV2,
     XTOOL_APPAREL_PRINTER_WSV2,
     XTOOL_F1_LITE_WSV2,
     XTOOL_F1_ULTRA_V2_WSV2,
@@ -47,6 +48,7 @@ __all__ = [
     "WSV2PairingFailed",
     "WSV2PairingRequired",
     "WSV2Protocol",
+    "XTOOL_APPAREL_PRINTER_PLUS_WSV2",
     "XTOOL_APPAREL_PRINTER_WSV2",
     "XTOOL_F1_LITE_WSV2",
     "XTOOL_F1_ULTRA_V2_WSV2",

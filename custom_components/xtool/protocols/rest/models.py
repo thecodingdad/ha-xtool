@@ -346,8 +346,24 @@ XTOOL_APPAREL_PRINTER = XtoolDeviceModel(
     has_move_stop=True,
     has_camera=True,  # 16MP AI camera for nozzle calibration
     has_runtime_stats=True,
+    has_powder_loop=True,
     # Inkjet DTF device — no laser, no flame alarm, no smoke extraction.
     firmware_content_id="xTool-apparelprinter-firmware-1.5",
+    firmware_machine_type="MDT",
+)
+
+# Apparel Printer Plus (DT003): the DT001 routes, without the powder
+# loop, the speaker and the ink-stack calibration (Studio's DT003 bundle).
+XTOOL_APPAREL_PRINTER_PLUS = XtoolDeviceModel(
+    model_id="DT003",
+    name="xTool Apparel Printer Plus",
+    protocol_class=RestProtocolF1V1,
+    coordinator_class=RestCoordinator,
+    has_beeper=True,
+    has_move_stop=True,
+    has_camera=True,
+    has_runtime_stats=True,
+    firmware_content_id="xTool-apparel-printer-plus-firmware",
     firmware_machine_type="MDT",
 )
 

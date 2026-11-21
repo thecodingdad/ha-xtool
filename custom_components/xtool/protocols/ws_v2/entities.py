@@ -2731,14 +2731,17 @@ def build_wsv2_binary_sensors(
                 "film_position_ready", "film_position_ready",
             )(coordinator),
             _bool_sensor_factory(
-                "powder_loop_running", "powder_loop_running",
-                BinarySensorDeviceClass.RUNNING,
-            )(coordinator),
-            _bool_sensor_factory(
                 "heater_connected", "heater_connected",
                 BinarySensorDeviceClass.CONNECTIVITY,
             )(coordinator),
         ])
+    if model.has_powder_loop:
+        entities.append(
+            _bool_sensor_factory(
+                "powder_loop_running", "powder_loop_running",
+                BinarySensorDeviceClass.RUNNING,
+            )(coordinator)
+        )
 
     if model.has_ink_cartridges:
         # O1 Omni: doors report True = open; waste tank ``level`` 2 =

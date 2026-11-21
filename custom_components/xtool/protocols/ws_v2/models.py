@@ -547,12 +547,33 @@ XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     has_move_stop=True,
     has_camera=True,  # 16MP AI camera for nozzle calibration
     has_inkjet_sensors=True,
+    has_powder_loop=True,
     has_runtime_stats=True,  # DT001 bundle exposes standbyTime
     # Inkjet DTF device — no laser, no flame alarm, no smoke extraction.
     firmware_content_id="xTool-apparelprinter-firmware-1.5",
     firmware_machine_type="MDT",
     protocol_version="V2",
     discovery_match=("DT001",),
+)
+
+
+# Apparel Printer Plus (DT003): Studio's DT003 bundle uses the DT001
+# routes, without the powder loop, the speaker and the ink-stack
+# calibration.
+XTOOL_APPAREL_PRINTER_PLUS_WSV2 = XtoolDeviceModel(
+    model_id="DT003",
+    name="xTool Apparel Printer Plus",
+    protocol_class=DT001WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_beeper=True,
+    has_move_stop=True,
+    has_camera=True,
+    has_inkjet_sensors=True,
+    has_runtime_stats=True,
+    firmware_content_id="xTool-apparel-printer-plus-firmware",
+    firmware_machine_type="MDT",
+    protocol_version="V2",
+    discovery_match=("DT003",),
 )
 
 
@@ -656,6 +677,7 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_P3_WSV2,
     XTOOL_METALFAB_WSV2,
     XTOOL_APPAREL_PRINTER_WSV2,
+    XTOOL_APPAREL_PRINTER_PLUS_WSV2,
     XTOOL_M2_WSV2,
     XTOOL_O1_OMNI_WSV2,
 )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .models import (
     XTOOL_APPAREL_PRINTER,
+    XTOOL_APPAREL_PRINTER_PLUS,
     XTOOL_F1,
     XTOOL_F1_ULTRA,
     XTOOL_F1_ULTRA_V2,
@@ -81,6 +82,7 @@ __all__ = [
     "REST_PATH_MODE_SWITCH",
     "RestProtocol",
     "XTOOL_APPAREL_PRINTER",
+    "XTOOL_APPAREL_PRINTER_PLUS",
     "XTOOL_F1",
     "XTOOL_F1_ULTRA",
     "XTOOL_F1_ULTRA_V2",

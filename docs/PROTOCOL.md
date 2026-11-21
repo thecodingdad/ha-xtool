@@ -35,7 +35,7 @@ USB, `needConnectAlive: false`, no heartbeat).
 |---|---|---|---|---|
 | `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
 | `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
-| `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
+| `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
 | `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
 
 V1- and V2-firmware lines for the same hardware coexist — discovery +
@@ -72,6 +72,7 @@ release notes published on `api.xtool.com/efficacy/v1/package/version/latest`.
 | P3 | `40.23.006.03` | Ships V2-only. ⚠️ Update can take 10–15 min. |
 | MetalFab (HJ003) | `40.70.013.4` | Studio v1.6+ required. |
 | Apparel Printer (DT001) | `40.100.025.03` | Includes manual ink-stack calibration + alignment-reset features. |
+| Apparel Printer Plus (DT003) | — | V1 and V2 firmware. Studio's DT003 bundle uses the DT001 routes, without `/peripheral/powder_loop`, `/peripheral/speaker` and `/inkStackCali/start` (each with and without `/v1`). |
 
 V1-firmware lines that have **not** moved to V2 yet: D1 / D1 Pro /
 D1 Pro 2.0 (D-series stays on legacy REST + push-WS), P1, S1
@@ -3095,6 +3096,7 @@ multi-package response (or an empty body if no update).
 | P3 | `xTool-p3-firmware` | single (machine_type `MXP`) |
 | MetalFab (HJ003) | `xTool-hj003-firmware` | single (machine_type `MHJ`) |
 | Apparel Printer (DT001) | `xTool-apparelprinter-firmware-1.5` | single (machine_type `MDT`) |
+| Apparel Printer Plus (DT003) | `xTool-apparel-printer-plus-firmware` | single (machine_type `MDT`; ID from the DT003 bundle, not yet confirmed against the cloud) |
 | O1 Omni (DT002) | `xTool-dt002-firmware` | single (machine_type `DT002`; ID from the DT002 bundle, check not yet confirmed against the cloud) |
 | Bluetooth dongle (peripheral) | `xTool-dongle-firmware` | single |
 

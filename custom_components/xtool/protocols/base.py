@@ -245,6 +245,9 @@ class XtoolDeviceModel:
     has_button_event: bool = False  # WS-V2: /button/status push fires
     has_inkjet: bool = False  # M2: inkjet head + /v1/project/inkjet/*
     has_inkjet_sensors: bool = False  # DT001: ink/water bottles, heater, film sensors
+    # The DTF powder loop (Studio's ``powder_loop`` peripheral); the
+    # Apparel Printer Plus has none.
+    has_powder_loop: bool = False
     # DT002 (O1 Omni): per-cartridge ink levels, moisturizing + waste
     # tanks, front/rear doors, air filter, print-head temperatures,
     # print queue and the active-alarm list.
