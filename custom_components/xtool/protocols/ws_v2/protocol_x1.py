@@ -99,6 +99,12 @@ class UploadFailed(RuntimeError):
 
 
 X1_PATH_DEVICE_UPGRADE = "/v1/platform/device/upgrade"
+X1_PATH_ACCESSORY_UPGRADE = "/v1/platform/accessories/upgrade"
+X1_PATH_ACCESSORY_UPGRADE_PROGRESS = "/v1/project/accessory/upgrade-progress"  # push only
+# Studio's accessory update on platform 2.0: it checks the accessory list
+# every 3 s and gives up after 10 min.
+ACCESSORY_UPGRADE_POLL_SECONDS = 3.0
+ACCESSORY_UPGRADE_SECONDS = 600.0
 # Studio's X1 firmware upload: file type 2, always as package.zip
 X1_FIRMWARE_FILE_TYPE = 2
 X1_FIRMWARE_FILE_NAME = "package.zip"
@@ -226,6 +232,8 @@ class X1WSV2Protocol(M2WSV2Protocol):
         self.pending_accessory_messages: list[tuple[int, str]] = []
         # The running uploads by channel, each with the finish it waits for
         self._upload_finish: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        # The running accessory update's progress (0-1), from its pushes
+        self._accessory_upgrade_progress: float | None = None
 
     # --- Polling -----------------------------------------------------------
 
@@ -511,6 +519,63 @@ class X1WSV2Protocol(M2WSV2Protocol):
             await self._wait_for_restart(report)
         report(1.0)
 
+    async def upload_accessory_firmware(
+        self,
+        accessory_type_id: str,
+        blob: bytes,
+        md5: str,
+        filename: str,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """Update an accessory as Studio does on platform 2.0.
+
+        Upload with the MD5 as the file name (file type 2; Studio's
+        ``updateFirmwareForV2Platform``, so ``filename`` is not used), then
+        ``POST /v1/platform/accessories/upgrade?id=<accessory id>``
+        ``{filename: <md5>}``. Done when the progress push reaches 1, or
+        when the accessory list showed it in its bootloader and then
+        connected again with a version; 10 min at most.
+        """
+        from ..accessories import get_definition
+
+        definition = get_definition(accessory_type_id)
+        if definition is None or definition.platform_id is None:
+            raise NotImplementedError(f"no X1 accessory id for {accessory_type_id}")
+        if hashlib.md5(blob).hexdigest() != md5.lower():
+            raise RuntimeError(f"accessory firmware for {accessory_type_id} does not match its MD5")
+
+        def report(fraction: float) -> None:
+            if progress_cb is not None:
+                progress_cb(max(0.0, min(1.0, fraction)))
+
+        accessory_id = definition.platform_id
+        await self.upload_file(blob, X1_FIRMWARE_FILE_TYPE, md5.lower(), lambda f: report(0.4 * f))
+        self._accessory_upgrade_progress = None
+        await self.request(
+            X1_PATH_ACCESSORY_UPGRADE, "POST",
+            params={"id": accessory_id}, data={"filename": md5.lower()}, timeout=30.0,
+        )
+        report(0.45)
+        deadline = time.monotonic() + ACCESSORY_UPGRADE_SECONDS
+        in_bootloader = False
+        while True:
+            progress = self._accessory_upgrade_progress
+            if progress is not None:
+                report(0.45 + 0.55 * progress)
+                if progress >= 1:
+                    return
+            with contextlib.suppress(Exception):
+                for entry in await self.platform_accessories():
+                    if entry.get("dev_id") != accessory_id:
+                        continue
+                    if entry.get("bootloader_status"):
+                        in_bootloader = True
+                    elif in_bootloader and entry.get("status") and (entry.get("version") or {}).get("app_version"):
+                        return
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"{accessory_type_id} did not finish its firmware update")
+            await asyncio.sleep(ACCESSORY_UPGRADE_POLL_SECONDS)
+
     async def _wait_for_restart(self, report: Callable[[float], None]) -> None:
         """The X1 goes away to install, comes back, and reports Idle."""
         deadline = time.monotonic() + RESTART_DOWN_SECONDS
@@ -668,6 +733,10 @@ class X1WSV2Protocol(M2WSV2Protocol):
             self._apply_fill_lights(payload)
         elif url == X1_PATH_FEEDER_SENSOR:
             self._apply_feeder_sensors(payload)
+        elif url == X1_PATH_ACCESSORY_UPGRADE_PROGRESS:
+            # {progress}: 0-1 (Studio counts 1 as done)
+            if isinstance(payload.get("progress"), (int, float)):
+                self._accessory_upgrade_progress = float(payload["progress"])
         elif url == X1_PATH_ACCESSORY_MESSAGE:
             # {dev_id, message}: an accessory's own report, e.g. the Fire
             # Safety Set 2's M9033 about every 2 s

@@ -3128,9 +3128,15 @@ As Studio's X1 extension installs the main package (its
 The upload was checked on an X1 with a 2.5 MB text file (finish `code 0`,
 `message "success"`, no update started). The printhead (inkjet module)
 has its own package and path (`POST /v1/project/printhead/upgrade`).
-Accessories: upload with the file name = md5, then `POST
-/v1/platform/accessories/upgrade?id=<dev_id>` `{filename}`; progress in
-the REPORT `/v1/project/accessory/upgrade-progress` `{progress}` (0-1).
+Accessories (Studio's `updateFirmwareForV2Platform` and
+`startAccessoryFirmwareUpgrade`): upload the package with the same
+FileUploader, file type 2, its MD5 (hex, no extension) as the file name;
+then `POST /v1/platform/accessories/upgrade?id=<dev_id>` `{filename:
+<md5>}`. Progress arrives as the REPORT
+`/v1/project/accessory/upgrade-progress` `{progress}` (0-1, 1 = done);
+Studio also reads `/v1/platform/accessories/list` every 3 s and counts
+the update done once the accessory showed `bootloader_status` and then
+`status` with a `version.app_version`; it gives up after 10 min.
 
 ### Accessories
 

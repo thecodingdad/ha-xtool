@@ -117,8 +117,7 @@ class AccessoryState:
     last_seen: float = 0.0
     # Reached through the laser's platform 2.0 accessory path (the X1's
     # ``/v1/platform/accessories``): the definition's
-    # ``platform_entities``, else its entities without controls, and no
-    # firmware install.
+    # ``platform_entities``, else its entities without controls.
     via_platform: bool = False
 
 

@@ -866,14 +866,12 @@ def build_accessory_entities(
     fields = accessory.fields
     specs = definition.entities
     if accessory.via_platform:
-        # Only the controls confirmed on the platform 2.0 path, and no
-        # firmware install (so no update entity: the version sensor
-        # shows the firmware)
+        # Only the controls confirmed on the platform 2.0 path
         specs = definition.platform_entities if definition.platform_entities is not None else tuple(
             spec for spec in definition.entities
             if spec.write_mcode is None and spec.write_action is None
         )
-    has_update_entity = bool(definition.firmware_content_id) and not accessory.via_platform
+    has_update_entity = bool(definition.firmware_content_id)
     for spec in specs:
         cls = _PLATFORM_TO_CLASS.get(spec.platform)
         if cls is None:
