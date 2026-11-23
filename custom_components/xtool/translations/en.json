@@ -1836,8 +1836,11 @@
     "feeder_wrong_device": {
       "message": "Pick an X1 with a conveyor feeder."
     },
-    "feeder_refused": {
-      "message": "The feeder did not move: {reason}."
+    "feeder_not_fitted": {
+      "message": "The feeder did not move: no feeder is fitted."
+    },
+    "feeder_laser_not_idle": {
+      "message": "The feeder did not move: the laser is not idle."
     }
   },
   "selector": {

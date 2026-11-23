@@ -185,10 +185,7 @@ async def _async_feeder_clamp(call: ServiceCall) -> None:
     protocol = coordinator.protocol
     reason = protocol.feeder_refusal()
     if reason is not None:
-        raise ServiceValidationError(
-            translation_domain=DOMAIN, translation_key="feeder_refused",
-            translation_placeholders={"reason": reason},
-        )
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key=reason)
     await protocol.feeder_clamp(call.data[ATTR_THICKNESS], call.data[ATTR_MATERIAL])
 
 

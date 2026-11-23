@@ -1860,7 +1860,7 @@ class WSV2FeederRelease(_WSV2Button):
         protocol = self.coordinator.protocol
         reason = protocol.feeder_refusal()
         if reason is not None:
-            raise HomeAssistantError(f"Material not released: {reason}")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key=reason)
         await protocol.feeder_release()
 
 
@@ -3040,13 +3040,10 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     # writes and the ``_WSV2ConfigSwitch`` ``set_config`` retry
     # logic re-sends as bool if int is rejected. Gated on
     # ``has_flame_alarm`` so non-laser models stay clean.
-    baseline_switches: list[SwitchEntity] = [
-        _WSV2ConfigSwitch(
-            coordinator, "beep_enable", "beepEnable", "beep_enabled_v2",
-        ),
-        _WSV2ConfigSwitch(
-            coordinator, "gap_check", "gapCheck", "gap_check_enabled",
-        ),
+    # (key, config key, state attribute)
+    baseline_switches = [
+        ("beep_enable", "beepEnable", "beep_enabled_v2"),
+        ("gap_check", "gapCheck", "gap_check_enabled"),
         # ``filter_check`` (config key ``filterCheck``) removed in
         # v2.5.4 — confirmed absent from every xTool Studio bundle
         # and rejected by F2 Ultra UV firmware. Filter-check
@@ -3061,8 +3058,9 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
     settings = model.protocol_class.SETTINGS
     if not model.is_read_only:
         entities.extend(
-            switch for switch in baseline_switches
-            if settings is None or switch._config_key in settings
+            _WSV2ConfigSwitch(coordinator, key, config_key, state_attr)
+            for key, config_key, state_attr in baseline_switches
+            if settings is None or config_key in settings
         )
     if model.has_flame_alarm:
         # Disabled by default in the entity registry — disabling

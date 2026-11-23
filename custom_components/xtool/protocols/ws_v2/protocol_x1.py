@@ -244,10 +244,6 @@ class X1WSV2Protocol(M2WSV2Protocol):
     # Studio's X1 config key list: no ``gapCheck`` (Cover check).
     SETTINGS = frozenset(X1_SETTINGS)
 
-    # Studio updates the X1 with its own requests (``flash_firmware``
-    # below), not the F family's ``/v1/device/upgrade-mode``.
-    FIRMWARE_INSTALL = True
-
     # Settings, modules and statistics change rarely: every sixth poll.
     _SLOW_POLL_EVERY = 6
 
@@ -722,11 +718,12 @@ class X1WSV2Protocol(M2WSV2Protocol):
         return result
 
     def feeder_refusal(self) -> str | None:
-        """Why the feeder may not move now, as Studio's guards: fitted, laser idle."""
+        """Why the feeder may not move now, as Studio's guards (fitted, laser
+        idle): the key of the error to raise, or None."""
         if not self._latest.get("feeder_installed"):
-            return "no feeder is fitted"
+            return "feeder_not_fitted"
         if self._latest.get("status") != XtoolStatus.IDLE:
-            return "the laser is not idle"
+            return "feeder_laser_not_idle"
         return None
 
     async def feeder_release(self) -> None:

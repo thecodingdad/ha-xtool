@@ -657,11 +657,6 @@ class FirmwareUpdateInfo:
 class XtoolProtocol(ABC):
     """Abstract base class for xTool device communication protocols."""
 
-    # Whether Home Assistant can install the laser's firmware: False where
-    # the laser updates by a path not built yet (the X1). The update entity
-    # then only reports new firmware.
-    FIRMWARE_INSTALL = True
-
     def __init__(self, host: str) -> None:
         self.host = host
 

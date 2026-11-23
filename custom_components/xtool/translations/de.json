@@ -1836,8 +1836,11 @@
     "feeder_wrong_device": {
       "message": "Wähle einen X1 mit Förderband."
     },
-    "feeder_refused": {
-      "message": "Das Förderband hat sich nicht bewegt: {reason}."
+    "feeder_not_fitted": {
+      "message": "Das Förderband hat sich nicht bewegt: Es ist kein Förderband angebaut."
+    },
+    "feeder_laser_not_idle": {
+      "message": "Das Förderband hat sich nicht bewegt: Der Laser ist nicht bereit."
     }
   },
   "selector": {
