@@ -92,6 +92,7 @@ LID_CLOSED_REPORT = {
 # Bluetooth (69) and the Fire Safety Set 2, wired (82); the rest of the
 # list is not connected.
 AP2_SERIAL = "MXTESTAP2"
+AP2_MAC = "02:00:00:00:00:69"
 FIRE_BOX_SERIAL = "MXTESTFIREBOX"
 ACCESSORY_LIST = [
     {"bootloader_status": False, "common_status": "", "dev_id": 71, "name": "", "status": True,
@@ -112,6 +113,8 @@ ACCESSORY_LIST = [
 ACCESSORY_REPLIES: dict[tuple[int, str], Any] = {
     (69, "M9033"): {"result": f'M9033 V40.212.007.4528.01 B03 C0 D0 H98 I99 J100 K100 L100 S0 E:"{AP2_SERIAL}"\n'},
     (82, "M9033"): {"result": f'M9033 A40.223.004.5222.01.B02 J0 S0 G3 T410 W1190 E:"{FIRE_BOX_SERIAL}"\n'},
+    # The X1's Bluetooth module: the AP2 paired and connected
+    (71, "M9098"): {"result": f"M9098 0,{AP2_MAC},45736000,1;"},
 }
 
 # The Fire Safety Set 2 reports itself about every 2 s.

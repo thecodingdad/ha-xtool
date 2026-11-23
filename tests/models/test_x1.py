@@ -59,6 +59,7 @@ EXPECTED_ENTITIES = {
     ("binary_sensor", "machine_lock"),
     ("button", "cancel_job"),
     ("button", "feeder_release"),
+    ("button", "reconnect_bluetooth_accessories"),
     ("button", "pause_job"),
     ("button", "resume_job"),
     ("camera", "camera_far"),
@@ -483,10 +484,11 @@ async def test_accessories_are_read_by_id_as_studio_does(hass: HomeAssistant, x1
     _, protocol = x1
     commands = {(params["id"], data["command"]) for method, url, params, data in protocol.sent
                 if url == "/v1/platform/accessories/control"}
-    # The two connected accessories with a definition; not the dongle, not the unconnected ones
-    assert commands == {(69, "M9033"), (82, "M9033")}
+    # The two connected accessories with a definition, not the unconnected
+    # ones; the Bluetooth module (71) only for its paired list
+    assert commands == {(69, "M9033"), (82, "M9033"), (71, "M9098")}
     # Read only: nothing is written to them
-    assert all(method != "POST" or url != "/v1/platform/accessories/control" or data["command"] == "M9033"
+    assert all(method != "POST" or url != "/v1/platform/accessories/control" or data["command"] in ("M9033", "M9098")
                for method, url, params, data in protocol.sent)
 
 
@@ -644,3 +646,113 @@ async def test_the_feeder_moves_only_as_studio_lets_it(
             "button", "press", {ATTR_ENTITY_ID: entity_id("button.feeder_release")}, blocking=True,
         )
     assert not any("feeder" in url for _, url, _, _ in protocol.sent)
+
+
+# --- Bluetooth accessories: Studio's accessory window ------------------------
+
+
+def _bluetooth_module(protocol, found_after: int | None, comes_back_by_itself: bool = False):
+    """The X1's Bluetooth module with the AP2 paired but not connected.
+
+    The AP2 shows up in the found list after ``found_after`` reads (never
+    when None); a connect then makes it connected.
+    """
+    from tests.models.x1_capture import AP2_MAC
+
+    commands: list[str] = []
+    module = {"connected": False, "found_reads": 0}
+
+    async def accessory_command(accessory_id: int, mcode: str) -> str | None:
+        assert accessory_id == 71
+        commands.append(mcode)
+        if mcode == "M9098":
+            if comes_back_by_itself and len(commands) > 3:
+                module["connected"] = True
+            return f"0,{AP2_MAC},45736000,{int(module['connected'])};"
+        if mcode == "M9092 T5000":
+            module["found_reads"] += 1
+            if found_after is not None and module["found_reads"] > found_after:
+                return f"0,{AP2_MAC},45736000;"
+            return "none"
+        if mcode == f"M9093 A{AP2_MAC} B1":
+            module["connected"] = True
+        return "OK"
+
+    protocol.accessory_command = accessory_command
+    return commands
+
+
+async def test_a_paired_accessory_is_connected_as_studio_does(monkeypatch) -> None:
+    """Scan on, connect once it shows up, scan off: Studio's accessory window."""
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+    from tests.models.x1_capture import AP2_MAC
+
+    monkeypatch.setattr(protocol_x1, "BLUETOOTH_POLL_SECONDS", 0)
+    protocol = _protocol()
+    commands = _bluetooth_module(protocol, found_after=2)
+    assert await protocol.reconnect_bluetooth_accessories() == (1, 1)
+    assert commands[1] == "M9091 E1 D180" and commands[-1] == "M9091 E0"
+    assert commands.count(f"M9093 A{AP2_MAC} B1") == 1
+    assert protocol._latest["bluetooth_accessories_disconnected"] == 0
+
+
+async def test_an_accessory_that_comes_back_by_itself_is_not_connected_again(monkeypatch) -> None:
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+
+    monkeypatch.setattr(protocol_x1, "BLUETOOTH_POLL_SECONDS", 0)
+    protocol = _protocol()
+    commands = _bluetooth_module(protocol, found_after=None, comes_back_by_itself=True)
+    assert await protocol.reconnect_bluetooth_accessories() == (1, 1)
+    assert not any(command.startswith("M9093") for command in commands)
+
+
+async def test_an_accessory_that_does_not_show_up(monkeypatch) -> None:
+    """Not in pairing mode: the search ends, the scan goes off again."""
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+
+    monkeypatch.setattr(protocol_x1, "BLUETOOTH_POLL_SECONDS", 0)
+    monkeypatch.setattr(protocol_x1, "BLUETOOTH_SEARCH_SECONDS", 0.05)
+    protocol = _protocol()
+    commands = _bluetooth_module(protocol, found_after=None)
+    assert await protocol.reconnect_bluetooth_accessories() == (1, 0)
+    assert commands[-1] == "M9091 E0"
+    assert protocol._latest["bluetooth_accessories_disconnected"] == 1
+
+
+async def test_nothing_to_reconnect_starts_no_scan() -> None:
+    protocol = _protocol()
+    assert await protocol.reconnect_bluetooth_accessories() == (0, 0)
+    assert not any(data and "M9091" in data.get("command", "") for _, _, _, data in protocol.sent)
+
+
+async def test_the_reconnect_button_only_while_an_accessory_is_not_connected(hass: HomeAssistant, x1) -> None:
+    """The slow poll reads the paired list; the button follows it."""
+    from tests.models.x1_capture import AP2_MAC
+
+    entry, protocol = x1
+    button = entity_id("button.reconnect_bluetooth_accessories")
+    assert hass.states.get(button).state == "unavailable"
+    protocol.accessory_replies[(71, "M9098")] = {"result": f"M9098 0,{AP2_MAC},45736000,0;"}
+    protocol._x1_poll_counter = 0  # the next poll is a slow one
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(button).state != "unavailable"
+
+
+async def test_the_reconnect_button_says_what_to_do_when_nothing_shows_up(hass: HomeAssistant, x1, monkeypatch) -> None:
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+
+    monkeypatch.setattr(protocol_x1, "BLUETOOTH_POLL_SECONDS", 0)
+    monkeypatch.setattr(protocol_x1, "BLUETOOTH_SEARCH_SECONDS", 0.05)
+    entry, protocol = x1
+    _bluetooth_module(protocol, found_after=None)
+    protocol._latest["bluetooth_accessories_disconnected"] = 1
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    with pytest.raises(HomeAssistantError) as raised:
+        await hass.services.async_call(
+            "button", "press", {ATTR_ENTITY_ID: entity_id("button.reconnect_bluetooth_accessories")}, blocking=True,
+        )
+    assert raised.value.translation_key == "bluetooth_accessory_not_found"

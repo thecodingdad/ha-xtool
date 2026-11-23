@@ -3117,6 +3117,24 @@ checked has 71, 82 and 69 connected and 70, 76 and 78 not.
 `M9098` to id 71 lists the Bluetooth ones (`0,<MAC>,45736000,1;` for
 the AP2, type `0x45`); the wired Fire Safety Set 2 is not in it.
 
+A paired accessory the X1 no longer reaches shows `0` there (and
+`status: false` in the list). Studio's accessory window connects it
+again, all through id 71:
+
+- `M9091 E1 D180`: Bluetooth scan on for 180 s (`M9091 OK`);
+  `M9091 E0` turns it off.
+- `M9092 T5000`: what the scan found, `none` or `<n>,<MAC>,<type>;`
+  per accessory.
+- `M9093 A<MAC> B1`: connect (`M9093 OK`); `M9093 error mac` when the
+  MAC is not in the found list.
+- `M9098` then shows it with `1`, and the accessory list `status: true`
+  a moment later.
+
+Seen on an X1: an AP2 that had lost its own pairing (still in `M9098`,
+with `0`) did not show up in the found list after a power cycle, only
+in its pairing mode (power button held for 5 s until its Bluetooth
+light blinks); `M9093` connected it within 2 s.
+
 | Accessory | Read | Reply |
 |---|---|---|
 | SafetyPro AP2 (69) | `M9033` | `M9033 V40.212.007.4528.01 B03 C0 D0 H98 I99 J100 K100 L100 S0 E:"<sn>"` — Studio: version = the first two words, gear = the third, filters `H`-`L` in %, `S`, serial `E:`. Gear (Studio's "Purifier level"): `A` manual — `A0` off, `A1`-`A4` levels 1-4; `C` Auto, following the laser — `C0` idle, `C<n>` while a job runs it at level n |

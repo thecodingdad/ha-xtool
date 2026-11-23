@@ -282,6 +282,7 @@ The P2's cameras are straightened with its own calibration. Each has Crop preset
 | Measure distance | IR distance measurement |
 | Autofocus | **F2 Ultra UV.** As Studio's Autofocus; Focus height shows the result |
 | Wake | **P2.** Wakes a sleeping P2 so its cameras take photos again |
+| Reconnect Bluetooth accessories | **X1.** Available while a paired Bluetooth accessory (the SafetyPro AP2) is not connected. Searches for it for up to 2 minutes and connects it, as Studio's accessory window does. An AP2 that lost its pairing shows up only in pairing mode: hold its power button for 5 seconds until the Bluetooth light blinks |
 | Reboot / Sync time / Quit LightBurn | Restart, set the laser's clock, leave LightBurn standby |
 | Release material | **X1.** The conveyor feeder lets go of the material, as Studio's button. Only with a feeder fitted and the laser idle |
 

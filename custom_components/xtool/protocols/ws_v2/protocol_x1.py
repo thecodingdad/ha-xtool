@@ -19,10 +19,14 @@ Checked on an X1 with firmware 40.140.003.01.ht18.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
+import time
 from typing import Any
 
 from ...const import XtoolStatus
+from ..accessories.discovery import parse_connected_list
 from ..base import XtoolDeviceState
 from .protocol_m2 import (
     M2_PATH_CONFIG,
@@ -60,6 +64,19 @@ X1_PATH_ALARM = "/v1/platform/device/alarm"  # notice only
 X1_PATH_ACCESSORIES = "/v1/platform/accessories/list"
 X1_PATH_ACCESSORY_CONTROL = "/v1/platform/accessories/control"
 X1_PATH_ACCESSORY_MESSAGE = "/v1/project/accessory/message"  # push only
+
+# The X1's Bluetooth module, reached as an accessory. Studio's accessory
+# window: scan on (180 s), the found list read again and again, connect
+# by MAC, then the paired list shows it connected; scan off on closing.
+X1_BLUETOOTH_ID = 71
+BLUETOOTH_PAIRED = "M9098"
+BLUETOOTH_SCAN_ON = "M9091 E1 D180"
+BLUETOOTH_SCAN_OFF = "M9091 E0"
+BLUETOOTH_FOUND = "M9092 T5000"
+BLUETOOTH_CONNECT = "M9093 A{mac} B1"
+BLUETOOTH_SEARCH_SECONDS = 120.0
+BLUETOOTH_CONNECT_SECONDS = 20.0
+BLUETOOTH_POLL_SECONDS = 2.0
 
 # Studio's X1 alarm code for a fire (``nd.FIRE``)
 X1_ALARM_FIRE = 1001
@@ -164,6 +181,7 @@ class X1WSV2Protocol(M2WSV2Protocol):
         "feeder_installed", "feeder_front_blocked", "feeder_rear_blocked",
         "diode_laser_installed", "laser_backpack", "inkjet_module_installed",
         "exhaust_fan_speed", "flame_sensitivity", "trial_run_check",
+        "bluetooth_accessories_disconnected",
     )
 
     # Studio's X1 config key list: no ``gapCheck`` (Cover check).
@@ -242,6 +260,12 @@ class X1WSV2Protocol(M2WSV2Protocol):
         if isinstance(wifi.get("rssi_dbm"), int):
             self._latest["wifi_signal"] = wifi["rssi_dbm"]
 
+        paired = await self.bluetooth_accessories()
+        if paired is not None:
+            self._latest["bluetooth_accessories_disconnected"] = sum(
+                1 for _, connected in paired if not connected
+            )
+
         # Studio's getAlarmRecords: the alarms still active, then the
         # history. The X1 answers {} when there are none.
         alarms = await self._get_dict(X1_PATH_ALARM_RECORDS, timeout=10.0)
@@ -308,6 +332,68 @@ class X1WSV2Protocol(M2WSV2Protocol):
         if not isinstance(result, str) or not result.strip():
             return None
         return result.strip().removeprefix(mcode.split(" ", 1)[0]).strip() or None
+
+    # --- Bluetooth accessories ---------------------------------------------
+
+    async def bluetooth_accessories(self) -> list[tuple[str, bool]] | None:
+        """The accessories paired with the X1's Bluetooth module.
+
+        ``M9098`` answers ``<n>,<MAC>,<type>,<1 connected / 0 not>;`` per
+        accessory: (MAC, connected) each; None when it did not answer.
+        """
+        try:
+            reply = await self.accessory_command(X1_BLUETOOTH_ID, BLUETOOTH_PAIRED)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("X1 %s failed: %s", BLUETOOTH_PAIRED, err)
+            return None
+        return [
+            (str(row["sn"]), row["status"] == 1)
+            for row in parse_connected_list(reply or "")
+            if row.get("sn")
+        ]
+
+    async def reconnect_bluetooth_accessories(self) -> tuple[int, int]:
+        """Connect the paired accessories the X1 does not reach, as Studio does.
+
+        Studio's accessory window: Bluetooth scan on, and each accessory
+        connected (``M9093 A<MAC> B1``) once it shows up in the found
+        list (``M9092``); the paired list (``M9098``) then shows it
+        connected. One that comes back by itself counts too. An
+        accessory that lost its own pairing shows up only in its
+        pairing mode (the AP2: its power button held for 5 s). Returns
+        (not connected before, connected now).
+        """
+        paired = await self.bluetooth_accessories() or []
+        missing = {mac for mac, connected in paired if not connected}
+        if not missing:
+            self._latest["bluetooth_accessories_disconnected"] = 0
+            return 0, 0
+        before = len(missing)
+        asked: dict[str, float] = {}
+        await self.accessory_command(X1_BLUETOOTH_ID, BLUETOOTH_SCAN_ON)
+        try:
+            deadline = time.monotonic() + BLUETOOTH_SEARCH_SECONDS
+            while missing and time.monotonic() < deadline:
+                for mac, connected in await self.bluetooth_accessories() or []:
+                    if connected:
+                        missing.discard(mac)
+                if not missing:
+                    break
+                found = await self.accessory_command(X1_BLUETOOTH_ID, BLUETOOTH_FOUND) or ""
+                for mac in sorted(missing):
+                    # Asked again only when the last connect came to nothing
+                    if mac in found and time.monotonic() - asked.get(mac, -BLUETOOTH_CONNECT_SECONDS) >= BLUETOOTH_CONNECT_SECONDS:
+                        asked[mac] = time.monotonic()
+                        reply = await self.accessory_command(
+                            X1_BLUETOOTH_ID, BLUETOOTH_CONNECT.format(mac=mac),
+                        )
+                        _LOGGER.debug("X1 Bluetooth connect %s: %s", mac, reply)
+                await asyncio.sleep(BLUETOOTH_POLL_SECONDS)
+        finally:
+            with contextlib.suppress(Exception):
+                await self.accessory_command(X1_BLUETOOTH_ID, BLUETOOTH_SCAN_OFF)
+        self._latest["bluetooth_accessories_disconnected"] = len(missing)
+        return before, before - len(missing)
 
     # --- Writes ------------------------------------------------------------
 

@@ -522,6 +522,9 @@ class XtoolDeviceState:
     # ``none``, ``fiber_30w``, ``mopa_60w``, ``uv_5w`` or ``uv_mopa``
     laser_backpack: str | None = None
     inkjet_module_installed: bool | None = None
+    # Paired Bluetooth accessories the laser's Bluetooth module does not
+    # reach (X1: its dongle's ``M9098``)
+    bluetooth_accessories_disconnected: int | None = None
     exhaust_fan_speed: int | None = None  # 750, 900 or 1000 (per mille)
     flame_sensitivity: int | None = None  # 1 = low, 3 = high
     trial_run_check: bool | None = None
