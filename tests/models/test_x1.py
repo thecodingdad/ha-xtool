@@ -726,6 +726,31 @@ async def test_a_failed_poll_keeps_the_connection_while_a_file_goes_up(hass: Hom
     assert not protocol.connected
 
 
+async def test_a_connect_while_the_old_connection_closes_keeps_its_session() -> None:
+    """The X1 restarting: a heartbeat timeout closes while a poll connects again."""
+    from custom_components.xtool.protocols.ws_v2.protocol_x1 import X1WSV2Protocol
+
+    class Session:
+        def __init__(self) -> None:
+            self.closed = False
+            self.release = asyncio.Event()
+
+        async def close(self) -> None:
+            await self.release.wait()
+            self.closed = True
+
+    protocol = X1WSV2Protocol(HOST)
+    old, new = Session(), Session()
+    protocol._session = old
+    closing = asyncio.ensure_future(protocol._close_quiet())
+    await asyncio.sleep(0)
+    protocol._session = new  # what connect() does while the old one closes
+    old.release.set()
+    await closing
+    assert old.closed
+    assert protocol._session is new and not new.closed
+
+
 async def test_an_upload_the_x1_refuses_fails() -> None:
     from custom_components.xtool.protocols.ws_v2.protocol_x1 import UploadFailed
 

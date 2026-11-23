@@ -1079,45 +1079,54 @@ class WSV2Protocol(XtoolProtocol):
         await self._close_quiet()
 
     async def _close_quiet(self) -> None:
+        # Take the connection over before the first await: a connect
+        # that runs meanwhile (a poll while a heartbeat timeout closes
+        # the old connection) opens its own, which must not be dropped
+        # here (its session would never be closed).
         self._connected = False
         self._session_token = ""
-        for t in (self._reader_task, self._heartbeat_task):
-            if t and not t.done():
+        tasks = (self._reader_task, self._heartbeat_task)
+        sockets = (self._ws_instr, self._ws_file)
+        session = self._session
+        pending = self._pending
+        heartbeat_pending = self._heartbeat_pending
+        self._reader_task = None
+        self._heartbeat_task = None
+        self._ws_instr = None
+        self._ws_file = None
+        self._session = None
+        self._pending = {}
+        self._heartbeat_pending = None
+        self._transaction_counter = 0
+        self._rx_buffer = bytearray()
+        # Resolve any outstanding requests so callers don't hang.
+        for request in pending.values():
+            if not request.future.done():
+                request.future.set_exception(
+                    ConnectionError("V2 WebSocket closed")
+                )
+        if heartbeat_pending is not None and not heartbeat_pending.done():
+            heartbeat_pending.set_exception(
+                ConnectionError("V2 WebSocket closed")
+            )
+        for t in tasks:
+            if t and not t.done() and t is not asyncio.current_task():
                 t.cancel()
                 try:
                     await t
                 except (asyncio.CancelledError, Exception):
                     pass
-        self._reader_task = None
-        self._heartbeat_task = None
-        for ws in (self._ws_instr, self._ws_file):
+        for ws in sockets:
             if ws and not ws.closed:
                 try:
                     await ws.close()
                 except Exception:
                     pass
-        self._ws_instr = None
-        self._ws_file = None
-        # Resolve any outstanding requests so callers don't hang.
-        for pending in self._pending.values():
-            if not pending.future.done():
-                pending.future.set_exception(
-                    ConnectionError("V2 WebSocket closed")
-                )
-        self._pending.clear()
-        if self._heartbeat_pending is not None and not self._heartbeat_pending.done():
-            self._heartbeat_pending.set_exception(
-                ConnectionError("V2 WebSocket closed")
-            )
-        self._heartbeat_pending = None
-        self._transaction_counter = 0
-        self._rx_buffer = bytearray()
-        if self._session and not self._session.closed:
+        if session and not session.closed:
             try:
-                await self._session.close()
+                await session.close()
             except Exception:
                 pass
-        self._session = None
 
     # ── request/response API ──────────────────────────────────────────
 
