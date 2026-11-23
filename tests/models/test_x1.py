@@ -58,6 +58,7 @@ EXPECTED_ENTITIES = {
     ("binary_sensor", "inkjet_module_installed"),
     ("binary_sensor", "machine_lock"),
     ("button", "cancel_job"),
+    ("button", "feeder_release"),
     ("button", "pause_job"),
     ("button", "resume_job"),
     ("camera", "camera_far"),
@@ -86,6 +87,7 @@ EXPECTED_ENTITIES = {
     ("sensor", "wifi_signal"),
     ("sensor", "working_seconds"),
     ("switch", "beep_enable"),
+    ("switch", "trial_run_check"),
     ("update", "firmware_update"),
     # The SafetyPro AP2 and the Fire Safety Set 2, read only
     *(("sensor", f"accessory_purifier_{AP2_SERIAL}_{key}") for key in (
@@ -146,6 +148,7 @@ EXPECTED_STATES = {
     "sensor.wifi_signal": "-55",
     "sensor.working_seconds": "1.315",
     "switch.beep_enable": "on",
+    "switch.trial_run_check": "on",
 }
 
 
@@ -272,7 +275,7 @@ async def test_the_poll_reads_every_value() -> None:
     assert (state.working_seconds, state.standby_seconds, state.session_count) == (4734, 18022, 13)
     # The settings are read with Studio's key list
     assert ("GET", "/v1/platform/device/config", None, {
-        "kv": ["smokeFanTimeout", "smokeFanSpeed", "beepEnable", "flameSensitivity"],
+        "kv": ["smokeFanTimeout", "smokeFanSpeed", "beepEnable", "flameSensitivity", "focusDetectControlEnable"],
     }) in protocol.sent
     assert protocol._latest["beep_enabled_v2"] is True
 
@@ -432,6 +435,10 @@ def test_other_process_notices_fire_no_event() -> None:
      ("PUT", "/v1/platform/device/config", None, {"flameSensitivity": 1})),
     ("switch", "turn_off", "switch.beep_enable", {},
      ("PUT", "/v1/platform/device/config", None, {"beepEnable": False})),
+    ("switch", "turn_off", "switch.trial_run_check", {},
+     ("PUT", "/v1/platform/device/config", None, {"focusDetectControlEnable": False})),
+    ("button", "press", "button.feeder_release", {},
+     ("POST", "/v1/project/peripheral/feeder-home", None, None)),
     ("number", "set_value", "number.smoking_fan_duration", {"value": 60},
      ("PUT", "/v1/platform/device/config", None, {"smokeFanTimeout": 60})),
     ("button", "press", "button.pause_job", {},
@@ -591,3 +598,49 @@ def test_fire_box_report() -> None:
 def test_fire_box_states(report: str, fields: dict) -> None:
     parsed = parse_fire_box_info(report)
     assert {key: parsed[key] for key in fields} == fields
+
+
+# --- Feeder controls (Studio's feeder panel) --------------------------------
+
+
+@pytest.mark.parametrize(("thickness", "material", "distance"), [
+    (10, "rigid", -21), (3, "flexible", -26), (0, "rigid", -31), (68.9, "flexible", 39.9),
+])
+async def test_feeder_clamp_as_studio_presses(
+    hass: HomeAssistant, x1, thickness: float, material: str, distance: float,
+) -> None:
+    """Studio's feederPress: distance -(29 + hardness - thickness), hardness 2 rigid, 0 flexible."""
+    from homeassistant.helpers import device_registry as dr
+
+    entry, protocol = x1
+    device = next(
+        d for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+        if (DOMAIN, SERIAL) in d.identifiers
+    )
+    protocol.sent.clear()
+    await hass.services.async_call(
+        DOMAIN, "feeder_clamp",
+        {"device_id": device.id, "thickness": thickness, "material": material}, blocking=True,
+    )
+    assert protocol.sent == [
+        ("POST", "/v1/project/peripheral/feeder-press", None, {"distance": distance, "speed": 4}),
+    ]
+
+
+@pytest.mark.parametrize(("latest", "reason"), [
+    ({"status": XtoolStatus.PROCESSING}, "the laser is not idle"),
+    ({"feeder_installed": False}, "no feeder is fitted"),
+])
+async def test_the_feeder_moves_only_as_studio_lets_it(
+    hass: HomeAssistant, x1, latest: dict, reason: str,
+) -> None:
+    from homeassistant.exceptions import HomeAssistantError
+
+    _, protocol = x1
+    protocol._latest.update(latest)
+    protocol.sent.clear()
+    with pytest.raises(HomeAssistantError, match=reason):
+        await hass.services.async_call(
+            "button", "press", {ATTR_ENTITY_ID: entity_id("button.feeder_release")}, blocking=True,
+        )
+    assert not any("feeder" in url for _, url, _, _ in protocol.sent)

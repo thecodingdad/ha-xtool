@@ -1184,6 +1184,9 @@
       },
       "overlay_red_dot_quick": {
         "name": "Overlay red dot quick"
+      },
+      "trial_run_check": {
+        "name": "Smart trial run check"
       }
     },
     "number": {
@@ -1581,6 +1584,9 @@
       },
       "accessory_purifier_reset_filter": {
         "name": "Reset filter"
+      },
+      "feeder_release": {
+        "name": "Release material"
       }
     },
     "image": {
@@ -1776,6 +1782,24 @@
           "description": "The P2 whose laser head moves."
         }
       }
+    },
+    "feeder_clamp": {
+      "name": "Clamp feeder material",
+      "description": "Clamps the material in the X1's conveyor feeder for its thickness, as xTool Studio does when a thickness is entered in feeder mode. Refused unless a feeder is fitted and the laser is idle. Release material lets it go again.",
+      "fields": {
+        "device_id": {
+          "name": "Laser",
+          "description": "The X1."
+        },
+        "thickness": {
+          "name": "Thickness",
+          "description": "Material thickness in mm (0-68.9)."
+        },
+        "material": {
+          "name": "Material",
+          "description": "Rigid (wood, acrylic) or flexible (leather, felt), as Studio's material hardness."
+        }
+      }
     }
   },
   "exceptions": {
@@ -1799,6 +1823,20 @@
     },
     "move_wrong_device": {
       "message": "Pick an xTool P2: only its laser head can be moved."
+    },
+    "feeder_wrong_device": {
+      "message": "Pick an X1 with a conveyor feeder."
+    },
+    "feeder_refused": {
+      "message": "The feeder did not move: {reason}."
+    }
+  },
+  "selector": {
+    "feeder_material": {
+      "options": {
+        "rigid": "Rigid material",
+        "flexible": "Flexible material"
+      }
     }
   }
 }

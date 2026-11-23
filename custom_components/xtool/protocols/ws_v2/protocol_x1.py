@@ -43,6 +43,14 @@ X1_PATH_FILL_LIGHT = "/v1/project/peripheral/fill-light"
 X1_PATH_FEEDER_INFO = "/v1/project/feeder/info"
 X1_PATH_FEEDER_STATUS = "/v1/project/peripheral/feeder-status"
 X1_PATH_FEEDER_SENSOR = "/v1/project/device/feeder-sensor"  # push only
+X1_PATH_FEEDER_PRESS = "/v1/project/peripheral/feeder-press"
+X1_PATH_FEEDER_HOME = "/v1/project/peripheral/feeder-home"
+
+# Studio's feeder clamp (feederPress): it presses down to
+# -(29 + hardness - thickness) at speed 4, the hardness 2 for rigid and 0
+# for flexible material; thicknesses up to 68.9 (25.4 + 43.5).
+X1_FEEDER_HARDNESS = {"rigid": 2, "flexible": 0}
+X1_FEEDER_MAX_THICKNESS = 68.9
 X1_PATH_GALVO_EXIST = "/v1/project/peripheral/galvo-exist"
 X1_PATH_LASER_BAG = "/v1/project/peripheral/laserbag-info"
 X1_PATH_PRINTHEAD = "/v1/project/printhead/printhead-status"
@@ -73,12 +81,16 @@ X1_SETTINGS = (
 )
 # The settings with an entity, read with a key list as Studio does (the
 # X1 answers ``in_data is not array`` to a read without one).
-X1_CONFIG_KEYS = ["smokeFanTimeout", "smokeFanSpeed", "beepEnable", "flameSensitivity"]
+X1_CONFIG_KEYS = [
+    "smokeFanTimeout", "smokeFanSpeed", "beepEnable", "flameSensitivity",
+    "focusDetectControlEnable",
+]
 _X1_CONFIG_FIELDS = (
     ("smokeFanTimeout", "smoking_fan_duration"),
     ("smokeFanSpeed", "exhaust_fan_speed"),
     ("beepEnable", "beep_enabled_v2"),
     ("flameSensitivity", "flame_sensitivity"),
+    ("focusDetectControlEnable", "trial_run_check"),
 )
 # The entities write the F family's names for the shared settings.
 _X1_CONFIG_KEY_NAMES = {"purifierTimeout": "smokeFanTimeout"}
@@ -151,7 +163,7 @@ class X1WSV2Protocol(M2WSV2Protocol):
         "fill_light_left", "fill_light_right", "fill_light_near",
         "feeder_installed", "feeder_front_blocked", "feeder_rear_blocked",
         "diode_laser_installed", "laser_backpack", "inkjet_module_installed",
-        "exhaust_fan_speed", "flame_sensitivity",
+        "exhaust_fan_speed", "flame_sensitivity", "trial_run_check",
     )
 
     # Studio's X1 config key list: no ``gapCheck`` (Cover check).
@@ -315,6 +327,25 @@ class X1WSV2Protocol(M2WSV2Protocol):
         )
         self._latest[_X1_FILL_LIGHT_FIELDS[name]] = brightness
         return result
+
+    def feeder_refusal(self) -> str | None:
+        """Why the feeder may not move now, as Studio's guards: fitted, laser idle."""
+        if not self._latest.get("feeder_installed"):
+            return "no feeder is fitted"
+        if self._latest.get("status") != XtoolStatus.IDLE:
+            return "the laser is not idle"
+        return None
+
+    async def feeder_release(self) -> None:
+        """Studio's Release material (feederRelease)."""
+        await self.request(X1_PATH_FEEDER_HOME, "POST")
+
+    async def feeder_clamp(self, thickness: float, material: str) -> None:
+        """Studio's clamp for a material thickness (feederPress)."""
+        distance = -(29 + X1_FEEDER_HARDNESS[material] - thickness)
+        await self.request(
+            X1_PATH_FEEDER_PRESS, "POST", data={"distance": round(distance, 2), "speed": 4},
+        )
 
     async def set_processing_state(self, action: str) -> dict[str, Any]:
         return await self.request(

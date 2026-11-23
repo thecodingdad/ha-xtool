@@ -1820,6 +1820,23 @@ class WSV2HomeLaser(_WSV2Button):
         )
 
 
+class WSV2FeederRelease(_WSV2Button):
+    """Studio's Release material: the feeder lets go of the material.
+
+    Refused, as in Studio, unless a feeder is fitted and the laser is idle.
+    """
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "feeder_release", "mdi:arrow-collapse-up")
+
+    async def _action(self) -> None:
+        protocol = self.coordinator.protocol
+        reason = protocol.feeder_refusal()
+        if reason is not None:
+            raise HomeAssistantError(f"Material not released: {reason}")
+        await protocol.feeder_release()
+
+
 class WSV2MeasureDistance(_WSV2Button):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "measure_distance", "mdi:ruler")
@@ -3063,6 +3080,14 @@ def build_wsv2_switches(coordinator: XtoolCoordinator) -> list[SwitchEntity]:
                 coordinator, "drawer_check", "drawerCheck", "drawer_check",
             )
         )
+    if model.has_trial_run_check:
+        # Studio's "Smart trial run check": before a job with the diode,
+        # fiber or MOPA module, the X1 checks for anomalies first
+        entities.append(
+            _WSV2ConfigSwitch(
+                coordinator, "trial_run_check", "focusDetectControlEnable", "trial_run_check",
+            )
+        )
     if model.has_device_sleep:
         entities.append(
             _WSV2ConfigSwitch(
@@ -3268,6 +3293,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2HomeZ(coordinator))
     if coordinator.model.has_distance_measure:
         entities.append(WSV2MeasureDistance(coordinator))
+    if coordinator.model.has_feeder_control:
+        entities.append(WSV2FeederRelease(coordinator))
     if coordinator.model.has_focus_control and not coordinator.model.is_read_only:
         entities.append(WSV2Autofocus(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-

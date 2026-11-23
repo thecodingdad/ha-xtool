@@ -15,6 +15,7 @@ from homeassistant.helpers.service import async_register_platform_entity_service
 import voluptuous as vol
 
 from .const import DOMAIN
+from .protocols.ws_v2.protocol_x1 import X1_FEEDER_HARDNESS, X1_FEEDER_MAX_THICKNESS
 
 ATTR_STEP = "step"
 ATTR_STEPS = "steps"
@@ -28,6 +29,7 @@ ATTR_Y = "y"
 ATTR_STEP_X = "step_x"
 ATTR_STEP_Y = "step_y"
 ATTR_DEVICE_ID = "device_id"
+ATTR_MATERIAL = "material"
 
 FOCUS_SCHEMA = {
     vol.Exclusive(ATTR_STEP, "move"): vol.Coerce(float),
@@ -164,6 +166,32 @@ async def _async_camera(entity, call: ServiceCall) -> None:
     )
 
 
+FEEDER_CLAMP_SCHEMA = {
+    vol.Required(ATTR_DEVICE_ID): cv.string,
+    vol.Required(ATTR_THICKNESS): vol.All(
+        vol.Coerce(float), vol.Range(min=0, max=X1_FEEDER_MAX_THICKNESS),
+    ),
+    vol.Optional(ATTR_MATERIAL, default="rigid"): vol.In(list(X1_FEEDER_HARDNESS)),
+}
+
+
+async def _async_feeder_clamp(call: ServiceCall) -> None:
+    """Clamp the material in an X1's feeder for its thickness, as Studio does."""
+    coordinator = _laser_of_device(call.hass, call.data[ATTR_DEVICE_ID])
+    if coordinator is None or not coordinator.model.has_feeder_control:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="feeder_wrong_device",
+        )
+    protocol = coordinator.protocol
+    reason = protocol.feeder_refusal()
+    if reason is not None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="feeder_refused",
+            translation_placeholders={"reason": reason},
+        )
+    await protocol.feeder_clamp(call.data[ATTR_THICKNESS], call.data[ATTR_MATERIAL])
+
+
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register the integration's actions."""
     async_register_platform_entity_service(
@@ -182,6 +210,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
         _async_move,
         schema=vol.Schema(MOVE_SCHEMA),
         supports_response=SupportsResponse.OPTIONAL,
+    )
+    # The feeder belongs to the laser: the action takes a device
+    hass.services.async_register(
+        DOMAIN,
+        "feeder_clamp",
+        _async_feeder_clamp,
+        schema=vol.Schema(FEEDER_CLAMP_SCHEMA),
     )
     async_register_platform_entity_service(
         hass,
