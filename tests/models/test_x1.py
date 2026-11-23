@@ -10,7 +10,9 @@ change reached the X1.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -92,13 +94,15 @@ EXPECTED_ENTITIES = {
     ("update", "firmware_update"),
     # The SafetyPro AP2 and the Fire Safety Set 2, read only
     *(("sensor", f"accessory_purifier_{AP2_SERIAL}_{key}") for key in (
-        "version", "sn", "gear", "filter_pre", "filter_medium", "filter_carbon",
+        "sn", "gear", "filter_pre", "filter_medium", "filter_carbon",
         "filter_dense_carbon", "filter_hepa",
     )),
+    ("update", f"accessory_purifier_{AP2_SERIAL}_firmware"),
+    ("update", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_firmware"),
     ("binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running"),
     ("select", f"accessory_purifier_{AP2_SERIAL}_level_select"),
     *(("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_{key}") for key in (
-        "version", "sn", "gas_level", "gas_remaining",
+        "sn", "gas_level", "gas_remaining",
     )),
     *(("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_{key}") for key in (
         "spraying", "cylinder_installed", "gas_low", "drive_fault", "calibration_needed",
@@ -107,14 +111,12 @@ EXPECTED_ENTITIES = {
 
 # The accessories' states: (platform, key) → state.
 EXPECTED_ACCESSORY_STATES = {
-    ("sensor", f"accessory_purifier_{AP2_SERIAL}_version"): "V40.212.007.4528.01 B03",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_gear"): "auto",
     ("binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running"): "off",
     ("select", f"accessory_purifier_{AP2_SERIAL}_level_select"): "auto",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_pre"): "98.0",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_medium"): "99.0",
     ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_hepa"): "100.0",
-    ("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_version"): "40.223.004.5222.01.B02",
     ("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_level"): "3",
     ("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_remaining"): "410",
     ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_spraying"): "off",
@@ -228,8 +230,8 @@ async def test_the_entities_show_what_the_x1_reports(hass: HomeAssistant, x1) ->
     assert shown["select.flame_alarm_sensitivity"].attributes["options"] == ["low", "high"]
 
 
-async def test_firmware_is_reported_but_not_installed(hass: HomeAssistant) -> None:
-    """Even with firmware updates enabled: the X1 updates by its own path, not built yet."""
+async def test_firmware_can_be_installed_when_enabled(hass: HomeAssistant) -> None:
+    """With firmware updates enabled, the X1's update entity offers Install."""
     from homeassistant.components.update import UpdateEntityFeature
 
     entry = MockConfigEntry(
@@ -246,7 +248,7 @@ async def test_firmware_is_reported_but_not_installed(hass: HomeAssistant) -> No
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         features = hass.states.get(entity_id("update.firmware_update")).attributes["supported_features"]
-        assert not features & UpdateEntityFeature.INSTALL
+        assert features & UpdateEntityFeature.INSTALL
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -478,6 +480,21 @@ async def test_the_accessories_show_what_they_report(hass: HomeAssistant, x1) ->
         for platform, key in EXPECTED_ACCESSORY_STATES
     }
     assert shown == EXPECTED_ACCESSORY_STATES
+
+
+async def test_the_accessories_firmware(hass: HomeAssistant, x1) -> None:
+    """Their update entities show the firmware they report."""
+    shown = {
+        key: _accessory_state(hass, "update", key).attributes["installed_version"]
+        for key in (
+            f"accessory_purifier_{AP2_SERIAL}_firmware",
+            f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_firmware",
+        )
+    }
+    assert shown == {
+        f"accessory_purifier_{AP2_SERIAL}_firmware": "V40.212.007.4528.01 B03",
+        f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_firmware": "40.223.004.5222.01.B02",
+    }
 
 
 async def test_accessories_are_read_by_id_as_studio_does(hass: HomeAssistant, x1) -> None:
@@ -756,3 +773,291 @@ async def test_the_reconnect_button_says_what_to_do_when_nothing_shows_up(hass: 
             "button", "press", {ATTR_ENTITY_ID: entity_id("button.reconnect_bluetooth_accessories")}, blocking=True,
         )
     assert raised.value.translation_key == "bluetooth_accessory_not_found"
+
+
+# --- Firmware: Studio's upload and update --------------------------------
+
+
+class _UploadingX1:
+    """The X1's side of an upload: pulls the file in windows, checks the MD5."""
+
+    def __init__(self, protocol, window: int, corrupt: bool = False) -> None:
+        self.protocol = protocol
+        self.window = window
+        self.corrupt = corrupt
+        self.received = bytearray()
+        self.incoming: asyncio.Queue = asyncio.Queue()
+        self.urls: list[str] = []
+
+    def ws_connect(self, url: str, **kwargs):
+        self.urls.append(url)
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+    def announced(self) -> dict:
+        return next(data for _, url, _, data in self.protocol.sent if url == "/v1/filetransfer/upload")
+
+    def start(self) -> None:
+        self._request(0)
+
+    def _request(self, offset: int) -> None:
+        import aiohttp
+
+        upload = self.announced()
+        size = min(self.window, upload["filesize"] - offset)
+        payload = bytes([1, upload["channel"]]) + offset.to_bytes(5, "big") + size.to_bytes(3, "big")
+        self.incoming.put_nowait(SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=_file_frame(payload)))
+
+    async def receive(self):
+        return await self.incoming.get()
+
+    async def send_bytes(self, frame: bytes) -> None:
+        from custom_components.xtool.protocols.ws_v2 import protocol as ws_v2
+
+        frames, _ = ws_v2._decode_frames(frame)
+        for frame_type, payload in frames:
+            if frame_type != 33 or payload[0] != 0x81:
+                continue  # a ping
+            upload = self.announced()
+            assert payload[1] == upload["channel"]
+            assert int.from_bytes(payload[2:7], "big") == len(self.received)
+            self.received += payload[7:]
+            if len(self.received) == upload["filesize"]:
+                import hashlib
+
+                ok = hashlib.md5(bytes(self.received)).hexdigest() == upload["digestdata"]
+                self.protocol._dispatch_push({
+                    "type": "request", "method": "PUT", "url": "/v1/filetransfer/finish",
+                    "data": {"channel": upload["channel"], "code": 0 if ok and not self.corrupt else -8,
+                             "message": "success"},
+                })
+            elif len(self.received) % self.window == 0:
+                self._request(len(self.received))
+
+
+def _file_frame(payload: bytes) -> bytes:
+    from custom_components.xtool.protocols.ws_v2 import protocol as ws_v2
+
+    return ws_v2._encode_frame(payload, protocol_type=33, cal_crc16=False)
+
+
+async def _upload(protocol, data: bytes, device: _UploadingX1, **kwargs) -> None:
+    protocol._session = device
+    protocol.replies[("PUT", "/v1/filetransfer/upload")] = {"packetsize": 1000}
+    task = asyncio.ensure_future(protocol.upload_file(data, 2, "package.zip", **kwargs))
+    while not any(url == "/v1/filetransfer/upload" for _, url, _, _ in protocol.sent):
+        await asyncio.sleep(0)
+    device.start()
+    await task
+
+
+async def test_the_x1_pulls_an_upload() -> None:
+    """Studio's FileUploader: the X1 asks for windows, gets packets, checks the MD5."""
+    import hashlib
+
+    protocol = _protocol()
+    data = bytes(range(256)) * 30  # 7680 bytes: 4 windows of 2000, 1000-byte packets
+    device = _UploadingX1(protocol, window=2000)
+    progress: list[float] = []
+    await _upload(protocol, data, device, progress_cb=progress.append)
+    assert bytes(device.received) == data
+    upload = device.announced()
+    assert upload["filetype"] == 2 and upload["filename"] == "package.zip"
+    assert upload["filesize"] == len(data) and upload["digesttype"] == 1
+    assert upload["digestdata"] == hashlib.md5(data).hexdigest()
+    assert upload["channel"] != 0
+    assert "function=file_stream" in device.urls[0]
+    assert progress[-1] == 1.0
+
+
+async def test_a_failed_poll_keeps_the_connection_while_a_file_goes_up(hass: HomeAssistant, x1) -> None:
+    """An X1 writing a firmware package answers late; closing would end the upload."""
+    entry, protocol = x1
+
+    async def late(state) -> None:
+        raise TimeoutError
+
+    protocol.poll_state = late
+    protocol._upload_finish[1] = asyncio.get_running_loop().create_future()
+    await entry.runtime_data.async_refresh()
+    assert protocol.connected
+    protocol._upload_finish.clear()
+    await entry.runtime_data.async_refresh()
+    assert not protocol.connected
+
+
+async def test_a_connect_while_the_old_connection_closes_keeps_its_session() -> None:
+    """The X1 restarting: a heartbeat timeout closes while a poll connects again."""
+    from custom_components.xtool.protocols.ws_v2.protocol_x1 import X1WSV2Protocol
+
+    class Session:
+        def __init__(self) -> None:
+            self.closed = False
+            self.release = asyncio.Event()
+
+        async def close(self) -> None:
+            await self.release.wait()
+            self.closed = True
+
+    protocol = X1WSV2Protocol(HOST)
+    old, new = Session(), Session()
+    protocol._session = old
+    closing = asyncio.ensure_future(protocol._close_quiet())
+    await asyncio.sleep(0)
+    protocol._session = new  # what connect() does while the old one closes
+    old.release.set()
+    await closing
+    assert old.closed
+    assert protocol._session is new and not new.closed
+
+
+async def test_an_upload_the_x1_refuses_fails() -> None:
+    from custom_components.xtool.protocols.ws_v2.protocol_x1 import UploadFailed
+
+    protocol = _protocol()
+    with pytest.raises(UploadFailed, match="MD5 check failed"):
+        await _upload(protocol, b"x" * 3000, _UploadingX1(protocol, window=2000, corrupt=True))
+
+
+async def test_firmware_installs_as_studio_does(monkeypatch) -> None:
+    """Upload as package.zip, start with its MD5, wait for the restart and Idle."""
+    import hashlib
+
+    from custom_components.xtool.protocols.base import FirmwareFile
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+
+    monkeypatch.setattr(protocol_x1, "RECONNECT_SECONDS", 0.01)
+    protocol = _protocol()
+    blob = b"firmware package"
+    md5 = hashlib.md5(blob).hexdigest()
+    uploads = []
+
+    async def upload_file(data, file_type, filename, progress_cb=None):
+        uploads.append((data, file_type, filename))
+
+    protocol.upload_file = upload_file
+    reply_to_upgrade = protocol.request
+
+    async def request(url, method="GET", **kwargs):
+        reply = await reply_to_upgrade(url, method, **kwargs)
+        if url == "/v1/platform/device/upgrade":
+            # The X1 restarts to install it
+            protocol._connected = False
+        return reply
+
+    protocol.request = request
+    progress: list[float] = []
+    await protocol.flash_firmware(
+        [FirmwareFile(board_id="xTool-X1-firmware", name="package.zip", url="", md5=md5, file_size=len(blob))],
+        [blob], progress_cb=progress.append,
+    )
+    assert uploads == [(blob, 2, "package.zip")]
+    assert ("POST", "/v1/platform/device/upgrade", None, {
+        "filename": "package.zip", "fileCheckType": 1, "checksum": md5,
+    }) in protocol.sent
+    # Back: connected again, and Idle from the state push after the sync
+    assert protocol._connected and protocol._latest["status"] is XtoolStatus.IDLE
+    assert progress[-1] == 1.0
+
+
+async def test_a_damaged_download_is_not_uploaded() -> None:
+    from custom_components.xtool.protocols.base import FirmwareFile
+
+    protocol = _protocol()
+    uploads = []
+
+    async def upload_file(*args, **kwargs):
+        uploads.append(args)
+
+    protocol.upload_file = upload_file
+    with pytest.raises(RuntimeError, match="MD5"):
+        await protocol.flash_firmware(
+            [FirmwareFile(board_id="xTool-X1-firmware", name="package.zip", url="", md5="0" * 32, file_size=4)],
+            [b"data"],
+        )
+    assert uploads == []
+
+
+# --- Accessory firmware: Studio's platform 2.0 path -------------------------
+
+
+def _accessory_update(protocol, list_replies: list | None = None):
+    """The upload recorded; the list answers in turn from ``list_replies``."""
+    uploads = []
+
+    async def upload_file(data, file_type, filename, progress_cb=None):
+        uploads.append((data, file_type, filename))
+
+    protocol.upload_file = upload_file
+    if list_replies is not None:
+        replies = iter(list_replies)
+
+        async def platform_accessories():
+            return next(replies)
+
+        protocol.platform_accessories = platform_accessories
+    return uploads
+
+
+async def test_accessory_firmware_as_studio_sends_it(monkeypatch) -> None:
+    """Upload named by its MD5, start with the accessory id, done at progress 1."""
+    import hashlib
+
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+
+    monkeypatch.setattr(protocol_x1, "ACCESSORY_UPGRADE_POLL_SECONDS", 0.01)
+    protocol = _protocol()
+    uploads = _accessory_update(protocol, [[]] * 1000)
+    blob = b"AP2 firmware"
+    md5 = hashlib.md5(blob).hexdigest()
+    task = asyncio.ensure_future(protocol.upload_accessory_firmware(
+        accessory_type_id="Purifier", blob=blob, md5=md5, filename=f"{md5}.bin",
+    ))
+    while not any(url == "/v1/platform/accessories/upgrade" for _, url, _, _ in protocol.sent):
+        await asyncio.sleep(0)
+    for progress in (0.3, 1.0):
+        protocol._dispatch_push(_report("/v1/project/accessory/upgrade-progress", {"progress": progress}))
+    await asyncio.wait_for(task, 2)
+    assert uploads == [(blob, 2, md5)]
+    assert ("POST", "/v1/platform/accessories/upgrade", {"id": 69}, {"filename": md5}) in protocol.sent
+
+
+async def test_accessory_firmware_done_when_it_comes_back(monkeypatch) -> None:
+    """Without progress pushes: in its bootloader, then connected again with a version."""
+    import hashlib
+
+    from custom_components.xtool.protocols.ws_v2 import protocol_x1
+
+    monkeypatch.setattr(protocol_x1, "ACCESSORY_UPGRADE_POLL_SECONDS", 0.01)
+    protocol = _protocol()
+    entry = {"dev_id": 82, "status": True, "bootloader_status": False, "version": {"app_version": "40.223.004"}}
+    _accessory_update(protocol, [
+        [entry],  # not started yet
+        [{**entry, "status": False, "bootloader_status": True, "version": {"app_version": ""}}],
+        [{**entry, "version": {"app_version": "40.223.005"}}],
+    ])
+    blob = b"fire box firmware"
+    await asyncio.wait_for(protocol.upload_accessory_firmware(
+        accessory_type_id="SafetyFireBoxPro", blob=blob, md5=hashlib.md5(blob).hexdigest(), filename="x",
+    ), 2)
+    assert ("POST", "/v1/platform/accessories/upgrade", {"id": 82},
+            {"filename": hashlib.md5(blob).hexdigest()}) in protocol.sent
+
+
+async def test_a_damaged_accessory_download_is_not_uploaded() -> None:
+    protocol = _protocol()
+    uploads = _accessory_update(protocol)
+    with pytest.raises(RuntimeError, match="MD5"):
+        await protocol.upload_accessory_firmware(
+            accessory_type_id="Purifier", blob=b"data", md5="0" * 32, filename="x",
+        )
+    with pytest.raises(NotImplementedError):
+        await protocol.upload_accessory_firmware(
+            accessory_type_id="AirPump", blob=b"data", md5="8d777f385d3dfec8815d20f7496026dc", filename="x",
+        )
+    assert uploads == []

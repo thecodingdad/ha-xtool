@@ -346,8 +346,11 @@ async def download_firmware(
     as each chunk arrives. Total is taken from Content-Length, falling back to
     expected_size when the header is missing.
     """
+    # No limit on the whole download: an X1 package is 350 MB, more
+    # than 5 min at 10 Mbit/s. A download that stalls for a minute ends.
+    timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=60)
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+        async with session.get(url, timeout=timeout) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"Firmware download failed: HTTP {resp.status}")
             total = resp.content_length or expected_size

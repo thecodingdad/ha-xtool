@@ -184,10 +184,17 @@ class WSV2Coordinator(XtoolCoordinator):
         except Exception as err:
             _LOGGER.debug("WS-V2 poll failed: %r", err)
             state.available = False
-            # Read the identity again after the next connect: the
-            # laser may have been power-cycled or updated meanwhile.
-            self._device_info_fetched = False
-            await self.protocol.disconnect()
+            if self.protocol.file_transfer_running:
+                # Closing the connection would end the upload, and a
+                # laser writing a firmware package answers late (an X1
+                # paused up to 16 s): the next poll asks again on the
+                # same connection.
+                _LOGGER.debug("%s: a file is going up, keeping the connection", self.device_name)
+            else:
+                # Read the identity again after the next connect: the
+                # laser may have been power-cycled or updated meanwhile.
+                self._device_info_fetched = False
+                await self.protocol.disconnect()
 
         # Set state on coordinator before dispatching new-accessory
         # entities so their ``available`` property reads the fresh data.

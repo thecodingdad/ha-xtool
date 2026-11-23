@@ -71,6 +71,7 @@ def build_coordinator(hass: HomeAssistant, model: Any) -> Any:
     """Build a model's real coordinator around a mock protocol."""
     protocol = MagicMock()
     protocol.host = "192.0.2.10"
+    protocol.file_transfer_running = False
     return model.coordinator_class(
         hass,
         protocol,
