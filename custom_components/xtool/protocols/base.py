@@ -150,6 +150,11 @@ class XtoolDeviceModel:
     # scales HA brightness accordingly. Defaults to 0 (linear
     # passthrough) for models whose bundle uses ``device/255*100``.
     fill_light_device_min: int = 0
+    # Fill lights set one by one by name (``PUT
+    # /v1/project/peripheral/fill-light?name=<name>``), as Studio's X1
+    # extension does: ``(name, device value at 100 %, highest value
+    # Studio sets)``. One light entity each.
+    named_fill_lights: tuple[tuple[str, int, int], ...] = ()
     has_device_sleep: bool = False  # ``autoSleepEnable`` config bool
     has_move_stop: bool = False
     has_beeper: bool = False
@@ -201,6 +206,26 @@ class XtoolDeviceModel:
     has_limit_switch: bool = False
     has_lid_sensor: bool = False
     has_machine_lock: bool = False
+    # Only the Safety key sensor, without the F family's Stops-when-moved
+    # switch (the X1 reports the key, but has no ``workingMode``).
+    has_safety_key: bool = False
+    # Laser X / Y position sensors without the homing and move buttons
+    # ``has_laser_head_position`` adds (the X1: Studio homes all axes at
+    # once only, Z included).
+    has_xy_position: bool = False
+    # X1 conveyor feeder: whether it is fitted and whether its front and
+    # rear sensors are blocked, as Studio reads them.
+    has_feeder: bool = False
+    # X1 modules: the diode galvo, the laser backpack (fiber, MOPA, UV)
+    # and the inkjet module, as Studio detects them.
+    has_laser_modules: bool = False
+    # Wi-Fi signal sensor on its own (``has_laser_info`` adds it with the
+    # F2 Ultra UV's lens and calibration sensors).
+    has_wifi_signal: bool = False
+    # X1 settings: exhaust fan speed and flame alarm sensitivity selects,
+    # with the values Studio's settings offer.
+    has_exhaust_fan_speed: bool = False
+    has_flame_sensitivity: bool = False
     has_ir_led: bool = False
     has_digital_lock: bool = False
     has_distance_measure: bool = False
@@ -255,6 +280,10 @@ class XtoolDeviceModel:
     has_ambient_sensors: bool = False  # enclosure temperature + humidity
     # Last job time, working / standby time, UV lamp + air purifier runtime
     has_lifetime_counters: bool = False
+    # Last job time, working time and standby time from
+    # ``/v1/project/process/statistics`` (X1: no tool runtime of its
+    # own and no print tool type)
+    has_process_statistics: bool = False
     # WS-V2: working time only, from machineInfo's ``worktime`` (F2
     # Ultra UV; its statistics carry no time)
     has_machine_info_worktime: bool = False
@@ -464,6 +493,21 @@ class XtoolDeviceState:
     inkjet_calibrated: bool | None = None
     machine_lock: bool | None = None
 
+    # X1 (JS001) — populated by ``X1WSV2Protocol``. Fill lights in the
+    # laser's own values (left / right 0-100, near 0-1000).
+    fill_light_left: int | None = None
+    fill_light_right: int | None = None
+    fill_light_near: int | None = None
+    feeder_installed: bool | None = None
+    feeder_front_blocked: bool | None = None
+    feeder_rear_blocked: bool | None = None
+    diode_laser_installed: bool | None = None
+    # ``none``, ``fiber_30w``, ``mopa_60w``, ``uv_5w`` or ``uv_mopa``
+    laser_backpack: str | None = None
+    inkjet_module_installed: bool | None = None
+    exhaust_fan_speed: int | None = None  # 750, 900 or 1000 (per mille)
+    flame_sensitivity: int | None = None  # 1 = low, 3 = high
+
     # DT002 (O1 Omni) — populated by ``DT002WSV2Protocol``. Cartridge
     # dicts are keyed "<ink path>_<slot>" (1-based) and carry
     # ``name, exist, remain_ml, full_ml, percent, low, serial``;
@@ -592,6 +636,11 @@ class FirmwareUpdateInfo:
 
 class XtoolProtocol(ABC):
     """Abstract base class for xTool device communication protocols."""
+
+    # Whether Home Assistant can install the laser's firmware: False where
+    # the laser updates by a path not built yet (the X1). The update entity
+    # then only reports new firmware.
+    FIRMWARE_INSTALL = True
 
     def __init__(self, host: str) -> None:
         self.host = host

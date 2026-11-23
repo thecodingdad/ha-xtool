@@ -827,6 +827,16 @@
       },
       "accessory_uvsensor_sn": {
         "name": "Seriennummer"
+      },
+      "laser_backpack": {
+        "name": "Laser-Rucksack",
+        "state": {
+          "none": "Keiner",
+          "fiber_30w": "30 W Faser",
+          "mopa_60w": "60 W MOPA",
+          "uv_5w": "5 W UV",
+          "uv_mopa": "5 W UV + 60 W MOPA"
+        }
       }
     },
     "binary_sensor": {
@@ -947,6 +957,21 @@
       },
       "accessory_largepurifierv3_running": {
         "name": "Luftreiniger aktiv"
+      },
+      "feeder_installed": {
+        "name": "Förderband"
+      },
+      "feeder_front_sensor": {
+        "name": "Förderband-Sensor vorne"
+      },
+      "feeder_rear_sensor": {
+        "name": "Förderband-Sensor hinten"
+      },
+      "diode_laser_installed": {
+        "name": "Diodenlaser-Modul"
+      },
+      "inkjet_module_installed": {
+        "name": "Inkjet-Modul"
       }
     },
     "camera": {
@@ -1408,6 +1433,14 @@
       },
       "accessory_ductfan_gear_select": {
         "name": "Stufe einstellen"
+      },
+      "exhaust_fan_speed": {
+        "name": "Absaugleistung",
+        "state": {
+          "75": "75 %",
+          "90": "90 %",
+          "100": "100 %"
+        }
       }
     },
     "update": {

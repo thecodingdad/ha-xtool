@@ -24,6 +24,7 @@ from .protocol_dt001 import DT001WSV2Protocol
 from .protocol_dt002 import DT002WSV2Protocol
 from .protocol_m2 import M2WSV2Protocol
 from .protocol_p2s import P2SWSV2Protocol
+from .protocol_x1 import X1WSV2Protocol
 
 
 XTOOL_F1_WSV2 = XtoolDeviceModel(
@@ -659,6 +660,45 @@ XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
 )
 
 
+# xTool X1 (JS001): 55 W CO2 gantry with a flying galvo head, laser
+# modules, an optional conveyor feeder. V2 only (Studio ext.json:
+# ``protocolVersion:"V2"``). Checked on an X1 with firmware
+# 40.140.003.01.ht18; see X1WSV2Protocol.
+XTOOL_X1_WSV2 = XtoolDeviceModel(
+    model_id="X1",
+    name="xTool X1",
+    protocol_class=X1WSV2Protocol,
+    coordinator_class=WSV2Coordinator,
+    has_camera=True,
+    # The two cameras Studio takes photos with (``captureImage``:
+    # ``far`` and ``near``). The laser lists ``side`` and ``ldm`` too:
+    # ``side`` answers with a black picture, ``ldm`` (the laser distance
+    # meter) with ``snap failed``.
+    camera_names=("far", "near"),
+    # Studio sets left and right at 0-100 and the close-up light in
+    # tenths of a percent, at most 500 (its 10-50 % setting).
+    named_fill_lights=(("left", 100, 100), ("right", 100, 100), ("near", 1000, 500)),
+    has_cover_sensor=True,
+    has_safety_key=True,
+    has_xy_position=True,
+    has_process_statistics=True,
+    has_feeder=True,
+    has_laser_modules=True,
+    has_wifi_signal=True,
+    has_exhaust_fan_speed=True,
+    has_flame_sensitivity=True,
+    # Alarms are any of Studio's X1 alarm codes, not only fire.
+    has_generic_alarms=True,
+    has_bt_accessories=False,
+    firmware_content_id="xTool-X1-firmware",
+    firmware_machine_type="JS001",
+    protocol_version="V2",
+    # V2 discovery reports deviceCode "JS001" and deviceName
+    # "xTool_X1_<suffix>".
+    discovery_match=("JS001", "X1"),
+)
+
+
 WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_F1_WSV2,
     XTOOL_F1_ULTRA_WSV2,
@@ -680,4 +720,5 @@ WSV2_MODELS: tuple[XtoolDeviceModel, ...] = (
     XTOOL_APPAREL_PRINTER_PLUS_WSV2,
     XTOOL_M2_WSV2,
     XTOOL_O1_OMNI_WSV2,
+    XTOOL_X1_WSV2,
 )

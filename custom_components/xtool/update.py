@@ -75,7 +75,7 @@ class XtoolFirmwareUpdate(XtoolEntity, UpdateEntity):
         self._attr_in_progress: int | bool = False
 
         features = UpdateEntityFeature.RELEASE_NOTES
-        if coordinator.enable_firmware_updates:
+        if coordinator.enable_firmware_updates and coordinator.protocol.FIRMWARE_INSTALL:
             features |= UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
         self._attr_supported_features = features
 

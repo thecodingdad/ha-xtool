@@ -36,7 +36,7 @@ USB, `needConnectAlive: false`, no heartbeat).
 | `s1` | `S1` | S1 | bidirectional WebSocket G-code RPC + HTTP fallback | 8081 (WS), 8080 (HTTP) |
 | `d_series` | `V1` (variant) | D1, D1 Pro, D1 Pro 2.0 | HTTP write + read-only status-push WebSocket | 8080 (HTTP), 8081 (WS) |
 | `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
-| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
+| `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)); X1 (JS001, see [X1 protocol](#x1-protocol-js001)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
 
 V1- and V2-firmware lines for the same hardware coexist — discovery +
 the port-28900 probe pick the right family at config-flow time. See
@@ -2972,6 +2972,126 @@ Not verified on hardware yet. The bundle drives jobs through
 `POST /v1/project/device/fill-light`, and exposes maintenance routes
 (`/v1/project/maintain/*`, pumps, `/v1/project/debug/mcode`) that
 should not be automated.
+
+
+## X1 protocol (JS001)
+
+xTool X1 (Studio `deviceCode` `JS001`, extension `xcs-ext-js001`) is a
+55 W CO2 gantry with a flying galvo head, swappable laser modules (a
+20 W diode galvo, a fiber / MOPA / UV "backpack", an inkjet module),
+three cameras and an optional conveyor feeder. Studio's `ext.json` lists
+it as **V2-only** (`protocolVersion:"V2"`, `channelType:"socket"`,
+`machineVersion:"V2"` on USB and Wi-Fi). Transport, framing, parity and
+heartbeat are the [WS-V2 protocol](#ws-v2-protocol-tls-websocket-rpc--push);
+the URLs are the `/v1/platform/*` + `/v1/project/*` set of the
+[M2](#m2-protocol), with the X1's own hardware routes.
+
+Everything here was checked on an X1 on firmware `40.140.003.01.ht18`
+(build 2026-10-29) against Studio 1.10.15's X1 extension 0.2.14.
+Identifiers in the samples are redacted.
+
+### Discovery and pairing
+
+V2 encrypted discovery answers with `deviceCode:"JS001"`,
+`deviceName:"xTool_X1_<last 6 MAC digits>"`, `platformVersion:"2.0"`,
+`netType`, `wifiSignal` and `firmwareVersion`. The X1 does not answer
+the V1 probe on UDP 20000.
+
+The X1 enforces pairing. `/v1/user/parity` without a known token answers
+`406 need button confirm` with `{authState:"WAITING_BUTTON_CONFIRM"}`;
+the laser then waits **15 s** for its button: `/v1/user/auth-status`
+answers `410 button confirm timeout` (`authState:"DENIED"`) exactly 15 s
+after the parity, and `{authState:"TOKEN_AUTHORIZED", token,
+sessionToken}` once the button is pressed. While it waits, the state
+push reports `mode:"SecureConfirm"`; the press itself arrives as the
+notice `/v1/project/event/key` with `info:{key_type:4}`, and the mode
+returns to `Idle`. Studio counts `SecureConfirm` as not busy, with
+`Idle`, `CANCEL_PROCESS` and `FINISH_PROCESS` (`isDeviceBusy`).
+
+### Read routes
+
+All are frames on the instruction channel.
+
+| Route | Reply `data` |
+|---|---|
+| GET `/v1/platform/device/machine-info` | `{deviceCode, deviceId, deviceName, sn, sku, uuid, firmware:{version, buildTime, modules:[{name, appVersion, bootVersion, hardVersion}]}}` — modules `MotionController`, `VAxisController`, `XYUAxisController`, `ZAxisController`, `FeederController`, `MR536Controller`; no MAC address |
+| POST `/v1/platform/device/state/sync` | `{}` — the state follows as a `/v1/platform/device/state` push |
+| GET `/v1/platform/device/config` | needs `data:{kv:[keys]}` (`code -1 "in_data is not array"` without); answers `{key: value}` for the keys asked |
+| GET `/v1/project/process/statistics` | `{count, singleTime, standbyTime, totalTime}` — seconds; Studio's `workingInfo` |
+| GET `/v1/project/peripheral/lid-status` | `{lidStatus}` — **true = open** (Studio's `getCoverStatus` returns `!lidStatus` as "closed") |
+| GET `/v1/project/peripheral/usbkey` | `{usbKey}` — the safety key is in |
+| GET `/v1/project/device/coordinate` | `{x, y, u, v, a, b}` in mm |
+| GET `/v1/project/peripheral/fill-light` | `{count, fillLights:[{name, brightness}]}` — `near`, `left`, `right`, sometimes also `top` (Studio never sets `top`) |
+| GET `/v1/project/feeder/info` | `{exist, block, home, press, sn, version}` — `exist` bool |
+| GET `/v1/project/peripheral/feeder-status` | `{exist:"exist", frontStatus, backStatus}` — `block` / `unblock`; blocked = material at the sensor (Studio warns "no material" when the rear one clears during a job) |
+| GET `/v1/project/peripheral/feeder-lift-detect` | `{enable}` |
+| GET `/v1/project/peripheral/galvo-exist` | `{exist}` — Studio's `hasBlueLaser`: the 20 W diode galvo is fitted |
+| GET `/v1/project/peripheral/galvo-cover` | `{type}` — e.g. `big` |
+| GET `/v1/project/peripheral/laserbag-info` | `{exist, type, sn, faultStatus:{communicationError}}` — `type` `RED_30W` (Studio badge B2, 30 W fiber), `RED_60W` (B3, 60 W MOPA), `UV` (B1, 5 W UV), `UV_RED_60W` (B4, both); `UNKNOWN` without a backpack |
+| GET `/v1/project/printhead/printhead-status` | `{printhead_exist, printhead_connected}` — strings `"true"` / `"false"` |
+| GET `/v1/project/peripheral/uv-heated-status` | `{status}` — `unknown` without the UV module |
+| GET `/v1/platform/wifi/connected-info` | `{ip, mac_addr, rssi_dbm, ssid}` |
+| GET `/v1/project/alarm/records` | `{"alarms-list": […], "alarms-record": […]}` — active alarms, then history (Studio's `getAlarmRecords`); `{}` without any |
+| GET `/v1/project/device/power-on-duration` | `{days, hours, minutes, seconds, uptime_ms, uptime_seconds}` |
+| GET `/v1/project/automation/status` | `{automationId, running}` |
+| GET `/v1/project/process/object-mode` | `{mode}` — e.g. `plane` |
+| GET `/v1/platform/camera/list` | `[{id, name, format, width, height, fps, version}]` — `far` (nv12 3840 × 2160), `near` (jpeg 4208 × 3120), `side` (nv12 1600 × 1200), `ldm` (jpeg 640 × 32, the laser distance meter) |
+
+`404 API not found` on this firmware: `/v1/project/laser-head/info`,
+`/v1/project/peripheral/lid`, `/v1/project/peripheral/pallet`,
+`/v1/project/device/motion-status`, GET `/v1/platform/device/alarm`.
+GET `/v1/project/camera/param` needs a `name` (`400 invalid name
+parameter`). The fitted CO2 source shows only in the task ID suffix,
+e.g. `…_LASER_PLANE_CO2_55W_VECTOR_ENGRAVING_VECTOR_CUTTING`.
+
+**Settings.** Studio reads these config keys: `smokeFanTimeout`,
+`smokeFanSpeed`, `beepEnable`, `distCircleU`, `feederRadius`,
+`automationId`, `dirtyCheckEnable`, `dirtyCheckTime`,
+`dirtyUncleanTotalTime`, `dirtyLowFrequencyCheckEnable`,
+`dirtyLowFrequencyCheckTime`, `dirtyLowFrequencyUncleanTotalTime`,
+`mdMode`, `automationEnable`, `laserDotCo2OffsetX`, `laserDotCo2OffsetY`,
+`laserBlueFramePower`, `flameSensitivity`, `hostCustomData` (a JSON
+string of Studio's own settings), `laserDotSelfCheckTime`,
+`focusDetectControlEnable`, `feederYScan`, `curGalvoLensType` and the
+`vibrationCalib*` set. There is no `gapCheck`. Its settings page offers:
+exhaust time after processing `smokeFanTimeout` 1-600 s; exhaust fan
+speed `smokeFanSpeed` 750 / 900 / 1000 (75 / 90 / 100 %); buzzer
+`beepEnable` (bool); flame alarm `flameSensitivity` 1 (low) or 3 (high);
+defocus detection `focusDetectControlEnable` (bool).
+
+### Writes
+
+| Request | Body | |
+|---|---|---|
+| PUT `/v1/platform/device/config` | flat `{key: value}`, booleans as booleans | Studio's `setConfigs`; answers `{}` |
+| PUT `/v1/project/peripheral/fill-light?name=<near\|left\|right>` | `{brightness}` | Studio's `setFillLight`. `left` / `right` 0-100; `near` in tenths of a percent, Studio offers 100-500 (10-50 %) and lights it at 200 for close photos |
+| POST `/v1/project/device/control?action=<START\|PAUSE\|RESUME\|CANCEL>` | — | Studio's `startProcess`, `pausePrint`, `resumePrint`, `cancelPrint` |
+| POST `/v1/project/control/home?axis=ALL` | — | Studio's `resetLaserHead`; it only homes all axes at once |
+| POST `/v1/platform/camera/snap?name=<far\|near>` | — | `{filename}`, then the file over `file_stream` as on the M2. Studio's `captureImage` uses `far` and `near` only; `side` returns a black picture, `ldm` answers `code -1 "snap failed"` |
+
+### Pushes
+
+Studio routes a push by its shape, not by its method: an object maps
+paths to their state (`REPORT`) or to an event (an event path with
+`content` or the payload as `info`); a list holds notices `{name,
+level, info, content, timestamp}` (`NOTIFY`).
+
+| Path | Shape | Payload |
+|---|---|---|
+| `/v1/platform/device/state` | REPORT | `{mode, moveState, gohomeState, taskId, processInfo, sliceId, automationId, hostCustomData}` — `mode` ∈ `Initial`, `Idle`, `Busy`, `Measure`, `Autowork`, `WorkReady`, `WorkPlay`, `WorkPause`, `Sleep`, `Upgrade`, `Error`, `Leveling`, `Calibration`, `Network`, `SecureConfirm` |
+| `/v1/project/peripheral/lid` | REPORT | `{state, automationId}` — true = open |
+| `/v1/project/peripheral/usbkey` | REPORT | `{state}` |
+| `/v1/project/peripheral/fill-light` | REPORT | `{count, fillLights:[{name, brightness}]}` — only the light that changed |
+| `/v1/project/device/feeder-sensor` | REPORT or notice | `{frontSensor, backSensor}` — `block` / `unblock`, either may be missing |
+| `/v1/platform/device/machine-info`, `/v1/platform/wifi/info`, `/v1/platform/ble/info` | REPORT | the identity blob, Wi-Fi details, `{name}` |
+| `/v1/platform/device/process` | notice | `content:{action, taskId}` — `action` ∈ `ready`, `start`, `pausing`, `pause`, `resume`, `cancel`, `finish` |
+| `/v1/platform/device/alarm` | notice | `info:[{info:{code, message}, level}]` |
+| `/v1/project/event/key` | notice | `info:{key_type}` — 4: the laser's button |
+
+Studio's X1 extension also handles `/v1/project/peripheral/air-nozzle`,
+`/v1/project/device/feeder`, the print-head and backplate reports, the
+move / go-home / measure / leveling / calibration notices and
+`/v1/project/event/firebox-spray`.
 
 
 ---

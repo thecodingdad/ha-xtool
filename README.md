@@ -1,6 +1,6 @@
 # xTool
 
-Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P family, MetalFab, Apparel Printer (Plus), O1 Omni, Retail Marker, …). It talks to the device on your local network; no cloud and no xTool account are needed.
+Home Assistant integration for xTool laser cutters, engravers, fiber-laser welders and inkjet / UV printers (S1, D1 family, F1 family, F2 family, M1 family, M2, P family, MetalFab, Apparel Printer (Plus), O1 Omni, Retail Marker, X1, …). It talks to the device on your local network; no cloud and no xTool account are needed.
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/thecodingdad/ha-xtool)](https://github.com/thecodingdad/ha-xtool/releases)
@@ -32,9 +32,11 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 | S1 | S1 |
 | D series | D1, D1 Pro, D1 Pro 2.0 |
 | V1 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) |
-| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1 Ultra, M2 (JS002), P2S, P3, MetalFab, Apparel Printer, Apparel Printer Plus (DT003), O1 Omni (DT002) |
+| V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1 Ultra, M2 (JS002), P2S, P3, MetalFab, Apparel Printer, Apparel Printer Plus (DT003), O1 Omni (DT002), X1 (JS001) |
 
 Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
+
+**X1 (JS001).** Pairs with a button press (see [Pairing](#pairing-newer-v2-firmware)): the X1 waits only about 15 seconds for it, so start the setup standing at the laser. Checked on an X1 with firmware 40.140.003.01.ht18; job events and the job buttons follow Studio but have not run during a job yet. New X1 firmware is reported, but not installed from Home Assistant yet: the X1 updates by its own path.
 
 ## Installation
 
@@ -102,7 +104,7 @@ Only the entities the model and its connected accessories support are created.
 | Last job time | Duration of the last finished job (**F2 Ultra UV**: kept across restarts) |
 | Working mode | Cut / engrave / knife / inkjet / … (V1 firmware, D series) |
 | Working time / Session count / Standby time / Tool runtime | Lifetime totals |
-| Laser position X / Y / Z | Laser-head position in mm |
+| Laser position X / Y / Z | Laser-head position in mm (**X1**: X / Y) |
 | Fire level | Flame-detection level |
 | Air-Assist level | Air-Assist gear (0-4) |
 | Workhead / Workhead Z height | Fitted workhead and its Z offset |
@@ -115,9 +117,10 @@ Only the entities the model and its connected accessories support are created.
 | Active alarms | **O1 Omni.** Number of alarms; the `alarms` attribute lists them as in xTool Studio |
 | UV lamp runtime / Air purifier runtime | **O1 Omni.** Lifetime totals |
 | Ambient temperature / humidity | **Apparel Printer, O1 Omni** |
+| Laser backpack | **X1.** None, 30 W fiber, 60 W MOPA, 5 W UV or 5 W UV + 60 W MOPA (diagnostic) |
 | Engraving lens | **F2 Ultra UV.** Surface, Inner or None |
 
-**Diagnostic:** IP address, Laser power, Laser module, SD card, Workspace size, Active connections (clients connected to the laser, such as XCS), Origin offset X / Y, Last distance (IR measurement), Riser base (**S1**), Inkjet head serial / firmware and toner serial (**M2**), and on the **F2 Ultra UV** Wi-Fi signal, Connection (Ethernet or Wi-Fi) and Calibration (when Studio last calibrated the camera; the stored offsets as attributes, never changed).
+**Diagnostic:** IP address, Laser power, Laser module, SD card, Workspace size, Active connections (clients connected to the laser, such as XCS), Origin offset X / Y, Last distance (IR measurement), Riser base (**S1**), Inkjet head serial / firmware and toner serial (**M2**), Wi-Fi signal (**F2 Ultra UV, X1**), and on the **F2 Ultra UV** Connection (Ethernet or Wi-Fi) and Calibration (when Studio last calibrated the camera; the stored offsets as attributes, never changed).
 
 ### Binary Sensor
 
@@ -133,6 +136,8 @@ Only the entities the model and its connected accessories support are created.
 | Alarm | Any active alarm |
 | XCS compatibility mode | On while the XCS desktop app holds the laser's connection |
 | Waste ink tank full / installed, Air filter installed | **O1 Omni** |
+| Feeder / Feeder front sensor / Feeder rear sensor | **X1.** The conveyor feeder is fitted; material is at its front or rear sensor |
+| Diode laser module / Inkjet module | **X1.** The module is fitted (diagnostic) |
 | Inkjet head capped / Toner installed / Inkjet head calibrated | **M2** |
 
 Bluetooth accessories (Smart Air Assist, SafetyPro AP2 / AP2 Max, SafetyPro IF2 / IF2 2.0, Fire Safety Set, …) are devices of their own, connected to the laser, with their own entities: gear, running, filter wear, connection, post-run time, buzzer and so on.
@@ -223,6 +228,8 @@ data:
 |---|---|
 | Purifier speed | Off / Low / Medium / High |
 | Flame alarm mode | Flame-detection mode 1-4 |
+| Flame alarm sensitivity | **X1.** Low or High, as Studio's setting |
+| Exhaust fan speed | **X1.** 75, 90 or 100 %, as Studio's setting |
 | Red-cross mode | Cross-laser pointer / Low-light mode |
 | Perspective | **F2 Ultra UV** deep camera: Uncorrected, Rotated (upright) or Straightened (default: upright and seen square from above) |
 
@@ -232,6 +239,7 @@ data:
 |---|---|
 | Fill light | Dimmable work light (0-100 %) |
 | Fill light front / Fill light back | **F2 family.** The two fill lights, each on its own |
+| Fill light left / right / close | **X1.** The three lights Studio uses for photos, each on its own. The close light goes up to 50 %, as in Studio |
 
 ### Camera
 
@@ -242,7 +250,7 @@ On a laser with several cameras, each camera and its settings have their own dev
 | Camera | Workspace camera of single-camera models (e.g. F1 Ultra V2) |
 | Main camera / Deep camera | **F2 family, MetalFab.** Workspace and close-up camera. On the **F2 Ultra UV** the main camera is straightened with the laser's calibration and the deep camera turned upright (see Perspective) |
 | Overview camera / Close camera | **P family, V1 firmware dual-camera models.** On the **P2** straightened, with crop presets and overlays, see [P2 cameras](#p2-cameras) |
-| Global / Local / Side camera | **M2** |
+| Global / Local / Side camera | **M2** (**X1**: Global and Local, the two cameras Studio takes photos with) |
 | Flame record | Photo of the last flame alarm |
 | Calibration (image) | **F2 Ultra UV** (diagnostic): the main camera photo with Studio's calibration grid |
 
