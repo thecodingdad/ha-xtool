@@ -3125,8 +3125,25 @@ As Studio's X1 extension installs the main package (its
    `{progress}` and the notice `/v1/project/device/upgrade` are only
    logged.
 
-The upload was checked on an X1 with a 2.5 MB text file (finish `code 0`,
-`message "success"`, no update started). The printhead (inkjet module)
+Seen on an X1 updating from `40.140.003.01.ht18` to `40.140.003.21`
+(`xtool_JS001-V0.3.21-….PP.zip`, 353 MB, over 2.4 GHz Wi-Fi):
+
+- The X1 asked for windows of 128 KB at first, later up to 2.7 MB, and
+  pulled the package in about 4 min (1-1.5 MB/s). Between some requests
+  it paused for up to 16 s while it wrote; requests on the instruction
+  socket answered late then. A client that closes the connection on a
+  slow answer (a poll timing out) ends the upload: the file socket
+  belongs to the same session.
+- `upgrade` answered `{}` at once, and the mode went to `Upgrade`. About
+  2 min later the X1 stopped answering (heartbeat timeout) and
+  restarted; `GET /v1/user/parity` then answered `code -1`, `device not
+  initialized` for about 25 s while it booted. The pairing token was
+  still valid afterwards (no new button press), and `Idle` came about
+  12 s after the handshake: 6 min in all, download included.
+- machine-info then reports `40.140.003.01.ht21`; the cloud names the
+  same release `40.140.003.21`.
+
+The printhead (inkjet module)
 has its own package and path (`POST /v1/project/printhead/upgrade`).
 Accessories (Studio's `updateFirmwareForV2Platform` and
 `startAccessoryFirmwareUpgrade`): upload the package with the same
