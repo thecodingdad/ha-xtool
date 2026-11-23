@@ -59,6 +59,9 @@ MCODE_PURIFIER_SET_GEAR = "M9039"        # ``M9039 <gear>``
 MCODE_PURIFIER_BUZZER = "M9046"          # cabinet purifier buzzer
 MCODE_PURIFIER_RESET_FILTER = "M9258"    # reset filter timer
 
+# --- Fire Safety Set 2 (SafetyFireBoxPro) ---
+MCODE_FIRE_BOX_INFO = "M9033"            # cylinder, gas, spraying, error bits
+
 # Laser-host air-assist (S1 — wired to laser, not BT-tunneled)
 MCODE_AIR_ASSIST = "M15"                 # ``M15 A<enabled> S<gear>``
 MCODE_AIR_ASSIST_DELAY = "M1099"         # close-delay seconds, ``T<n>``
@@ -131,6 +134,13 @@ class AccessoryDefinition:
     info_mcode: str | None
     parse_info: Callable[[str], dict[str, Any]]
     entities: tuple[AccessoryEntitySpec, ...]
+    # The accessory's id on platform 2.0 firmware (Studio's numeric
+    # accessory type: ``dev_id`` in ``/v1/platform/accessories/list``,
+    # ``id`` for ``/v1/platform/accessories/control``). None: not known.
+    platform_id: int | None = None
+    # The entities when reached that way, with the controls Studio's
+    # platform 2.0 path uses. None: the entities without controls.
+    platform_entities: tuple[AccessoryEntitySpec, ...] | None = None
     # (platform, spec key) pairs of entities an earlier release created
     # and this one no longer does. Their registry entries are removed
     # when the accessory's entities are built, so they do not stay

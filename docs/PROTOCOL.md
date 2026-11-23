@@ -2068,7 +2068,7 @@ Studio's `bF` firmware-id → marketing-name dict:
 | `AirPumpV2` | xTool Air-Compress Assist |
 | `FireExtinguisher` | xTool Fire Safety Set |
 | `FireExtinguisherV1_5` | xTool Fire Safety Set v1.5 |
-| `SafetyFireBoxPro` | xTool SafetyFireBoxPro |
+| `SafetyFireBoxPro` | xTool Fire Safety Set 2 (Studio: `accessory.safetyFireBoxPro.name`) |
 | `UvSensor` | xTool Firesense Hub |
 | `Dongle` | xTool Bluetooth Dongle |
 | `MultiFunctionalBase` | xTool MultiFunctional Base |
@@ -3087,6 +3087,59 @@ level, info, content, timestamp}` (`NOTIFY`).
 | `/v1/platform/device/process` | notice | `content:{action, taskId}` — `action` ∈ `ready`, `start`, `pausing`, `pause`, `resume`, `cancel`, `finish` |
 | `/v1/platform/device/alarm` | notice | `info:[{info:{code, message}, level}]` |
 | `/v1/project/event/key` | notice | `info:{key_type}` — 4: the laser's button |
+
+### Accessories
+
+The X1 lists its accessories itself, Bluetooth (through its dongle) and
+wired alike, and passes M-codes to them by accessory id: Studio's
+platform 2.0 accessory path, the counterpart of `/v1/parts/control`.
+
+| Request | Body | Reply `data` |
+|---|---|---|
+| GET `/v1/platform/accessories/list` | — | `[{dev_id, status, name, common_status, bootloader_status, version:{app_version, boot_version, hard_version}}]` — one entry per accessory type the X1 knows; `status` true = connected; `common_status` the accessory's last report |
+| POST `/v1/platform/accessories/control?id=<dev_id>` | `{command:"<M-code>"}` | `{result:"<M-code reply>
+"}`, `""` when the accessory has no answer |
+| POST `/v1/platform/accessories/upgrade` | | accessory firmware (Studio's `startAccessoryFirmwareUpgrade`) |
+
+**AP2 level.** Studio's "Purifier level" sets it with `M9039 <code>` to
+id 69: `A0` off, `A1`-`A4` levels 1-4, `C-1` Auto; the AP2 answers with
+its report at once (`A1`, …, or `C0` for Auto while idle). Studio's job
+start sends `M9039 C<level>` (5 its Auto) and `M9039 C0` at the end.
+Checked on an AP2 on an X1: 1, Off and Auto set this way.
+
+`dev_id` is Studio's accessory type: 69 SafetyPro AP2 (Studio's
+`BigPurifier`, firmware `40.212.x.4528`), 70 IF2, 71 the Bluetooth
+dongle, 76 AP2 Max, 78 IF2 2.0, 82 Fire Safety Set 2
+(`SafetyFireBoxPro`, firmware `40.223.x.5222`). The list of the X1
+checked has 71, 82 and 69 connected and 70, 76 and 78 not.
+`M9098` to id 71 lists the Bluetooth ones (`0,<MAC>,45736000,1;` for
+the AP2, type `0x45`); the wired Fire Safety Set 2 is not in it.
+
+| Accessory | Read | Reply |
+|---|---|---|
+| SafetyPro AP2 (69) | `M9033` | `M9033 V40.212.007.4528.01 B03 C0 D0 H98 I99 J100 K100 L100 S0 E:"<sn>"` — Studio: version = the first two words, gear = the third, filters `H`-`L` in %, `S`, serial `E:`. Gear (Studio's "Purifier level"): `A` manual — `A0` off, `A1`-`A4` levels 1-4; `C` Auto, following the laser — `C0` idle, `C<n>` while a job runs it at level n |
+| Fire Safety Set 2 (82) | `M9033` | `M9033 A40.223.004.5222.01.B02 J0 S0 G3 T410 W1190 E:"<sn>"` — see below |
+
+**Fire Safety Set 2 `M9033`.** As Studio's `getSafetyFireBoxProInfo`
+reads it: `A<version>`; `J` 1 while it sprays (Studio sends its
+extinguish notice on the rising edge); `G` the gas cylinder, -1 without
+one, 0-3 the gas level Studio shows with one; `T` the gas remaining
+(raw); `S` error bits: 4 no gas cylinder, 8 gas insufficient, 16
+extinguisher drive abnormal, 32 the cylinder needs calibrating; `E:` the
+serial. `W` is not read by Studio. Calibration is `M9252 S0`. Its F0F7
+prefix on firmware with `/v1/parts/control` is `[82, 115, 111, 1, 0]`.
+
+Pushes: `/v1/project/accessory/message` (REPORT) `{dev_id, message}` —
+an accessory's own report: the Fire Safety Set 2's `M9033` about every
+2 s; the AP2's `M9033` and `M9039 <gear> D… H… I… J… K… L… S…` in turn
+every few seconds, and at once when its gear is changed on it;
+`/v1/project/accessory/status` `{accessoryName, status, dev_id}` on
+connect and disconnect.
+
+**Fire.** The alarm notice with `info.code` 1001 is Studio's fire alarm
+(`nd.FIRE`); `/v1/project/event/firebox-spray` (`info:{status,
+remaining_gas, dev_id, manual}`, `status` `spray_finish` at the end)
+reports the Fire Safety Set 2 spraying.
 
 Studio's X1 extension also handles `/v1/project/peripheral/air-nozzle`,
 `/v1/project/device/feeder`, the print-head and backplate reports, the

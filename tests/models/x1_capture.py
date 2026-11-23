@@ -3,8 +3,9 @@
 Captured 2026-11-21 from an X1 (JS001) on firmware 40.140.003.01.ht18,
 idle with the lid closed and the safety key in: 55 W CO2 laser, the
 diode galvo, no laser backpack, no inkjet module, the conveyor feeder
-fitted. The serial numbers, device ID, UUID, MAC address, Wi-Fi name and
-address are replaced.
+fitted, a SafetyPro AP2 and a Fire Safety Set 2 connected. The serial
+numbers, device ID, UUID, MAC address, Wi-Fi name and address are
+replaced.
 """
 
 from __future__ import annotations
@@ -87,6 +88,55 @@ LID_CLOSED_REPORT = {
     "data": {"/v1/project/peripheral/lid": {"automationId": "null", "state": False}},
 }
 
+# Accessories: the Bluetooth dongle (71), the SafetyPro AP2 over
+# Bluetooth (69) and the Fire Safety Set 2, wired (82); the rest of the
+# list is not connected.
+AP2_SERIAL = "MXTESTAP2"
+FIRE_BOX_SERIAL = "MXTESTFIREBOX"
+ACCESSORY_LIST = [
+    {"bootloader_status": False, "common_status": "", "dev_id": 71, "name": "", "status": True,
+     "version": {"app_version": "40.214.002.4736.01.B06", "boot_version": "40.214.001.4736.00.B02", "hard_version": ""}},
+    {"bootloader_status": False,
+     "common_status": f'M9033 A40.223.004.5222.01.B02 J0 S0 G3 T410 W1191 E:"{FIRE_BOX_SERIAL}"',
+     "dev_id": 82, "name": "", "status": True,
+     "version": {"app_version": "40.223.004.5222.01.B02", "boot_version": "40.223.002.5222.00.B01", "hard_version": ""}},
+    {"bootloader_status": False, "common_status": "M9039 C0 D0 H98 I99 J100 K100 L100 S0", "dev_id": 69, "name": "",
+     "status": True, "version": {"app_version": "40.212.007.4528.01 B03", "boot_version": "", "hard_version": "I1.1"}},
+    *(
+        {"bootloader_status": False, "common_status": "", "dev_id": dev_id, "name": "", "status": False,
+         "version": {"app_version": "", "boot_version": "", "hard_version": ""}}
+        for dev_id in (70, 78, 76)
+    ),
+]
+# Each (accessory id, M-code) passed through /v1/platform/accessories/control, and the reply.
+ACCESSORY_REPLIES: dict[tuple[int, str], Any] = {
+    (69, "M9033"): {"result": f'M9033 V40.212.007.4528.01 B03 C0 D0 H98 I99 J100 K100 L100 S0 E:"{AP2_SERIAL}"\n'},
+    (82, "M9033"): {"result": f'M9033 A40.223.004.5222.01.B02 J0 S0 G3 T410 W1190 E:"{FIRE_BOX_SERIAL}"\n'},
+}
+
+# The Fire Safety Set 2 reports itself about every 2 s.
+FIRE_BOX_REPORT = {
+    "type": "request", "method": "REPORT", "params": {}, "timestamp": 1795301882277,
+    "transactionId": 4184535597,
+    "data": {"/v1/project/accessory/message": {
+        "dev_id": 82, "message": f'M9033 A40.223.004.5222.01.B02 J0 S0 G3 T410 W1191 E:"{FIRE_BOX_SERIAL}"',
+    }},
+}
+
+# The AP2's own report as its level was set on the purifier: Auto (C0,
+# idle), levels 1-4 (A1-A4), Off (A0). Its M9039 between these carries
+# the same codes.
+AP2_REPORTS = {
+    gear: {
+        "type": "request", "method": "REPORT", "params": {},
+        "data": {"/v1/project/accessory/message": {
+            "dev_id": 69,
+            "message": f'M9033 V40.212.007.4528.01 B03 {gear} D0 H98 I99 J100 K100 L100 S0 E:"{AP2_SERIAL}"',
+        }},
+    }
+    for gear in ("C0", "A1", "A2", "A3", "A4", "A0")
+}
+
 # Each (method, URL) the integration sends, and the X1's reply.
 REPLIES: dict[tuple[str, str], Any] = {
     ("GET", "/v1/platform/device/machine-info"): MACHINE_INFO,
@@ -115,6 +165,7 @@ REPLIES: dict[tuple[str, str], Any] = {
         "ip": HOST, "mac_addr": "00:00:5e:00:53:01", "rssi_dbm": -55, "ssid": "example",
     },
     ("GET", "/v1/project/alarm/records"): {},
+    ("GET", "/v1/platform/accessories/list"): ACCESSORY_LIST,
 }
 
 
@@ -124,6 +175,7 @@ class FakeX1(X1WSV2Protocol):
     def __init__(self, host: str, *args, **kwargs) -> None:
         super().__init__(host, *args, **kwargs)
         self.replies = dict(REPLIES)
+        self.accessory_replies = dict(ACCESSORY_REPLIES)
         self.sent: list[tuple[str, str, dict | None, dict | None]] = []
 
     @property
@@ -146,6 +198,8 @@ class FakeX1(X1WSV2Protocol):
         _skip_connect: bool = False,
     ) -> Any:
         self.sent.append((method.upper(), url, params, data))
+        if url == "/v1/platform/accessories/control":
+            return self.accessory_replies.get((params["id"], data["command"]), {"result": ""})
         reply = self.replies.get((method.upper(), url), {})
         if url == "/v1/platform/device/state/sync":
             # The X1 answers with an empty reply and pushes its state

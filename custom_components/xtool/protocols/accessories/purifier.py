@@ -34,6 +34,7 @@ Large, AP2 Max) live in :mod:`large_purifier`.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .base import (
@@ -93,17 +94,46 @@ async def _purifier_speed_select_write(coordinator: Any, option: Any) -> None:
     )
 
 
+# Studio's purifier level codes for the AP2 (its LevelSwitch): ``A`` is
+# manual, ``A0`` off and ``A1``-``A4`` the levels; ``C`` is Auto, the
+# purifier following the laser: ``C0`` idle, ``C<n>`` while a job runs it
+# at level n (Studio's job start sends ``M9039 C<level>``, 5 its own Auto,
+# and ``M9039 C0`` at the end); Studio sets Auto with ``C-1``. Seen on an
+# AP2 on an X1: A0-A4 and C0. Other values stay as reported.
+_LEVEL_CODE = re.compile(r"([AC])(-?\d+)")
+
+
+def _gear(raw: str | None) -> tuple[str | None, bool | None]:
+    """The level (``off``, ``1``-``4``, ``auto``) and whether it runs."""
+    match = _LEVEL_CODE.fullmatch(raw or "")
+    if match is None:
+        return raw, None
+    letter, number = match[1], int(match[2])
+    if letter == "C":
+        return "auto", number > 0
+    if number == 0:
+        return "off", False
+    return str(number), True
+
+
+# Studio's LevelSwitch writes (``M9039 <code>``) for each level.
+_LEVEL_WRITES = {"off": "A0", "1": "A1", "2": "A2", "3": "A3", "4": "A4", "auto": "C-1"}
+
+
 def parse_purifier_info(text: str) -> dict[str, object]:
     """Decode ``M9033`` reply (V2 cabinet purifier).
 
-    Wire shape: ``<v1> <v2> <gear> H<H> I<I> J<J> K<K> L<L> E:"<sn>"``.
+    Wire shape: ``<v1> <v2> <gear> H<H> I<I> J<J> K<K> L<L> E:"<sn>"``,
+    e.g. ``V40.212.007.4528.01 B03 A2 D0 H98 I99 J100 K100 L100 S0
+    E:"<sn>"`` from an AP2 on an X1.
     H/I/J/K/L map onto the AP2 datasheet's named filters in
     order: pre / medium / carbon / dense_carbon / hepa.
     """
     parts = text.split(" ", 3)
-    return {
+    gear, running = _gear(parts[2]) if len(parts) >= 3 else (None, None)
+    fields: dict[str, object] = {
         "version": " ".join(parts[:2]) if len(parts) >= 2 else None,
-        "gear": parts[2] if len(parts) >= 3 else None,
+        "gear": gear,
         "filter_pre": num(text, "H"),
         "filter_medium": num(text, "I"),
         "filter_carbon": num(text, "J"),
@@ -111,6 +141,9 @@ def parse_purifier_info(text: str) -> dict[str, object]:
         "filter_hepa": num(text, "L"),
         "sn": quoted(text, "E:"),
     }
+    if running is not None:
+        fields["running"] = running
+    return fields
 
 
 PURIFIER_ENTITIES = (
@@ -184,6 +217,18 @@ PURIFIER_ENTITIES = (
 )
 
 
+# The AP2 on the platform 2.0 path (X1): read with M9033, its level set
+# as Studio's "Purifier level" sets it.
+PURIFIER_PLATFORM_ENTITIES = (
+    *(spec for spec in PURIFIER_ENTITIES if spec.platform in ("sensor", "binary_sensor")),
+    AccessoryEntitySpec(
+        "select", "level_select", field="gear", icon="mdi:air-purifier",
+        options=tuple(_LEVEL_WRITES),
+        write_mcode=lambda level: f"{MCODE_PURIFIER_SET_GEAR} {_LEVEL_WRITES[level]}",
+    ),
+)
+
+
 PURIFIER = AccessoryDefinition(
     type_id="Purifier",
     friendly_name="xTool SafetyPro AP2",
@@ -192,4 +237,7 @@ PURIFIER = AccessoryDefinition(
     info_mcode=MCODE_PURIFIER_INFO,
     parse_info=parse_purifier_info,
     entities=PURIFIER_ENTITIES,
+    # Studio's BigPurifier: firmware 40.212.x.4528, the same prefix
+    platform_id=69,
+    platform_entities=PURIFIER_PLATFORM_ENTITIES,
 )

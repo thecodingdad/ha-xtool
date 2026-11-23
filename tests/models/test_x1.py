@@ -23,7 +23,15 @@ from custom_components.xtool.const import DOMAIN, XtoolStatus
 from custom_components.xtool.protocols import DEVICE_MODELS, detect_models
 from custom_components.xtool.protocols.base import XtoolDeviceState
 
+from custom_components.xtool.protocols.accessories.fire_extinguisher import parse_fire_box_info
+
+from custom_components.xtool.protocols.accessories.purifier import parse_purifier_info
+
 from .x1_capture import (
+    AP2_REPORTS,
+    AP2_SERIAL,
+    FIRE_BOX_REPORT,
+    FIRE_BOX_SERIAL,
     FILL_LIGHT_REPORT,
     FIRMWARE,
     HOST,
@@ -55,6 +63,7 @@ EXPECTED_ENTITIES = {
     ("camera", "camera_far"),
     ("camera", "camera_near"),
     ("event", "error"),
+    ("event", "fire_warning"),
     ("event", "job"),
     ("light", "fill_light_left"),
     ("light", "fill_light_near"),
@@ -78,6 +87,38 @@ EXPECTED_ENTITIES = {
     ("sensor", "working_seconds"),
     ("switch", "beep_enable"),
     ("update", "firmware_update"),
+    # The SafetyPro AP2 and the Fire Safety Set 2, read only
+    *(("sensor", f"accessory_purifier_{AP2_SERIAL}_{key}") for key in (
+        "version", "sn", "gear", "filter_pre", "filter_medium", "filter_carbon",
+        "filter_dense_carbon", "filter_hepa",
+    )),
+    ("binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running"),
+    ("select", f"accessory_purifier_{AP2_SERIAL}_level_select"),
+    *(("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_{key}") for key in (
+        "version", "sn", "gas_level", "gas_remaining",
+    )),
+    *(("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_{key}") for key in (
+        "spraying", "cylinder_installed", "gas_low", "drive_fault", "calibration_needed",
+    )),
+}
+
+# The accessories' states: (platform, key) → state.
+EXPECTED_ACCESSORY_STATES = {
+    ("sensor", f"accessory_purifier_{AP2_SERIAL}_version"): "V40.212.007.4528.01 B03",
+    ("sensor", f"accessory_purifier_{AP2_SERIAL}_gear"): "auto",
+    ("binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running"): "off",
+    ("select", f"accessory_purifier_{AP2_SERIAL}_level_select"): "auto",
+    ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_pre"): "98.0",
+    ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_medium"): "99.0",
+    ("sensor", f"accessory_purifier_{AP2_SERIAL}_filter_hepa"): "100.0",
+    ("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_version"): "40.223.004.5222.01.B02",
+    ("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_level"): "3",
+    ("sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_remaining"): "410",
+    ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_spraying"): "off",
+    ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_cylinder_installed"): "on",
+    ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_low"): "off",
+    ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_drive_fault"): "off",
+    ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_calibration_needed"): "off",
 }
 
 # The states the captured replies show.
@@ -413,3 +454,140 @@ async def test_a_light_shows_its_new_value(hass: HomeAssistant, x1) -> None:
     )
     state = hass.states.get(entity_id("light.fill_light_near"))
     assert (state.state, state.attributes["brightness"]) == ("on", 51)
+
+
+# --- Accessories --------------------------------------------------------
+
+
+def _accessory_state(hass: HomeAssistant, platform: str, key: str):
+    entity_id = er.async_get(hass).async_get_entity_id(platform, DOMAIN, f"{SERIAL}_{key}")
+    return hass.states.get(entity_id) if entity_id else None
+
+
+async def test_the_accessories_show_what_they_report(hass: HomeAssistant, x1) -> None:
+    shown = {
+        (platform, key): (state.state if (state := _accessory_state(hass, platform, key)) else None)
+        for platform, key in EXPECTED_ACCESSORY_STATES
+    }
+    assert shown == EXPECTED_ACCESSORY_STATES
+
+
+async def test_accessories_are_read_by_id_as_studio_does(hass: HomeAssistant, x1) -> None:
+    _, protocol = x1
+    commands = {(params["id"], data["command"]) for method, url, params, data in protocol.sent
+                if url == "/v1/platform/accessories/control"}
+    # The two connected accessories with a definition; not the dongle, not the unconnected ones
+    assert commands == {(69, "M9033"), (82, "M9033")}
+    # Read only: nothing is written to them
+    assert all(method != "POST" or url != "/v1/platform/accessories/control" or data["command"] == "M9033"
+               for method, url, params, data in protocol.sent)
+
+
+async def test_a_fire_box_report_shows_at_once(hass: HomeAssistant, x1) -> None:
+    """The Fire Safety Set 2's own report (about every 2 s) updates it without a poll."""
+    _, protocol = x1
+    spraying = ("binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_spraying")
+    message = FIRE_BOX_REPORT["data"]["/v1/project/accessory/message"]["message"]
+    report = {**FIRE_BOX_REPORT, "data": {"/v1/project/accessory/message": {
+        "dev_id": 82, "message": message.replace(" J0 S0 G3", " J1 S8 G1"),
+    }}}
+    protocol._dispatch_event(report)
+    await hass.async_block_till_done()
+    assert _accessory_state(hass, *spraying).state == "on"
+    assert _accessory_state(hass, "binary_sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_low").state == "on"
+    assert _accessory_state(hass, "sensor", f"accessory_safetyfireboxpro_{FIRE_BOX_SERIAL}_gas_level").state == "1"
+
+
+@pytest.mark.parametrize(("code", "shown", "running"), [
+    ("C0", "auto", "off"), ("A1", "1", "on"), ("A2", "2", "on"), ("A3", "3", "on"), ("A4", "4", "on"),
+    ("A0", "off", "off"),
+])
+async def test_the_ap2_level_shows_at_once(hass: HomeAssistant, x1, code: str, shown: str, running: str) -> None:
+    """Set on the AP2 itself (A = manual, C = Auto): its report shows the level without a poll."""
+    _, protocol = x1
+    protocol._dispatch_event(AP2_REPORTS[code])
+    await hass.async_block_till_done()
+    assert _accessory_state(hass, "sensor", f"accessory_purifier_{AP2_SERIAL}_gear").state == shown
+    assert _accessory_state(hass, "select", f"accessory_purifier_{AP2_SERIAL}_level_select").state == shown
+    assert _accessory_state(hass, "binary_sensor", f"accessory_purifier_{AP2_SERIAL}_running").state == running
+
+
+@pytest.mark.parametrize(("code", "gear", "running"), [
+    ("C0", "auto", False), ("C2", "auto", True), ("C5", "auto", True), ("C-1", "auto", False),
+    ("A0", "off", False), ("A3", "3", True),
+])
+def test_purifier_level_codes(code: str, gear: str, running: bool) -> None:
+    fields = parse_purifier_info(f"V40.212.007.4528.01 B03 {code} D0 H98 I99 J100 K100 L100 S0")
+    assert (fields["gear"], fields["running"]) == (gear, running)
+
+
+def test_other_purifier_gears_stay_as_reported() -> None:
+    fields = parse_purifier_info("V40.212.007.4528.01 B03 2 H98 I99 J100 K100 L100")
+    assert fields["gear"] == "2"
+    assert "running" not in fields
+
+
+@pytest.mark.parametrize(("option", "command"), [
+    ("off", "M9039 A0"), ("1", "M9039 A1"), ("4", "M9039 A4"), ("auto", "M9039 C-1"),
+])
+async def test_the_ap2_level_is_set_as_studio_sets_it(hass: HomeAssistant, x1, option: str, command: str) -> None:
+    _, protocol = x1
+    protocol.sent.clear()
+    entity = er.async_get(hass).async_get_entity_id(
+        "select", DOMAIN, f"{SERIAL}_accessory_purifier_{AP2_SERIAL}_level_select",
+    )
+    await hass.services.async_call(
+        "select", "select_option", {ATTR_ENTITY_ID: entity, "option": option}, blocking=True,
+    )
+    assert ("POST", "/v1/platform/accessories/control", {"id": 69}, {"command": command}) in protocol.sent
+
+
+async def test_the_purifier_report_is_left_to_the_poll(hass: HomeAssistant, x1) -> None:
+    """The AP2 reports M9039, not its info M-code: it does not change the filters."""
+    _, protocol = x1
+    protocol._dispatch_event({"type": "request", "method": "REPORT", "data": {
+        "/v1/project/accessory/message": {"dev_id": 69, "message": "M9039 C2 D0 H10 I10 J10 K10 L10 S0"},
+    }})
+    await hass.async_block_till_done()
+    assert _accessory_state(hass, "sensor", f"accessory_purifier_{AP2_SERIAL}_filter_pre").state == "98.0"
+
+
+async def test_a_fire_alarm_fires_the_fire_warning(hass: HomeAssistant, x1) -> None:
+    _, protocol = x1
+    protocol._dispatch_event({"type": "request", "method": "NOTIFY", "data": [{
+        "name": "/v1/platform/device/alarm", "level": "ERROR",
+        "info": [{"info": {"code": 1001, "message": "fire"}, "level": "ERROR"}],
+    }]})
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id("event.fire_warning"))
+    assert state.attributes["event_type"] == "triggered"
+    assert hass.states.get(entity_id("binary_sensor.alarm")).state == "on"
+
+
+def test_other_alarms_fire_no_fire_warning() -> None:
+    protocol = _protocol()
+    protocol._dispatch_push(_notice("/v1/platform/device/alarm", info=[{"info": {"code": 5019}, "level": "WARNING"}]))
+    assert protocol._pending_events == []
+
+
+# --- The Fire Safety Set 2's M9033 -----------------------------------------
+
+
+def test_fire_box_report() -> None:
+    assert parse_fire_box_info('A40.223.004.5222.01.B02 J0 S0 G3 T410 W1190 E:"SN1"') == {
+        "version": "40.223.004.5222.01.B02", "sn": "SN1",
+        "cylinder_installed": True, "gas_level": 3, "gas_remaining": 410,
+        "spraying": False, "gas_low": False, "drive_fault": False, "calibration_needed": False,
+    }
+
+
+@pytest.mark.parametrize(("report", "fields"), [
+    ("A40.223 J1 S0 G2 T300", {"spraying": True, "gas_level": 2}),
+    ("A40.223 J0 S4 G-1 T0", {"cylinder_installed": False, "gas_level": 0}),
+    ("A40.223 J0 S8 G0 T20", {"gas_low": True, "cylinder_installed": True, "gas_level": 0}),
+    ("A40.223 J0 S16 G3 T410", {"drive_fault": True, "gas_low": False}),
+    ("A40.223 J0 S40 G3 T410", {"calibration_needed": True, "gas_low": True, "drive_fault": False}),
+])
+def test_fire_box_states(report: str, fields: dict) -> None:
+    parsed = parse_fire_box_info(report)
+    assert {key: parsed[key] for key in fields} == fields

@@ -37,6 +37,10 @@
         "default": "mdi:fan",
         "state": { "off": "mdi:fan-off" }
       },
+      "accessory_safetyfireboxpro_spraying": {
+        "default": "mdi:fire-extinguisher",
+        "state": { "on": "mdi:fire-alert" }
+      },
       "air_assist_connected": {
         "default": "mdi:weather-windy"
       },

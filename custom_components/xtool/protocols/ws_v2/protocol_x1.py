@@ -48,6 +48,13 @@ X1_PATH_LASER_BAG = "/v1/project/peripheral/laserbag-info"
 X1_PATH_PRINTHEAD = "/v1/project/printhead/printhead-status"
 X1_PATH_WIFI = "/v1/platform/wifi/connected-info"
 X1_PATH_ALARM_RECORDS = "/v1/project/alarm/records"
+X1_PATH_ALARM = "/v1/platform/device/alarm"  # notice only
+X1_PATH_ACCESSORIES = "/v1/platform/accessories/list"
+X1_PATH_ACCESSORY_CONTROL = "/v1/platform/accessories/control"
+X1_PATH_ACCESSORY_MESSAGE = "/v1/project/accessory/message"  # push only
+
+# Studio's X1 alarm code for a fire (``nd.FIRE``)
+X1_ALARM_FIRE = 1001
 
 # Every setting Studio's X1 extension reads (its ``getConfigs`` key list).
 X1_SETTINGS = (
@@ -160,6 +167,9 @@ class X1WSV2Protocol(M2WSV2Protocol):
     def __init__(self, host: str, port: int | None = None) -> None:
         super().__init__(host, port)
         self._x1_poll_counter = 0
+        # (accessory id, M-code report) from the accessory message pushes,
+        # until the coordinator applies them
+        self.pending_accessory_messages: list[tuple[int, str]] = []
 
     # --- Polling -----------------------------------------------------------
 
@@ -262,6 +272,31 @@ class X1WSV2Protocol(M2WSV2Protocol):
                 if isinstance(reply.get(key), str):
                     self._latest[field] = reply[key] == "block"
 
+    # --- Accessories ---------------------------------------------------------
+
+    async def platform_accessories(self) -> list[dict[str, Any]]:
+        """The laser's accessory list: ``[{dev_id, status, version, …}]``.
+
+        ``status`` is true for the connected ones, Bluetooth and wired.
+        """
+        reply = await self.request(X1_PATH_ACCESSORIES, "GET", timeout=10.0)
+        return [entry for entry in reply if isinstance(entry, dict)] if isinstance(reply, list) else []
+
+    async def accessory_command(self, accessory_id: int, mcode: str) -> str | None:
+        """Pass an M-code to an accessory, as Studio's platform 2.0 path does.
+
+        Returns the reply without its leading M-code (``M9033 A40…`` →
+        ``A40…``), or None when there is none.
+        """
+        reply = await self.request(
+            X1_PATH_ACCESSORY_CONTROL, "POST",
+            params={"id": accessory_id}, data={"command": mcode}, timeout=10.0,
+        )
+        result = reply.get("result") if isinstance(reply, dict) else None
+        if not isinstance(result, str) or not result.strip():
+            return None
+        return result.strip().removeprefix(mcode.split(" ", 1)[0]).strip() or None
+
     # --- Writes ------------------------------------------------------------
 
     async def set_config(self, key: str, value: Any) -> dict[str, Any]:
@@ -312,7 +347,7 @@ class X1WSV2Protocol(M2WSV2Protocol):
             return
         if isinstance(data, dict) and "url" not in event:
             for url, payload in data.items():
-                if url == M2_PATH_PROCESS_EVENT:
+                if url in (M2_PATH_PROCESS_EVENT, X1_PATH_ALARM):
                     # Studio's handleEventFromObject
                     content = payload.get("content") if isinstance(payload, dict) else None
                     self._dispatch_x1_notice(
@@ -329,6 +364,9 @@ class X1WSV2Protocol(M2WSV2Protocol):
         if name == X1_PATH_FEEDER_SENSOR and isinstance(notice.get("info"), dict):
             self._apply_feeder_sensors(notice["info"])
             return
+        if name == X1_PATH_ALARM:
+            self._dispatch_x1_alarms(notice.get("info"))
+            return
         if name != M2_PATH_PROCESS_EVENT:
             _LOGGER.debug("X1 notice %s: %r", name, notice.get("info"))
             return
@@ -344,6 +382,23 @@ class X1WSV2Protocol(M2WSV2Protocol):
             self._maybe_emit_job_event(
                 kind, task_id, {"task_id": task_id} if task_id else None,
             )
+
+    def _dispatch_x1_alarms(self, alarms: Any) -> None:
+        """Studio's handleAlarmEvent: ``[{info: {code, message}, level}]``.
+
+        The fire alarm (code 1001) fires the fire warning; the Alarm
+        sensor follows the active alarm list, read every sixth poll.
+        """
+        if not isinstance(alarms, list):
+            return
+        for alarm in alarms:
+            info = alarm.get("info") if isinstance(alarm, dict) else None
+            if isinstance(info, dict) and str(info.get("code")) == str(X1_ALARM_FIRE):
+                self._latest["alarm_present"] = True
+                self._pending_events.append(
+                    ("fire_warning", "triggered", {"level": alarm.get("level")}),
+                )
+                return
 
     def _dispatch_m2_report(self, url: str, payload: Any) -> None:
         if not isinstance(payload, dict):
@@ -368,5 +423,10 @@ class X1WSV2Protocol(M2WSV2Protocol):
             self._apply_fill_lights(payload)
         elif url == X1_PATH_FEEDER_SENSOR:
             self._apply_feeder_sensors(payload)
+        elif url == X1_PATH_ACCESSORY_MESSAGE:
+            # {dev_id, message}: an accessory's own report, e.g. the Fire
+            # Safety Set 2's M9033 about every 2 s
+            if isinstance(payload.get("dev_id"), int) and isinstance(payload.get("message"), str):
+                self.pending_accessory_messages.append((payload["dev_id"], payload["message"]))
         else:
             super()._dispatch_m2_report(url, payload)
