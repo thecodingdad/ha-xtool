@@ -710,6 +710,22 @@ async def test_the_x1_pulls_an_upload() -> None:
     assert progress[-1] == 1.0
 
 
+async def test_a_failed_poll_keeps_the_connection_while_a_file_goes_up(hass: HomeAssistant, x1) -> None:
+    """An X1 writing a firmware package answers late; closing would end the upload."""
+    entry, protocol = x1
+
+    async def late(state) -> None:
+        raise TimeoutError
+
+    protocol.poll_state = late
+    protocol._upload_finish[1] = asyncio.get_running_loop().create_future()
+    await entry.runtime_data.async_refresh()
+    assert protocol.connected
+    protocol._upload_finish.clear()
+    await entry.runtime_data.async_refresh()
+    assert not protocol.connected
+
+
 async def test_an_upload_the_x1_refuses_fails() -> None:
     from custom_components.xtool.protocols.ws_v2.protocol_x1 import UploadFailed
 

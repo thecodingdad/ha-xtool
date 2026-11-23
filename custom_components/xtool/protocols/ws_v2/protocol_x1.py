@@ -363,6 +363,10 @@ class X1WSV2Protocol(M2WSV2Protocol):
 
     # --- File upload -------------------------------------------------------
 
+    @property
+    def file_transfer_running(self) -> bool:
+        return bool(self._upload_finish)
+
     async def upload_file(
         self, data: bytes, file_type: int, filename: str,
         progress_cb: Callable[[float], None] | None = None,
@@ -389,8 +393,7 @@ class X1WSV2Protocol(M2WSV2Protocol):
         )
         try:
             async with self._session.ws_connect(
-                url, ssl=_ssl_context(), timeout=aiohttp.ClientTimeout(total=30),
-                heartbeat=None, max_msg_size=0,
+                url, ssl=_ssl_context(), heartbeat=None, max_msg_size=0,
             ) as ws:
                 reply = await self.request(X1_PATH_FILE_UPLOAD, "PUT", data={
                     "filetype": file_type, "filename": filename, "filesize": len(data),

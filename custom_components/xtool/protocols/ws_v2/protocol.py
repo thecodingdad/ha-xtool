@@ -926,6 +926,15 @@ class WSV2Protocol(XtoolProtocol):
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def file_transfer_running(self) -> bool:
+        """True while a file goes to the laser on this session's file socket.
+
+        Closing the connection would end it, so the coordinator keeps
+        the connection when a poll fails meanwhile.
+        """
+        return False
+
     # ── connection lifecycle ──────────────────────────────────────────
 
     async def connect(self) -> None:
