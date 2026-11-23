@@ -1537,6 +1537,9 @@
       "cancel_job": {
         "name": "Abbrechen"
       },
+      "reconnect_bluetooth_accessories": {
+        "name": "Bluetooth-Zubehör neu verbinden"
+      },
       "home_all": {
         "name": "Alle Achsen homen"
       },
@@ -1779,6 +1782,12 @@
     }
   },
   "exceptions": {
+    "bluetooth_accessories_connected": {
+      "message": "Alles gekoppelte Bluetooth-Zubehör ist verbunden."
+    },
+    "bluetooth_accessory_not_found": {
+      "message": "Ein gekoppeltes Bluetooth-Zubehör hat sich innerhalb von 2 Minuten nicht gezeigt. Versetze es in den Kopplungsmodus (beim SafetyPro AP2 den Einschaltknopf 5 Sekunden halten, bis die Bluetooth-Anzeige blinkt) und drücke erneut."
+    },
     "focus_wrong_entity": {
       "message": "Diese Entität ist keine xTool-Fokushöhe."
     },

@@ -1537,6 +1537,9 @@
       "cancel_job": {
         "name": "Cancel"
       },
+      "reconnect_bluetooth_accessories": {
+        "name": "Reconnect Bluetooth accessories"
+      },
       "home_all": {
         "name": "Home all axes"
       },
@@ -1779,6 +1782,12 @@
     }
   },
   "exceptions": {
+    "bluetooth_accessories_connected": {
+      "message": "All paired Bluetooth accessories are connected."
+    },
+    "bluetooth_accessory_not_found": {
+      "message": "A paired Bluetooth accessory did not show up within 2 minutes. Put it in pairing mode (on the SafetyPro AP2, hold the power button for 5 seconds until the Bluetooth light blinks) and press again."
+    },
     "focus_wrong_entity": {
       "message": "This entity is not an xTool focus height."
     },

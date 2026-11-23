@@ -1780,6 +1780,33 @@ class WSV2CancelJob(_WSV2Button):
         await self.coordinator.protocol.set_processing_state("stop")
 
 
+class WSV2ReconnectBluetoothAccessories(_WSV2Button):
+    """Studio's accessory window, for paired accessories the laser no longer reaches.
+
+    Available only while one is not connected.
+    """
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "reconnect_bluetooth_accessories", "mdi:bluetooth-connect")
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        return super().available and bool(data and data.bluetooth_accessories_disconnected)
+
+    async def _action(self) -> None:
+        missing, connected = await self.coordinator.protocol.reconnect_bluetooth_accessories()
+        await self.coordinator.async_request_refresh()
+        if not missing:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="bluetooth_accessories_connected",
+            )
+        if connected < missing:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="bluetooth_accessory_not_found",
+            )
+
+
 class WSV2HomeAll(_WSV2Button):
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "home_all", "mdi:home-floor-0")
@@ -3270,6 +3297,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2MeasureDistance(coordinator))
     if coordinator.model.has_focus_control and not coordinator.model.is_read_only:
         entities.append(WSV2Autofocus(coordinator))
+    if coordinator.model.has_platform_accessories:
+        entities.append(WSV2ReconnectBluetoothAccessories(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the
