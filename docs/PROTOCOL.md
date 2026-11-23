@@ -1403,7 +1403,9 @@ available: `POST /v1/platform/camera/live` with `{name, action:"start"}`
 answers code -1 `camera disabled` for `main`, `deep`, `far`, `upside`
 and `0`, and `GET /v1/platform/camera/list` answers code -1
 `getCameraList failed`. Studio's GS009 bundles never call these; they
-only take photos. Only the P3 bundle calls `/v1/platform/camera/live`.
+only take photos. Only the P3 bundle and the X1's extension call
+`/v1/platform/camera/live`; on the X1 the H.264 arrives on the
+`media_stream` socket itself, see [X1 live video](#live-video).
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -3227,6 +3229,27 @@ connect and disconnect.
 (`nd.FIRE`); `/v1/project/event/firebox-spray` (`info:{status,
 remaining_gas, dev_id, manual}`, `status` `spray_finish` at the end)
 reports the Fire Safety Set 2 spraying.
+
+### Live video
+
+As Studio's live monitor gets it: `POST /v1/platform/camera/live` with
+params `{name:"far"|"near", action:"start"}` (answers `{}`), then the
+video arrives on the `media_stream` socket
+(`wss://<ip>:28900/websocket?id=<session id>&function=media_stream`,
+no parity of its own), and `action:"stop"` ends it. Studio's monitor
+would read `ws://<ip>:8089/v1/wsplayer?stream=<camera>`; on the X1
+checked, port 8089 stays closed, also while live.
+
+Each message is one frame of the usual envelope with protocol type 34
+(MEDIA_STREAM, `0xa2`: the payload CRC is off). The payload is one byte
+(0 with the far camera's pictures and with the stream's SPS / PPS, 1
+with the near camera's) and then H.264 in Annex B, one access unit per
+frame, without timestamps: SPS and PPS first, an IDR frame every second
+or so, P frames between. Seen: far 1920 × 1080 at about 20 frames a
+second (about 1 MB/s), near 1920 × 1080 at about 10.
+
+One camera at a time: the X1 takes one media socket per client
+session, and a second one closes the first.
 
 Studio's X1 extension also handles `/v1/project/peripheral/air-nozzle`,
 `/v1/project/device/feeder`, the print-head and backplate reports, the

@@ -30,7 +30,7 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.components.button import ButtonEntity
 from aiohttp import web
-from homeassistant.components.camera import Camera
+from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.components.image import ImageEntity
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.light import (
@@ -81,6 +81,7 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .live_video import LiveStreamSource
 from .camera_correction import (
     CALIBRATED_AREA_MM,
     CameraCalibration,
@@ -2293,6 +2294,11 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
 
     The state is Streaming only while a live view is open, and Idle
     otherwise.
+
+    On a model with ``has_live_video`` (the X1) the camera also offers
+    Home Assistant's stream (HLS / WebRTC): its ``stream_source`` is the
+    laser's own H.264 on a local port (:mod:`.live_video`), repackaged
+    by the stream integration and go2rtc, not decoded here.
     """
 
     _camera_name: str = ""
@@ -2323,6 +2329,16 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         self._last_photo: bytes | None = None
         self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
         self._live_viewers = 0
+        self._live_source: LiveStreamSource | None = None
+        if coordinator.model.has_live_video:
+            protocol = coordinator.protocol
+            self._live_source = LiveStreamSource(
+                lambda: protocol.live_video(camera_name), f"{camera_name} camera",
+                self._stream_readers_changed,
+            )
+            self._attr_supported_features = CameraEntityFeature.STREAM
+            # The laser's H.264 has no timestamps of its own
+            self.stream_options = {"use_wallclock_as_timestamps": True}
         self._thumbnail_seconds: float = THUMBNAIL_REFRESH_DEFAULT
         self._cancel_thumbnail_timer: Any = None
         # Straighten photos with the laser's calibration grid (cameras
@@ -2359,7 +2375,16 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
 
     @property
     def is_streaming(self) -> bool:
-        return self._live_viewers > 0
+        return self._live_viewers > 0 or bool(self._live_source and self._live_source.readers)
+
+    async def stream_source(self) -> str | None:
+        if self._live_source is None:
+            return None
+        return await self._live_source.url()
+
+    def _stream_readers_changed(self) -> None:
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     async def _corrected(self, image: bytes) -> bytes:
         """Return the photo straightened, as the model needs."""
@@ -2530,6 +2555,8 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
             self._cancel_thumbnail_timer()
             self._cancel_thumbnail_timer = None
         _thumbnail_registry(self.coordinator).cameras.pop(self._camera_name, None)
+        if self._live_source is not None:
+            await self._live_source.close()
         await super().async_will_remove_from_hass()
 
     async def _image(self, max_age: timedelta) -> bytes | None:

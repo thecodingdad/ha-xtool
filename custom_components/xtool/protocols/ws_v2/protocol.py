@@ -57,6 +57,7 @@ loop.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -65,7 +66,7 @@ import math
 import ssl
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any
 
@@ -141,6 +142,10 @@ WSV2_PROTOCOL_BUFFER = 5
 # protocol type. Payload is a binary FILE_REQUEST / FILE_DATA
 # packet, not a JSON envelope.
 WSV2_PROTOCOL_FILE_TRANSFER = 33
+# Studio's ``MEDIA_STREAM`` frame code: the frames of the media_stream
+# socket, each one stream byte and then H.264 (Annex B).
+WSV2_PROTOCOL_MEDIA_STREAM = 34
+WSV2_PATH_CAMERA_LIVE = "/v1/platform/camera/live"
 
 # --- Studio file-transfer constants (verified against Studio v1.7.23
 # ``main.e_TJj9fA.js`` — ``Iv/Lv/Rv/zv/Bv/Vv/Wv`` blocks). ------------
@@ -535,6 +540,10 @@ class WSV2PairingFailed(ConnectionError):
         self.reason = reason
 
 
+class LiveVideoBusy(RuntimeError):
+    """Another camera of the laser is live: it streams one at a time."""
+
+
 class _ParityFailed(Exception):
     """Internal wrapper: parity failed after the socket opened."""
 
@@ -802,6 +811,8 @@ class WSV2Protocol(XtoolProtocol):
         # download picks a distinct channel; the wraparound is fine —
         # channels only clash if 256+ downloads race simultaneously.
         self._file_channel_counter = 0
+        # The camera whose live video runs, if one does
+        self._live_camera: str | None = None
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
@@ -934,6 +945,52 @@ class WSV2Protocol(XtoolProtocol):
         the connection when a poll fails meanwhile.
         """
         return False
+
+    # ── live video ────────────────────────────────────────────────────
+
+    async def live_video(self, camera_name: str) -> AsyncIterator[bytes]:
+        """The camera's live H.264 (Annex B), as Studio's live monitor gets it.
+
+        ``POST /v1/platform/camera/live`` ``{name, action: start}``, then
+        the frames of the ``media_stream`` socket (same session id), each
+        one stream byte and an access unit; ``action: stop`` when the
+        caller closes the iterator. One camera at a time: the laser
+        takes one media socket per client, and a second one closes the
+        first. Raises :class:`LiveVideoBusy` while another camera is live.
+        """
+        if self._live_camera is not None:
+            raise LiveVideoBusy(self._live_camera)
+        if not self._connected or self._session is None:
+            await self.connect()
+        self._live_camera = camera_name
+        url = (
+            f"wss://{self.host}:{self._port}{WSV2_PATH}"
+            f"?id={_CLIENT_SESSION_ID}&function=media_stream"
+        )
+        try:
+            async with self._session.ws_connect(
+                url, ssl=_ssl_context(), heartbeat=None, max_msg_size=0,
+            ) as ws:
+                await self.request(
+                    WSV2_PATH_CAMERA_LIVE, "POST", params={"name": camera_name, "action": "start"},
+                )
+                try:
+                    buffer = b""
+                    async for message in ws:
+                        if message.type != aiohttp.WSMsgType.BINARY:
+                            break
+                        frames, buffer = _decode_frames(buffer + message.data)
+                        for frame_type, payload in frames:
+                            if frame_type == WSV2_PROTOCOL_MEDIA_STREAM and len(payload) > 1:
+                                yield payload[1:]
+                finally:
+                    with contextlib.suppress(Exception):
+                        await self.request(
+                            WSV2_PATH_CAMERA_LIVE, "POST",
+                            params={"name": camera_name, "action": "stop"},
+                        )
+        finally:
+            self._live_camera = None
 
     # ── connection lifecycle ──────────────────────────────────────────
 

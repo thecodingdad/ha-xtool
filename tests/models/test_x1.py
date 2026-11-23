@@ -24,6 +24,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.xtool.const import DOMAIN, XtoolStatus
 from custom_components.xtool.protocols import DEVICE_MODELS, detect_models
 from custom_components.xtool.protocols.base import XtoolDeviceState
+from custom_components.xtool.protocols.ws_v2.live_video import LiveStreamSource
+from custom_components.xtool.protocols.ws_v2.protocol import LiveVideoBusy
 
 from custom_components.xtool.protocols.accessories.fire_extinguisher import parse_fire_box_info
 
@@ -1061,3 +1063,182 @@ async def test_a_damaged_accessory_download_is_not_uploaded() -> None:
             accessory_type_id="AirPump", blob=b"data", md5="8d777f385d3dfec8815d20f7496026dc", filename="x",
         )
     assert uploads == []
+
+
+# --- Live video: the X1's H.264, handed to Home Assistant's stream ---------
+
+# Access units as the X1 sends them (Annex B): SPS and PPS, an IDR
+# slice, P slices; the last byte tells equal units apart.
+_SPS = b"\x00\x00\x00\x01\x67\x64\x00\x28\x00\x00\x00\x01\x68\xee\x3c\x80"
+_IDR = b"\x00\x00\x00\x01\x65\x88\x84\x00"
+_P = b"\x00\x00\x00\x01\x41\x9a\x02\x00"
+H264 = [_SPS, _IDR, _P + b"\x01", _P + b"\x02", _SPS, _IDR + b"\x03", _P + b"\x04"]
+
+
+def _media_frame(payload: bytes) -> bytes:
+    """A ``media_stream`` frame as the X1 sends it: protocol type 34, no payload CRC."""
+    from custom_components.xtool.protocols.ws_v2 import protocol as ws_v2
+
+    header = b"\xba\xbe" + len(payload).to_bytes(3, "big") + bytes([0x80 | 34]) + b"\x00\x00"
+    return header + ws_v2._crc16(header).to_bytes(2, "big") + payload
+
+
+class _MediaSocket:
+    def __init__(self, messages: list[bytes]) -> None:
+        self._messages = messages
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+    async def __aiter__(self):
+        import aiohttp
+
+        for data in self._messages:
+            yield SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=data)
+
+
+class _MediaSession:
+    """Opens the media socket; its messages are the frames given."""
+
+    def __init__(self, messages: list[bytes]) -> None:
+        self.messages = messages
+        self.urls: list[str] = []
+
+    def ws_connect(self, url: str, **kwargs) -> _MediaSocket:
+        self.urls.append(url)
+        return _MediaSocket(self.messages)
+
+
+@pytest.mark.parametrize(("camera", "stream_byte"), [("far", b"\x00"), ("near", b"\x01")])
+async def test_live_video_yields_the_h264_the_x1_sends(camera: str, stream_byte: bytes) -> None:
+    """Studio's live monitor: camera/live start, the media socket's access units, stop."""
+    protocol = _protocol()
+    # One frame split over two messages: the frames are put back together
+    first = _media_frame(stream_byte + H264[0])
+    messages = [first[:7], first[7:], *(_media_frame(stream_byte + unit) for unit in H264[1:])]
+    protocol._session = _MediaSession(messages)
+    assert [unit async for unit in protocol.live_video(camera)] == H264
+    assert "function=media_stream" in protocol._session.urls[0]
+    assert [(params, data) for method, url, params, data in protocol.sent if url == "/v1/platform/camera/live"] == [
+        ({"name": camera, "action": "start"}, None),
+        ({"name": camera, "action": "stop"}, None),
+    ]
+
+
+async def test_one_camera_live_at_a_time() -> None:
+    protocol = _protocol()
+    protocol._session = _MediaSession([_media_frame(b"\x00" + unit) for unit in H264])
+    far = protocol.live_video("far")
+    await far.__anext__()
+    with pytest.raises(LiveVideoBusy):
+        await protocol.live_video("near").__anext__()
+    await far.aclose()
+    near = protocol.live_video("near")
+    assert await near.__anext__() == H264[0]
+    await near.aclose()
+
+
+class _Video:
+    """A live video the test feeds unit by unit; counts how often it was opened and closed."""
+
+    def __init__(self) -> None:
+        self.units: asyncio.Queue[bytes] = asyncio.Queue()
+        self.opened = 0
+        self.closed = 0
+
+    async def open(self) -> AsyncIterator[bytes]:
+        self.opened += 1
+        try:
+            while True:
+                yield await self.units.get()
+        finally:
+            self.closed += 1
+
+
+# The stream source is a TCP server on 127.0.0.1, read as Home Assistant's
+# stream reads it: these tests open loopback sockets (``socket_enabled``).
+async def _connect(source: LiveStreamSource) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    url = await source.url()
+    assert url.startswith("tcp://127.0.0.1:")
+    return await asyncio.open_connection("127.0.0.1", int(url.rsplit(":", 1)[1]))
+
+
+async def _until(check, timeout: float = 2.0) -> None:
+    async with asyncio.timeout(timeout):
+        while not check():
+            await asyncio.sleep(0.01)
+
+
+async def test_the_stream_source_passes_the_video_on_unchanged(socket_enabled) -> None:
+    """Home Assistant's stream reads the laser's H.264 byte for byte; it stops when the reader leaves."""
+    video = _Video()
+    source = LiveStreamSource(video.open, "far camera")
+    reader, writer = await _connect(source)
+    for unit in H264:
+        video.units.put_nowait(unit)
+    expected = b"".join(H264)
+    assert await asyncio.wait_for(reader.readexactly(len(expected)), 2) == expected
+    assert (video.opened, source.readers) == (1, 1)
+    writer.close()
+    await _until(lambda: video.closed == 1)
+    assert source.readers == 0
+    await source.close()
+
+
+async def test_a_second_reader_starts_at_a_key_frame(socket_enabled) -> None:
+    """One video for every reader; one that joins late skips to the next SPS or IDR."""
+    video = _Video()
+    source = LiveStreamSource(video.open, "far camera")
+    first, first_writer = await _connect(source)
+    for unit in H264[:3]:
+        video.units.put_nowait(unit)
+    await asyncio.wait_for(first.readexactly(len(b"".join(H264[:3]))), 2)
+    second, second_writer = await _connect(source)
+    await _until(lambda: source.readers == 2)
+    for unit in H264[3:]:
+        video.units.put_nowait(unit)
+    rest = b"".join(H264[3:])
+    assert await asyncio.wait_for(first.readexactly(len(rest)), 2) == rest
+    # H264[3] is a P slice: the second reader starts at the SPS after it
+    from_key = b"".join(H264[4:])
+    assert await asyncio.wait_for(second.readexactly(len(from_key)), 2) == from_key
+    assert video.opened == 1
+    first_writer.close()
+    await _until(lambda: source.readers == 1)
+    assert video.closed == 0
+    second_writer.close()
+    await _until(lambda: video.closed == 1)
+    await source.close()
+
+
+async def test_readers_end_when_the_video_ends(socket_enabled) -> None:
+    """Another camera live (or the laser gone): the readers are closed and may connect again."""
+
+    async def busy() -> AsyncIterator[bytes]:
+        raise LiveVideoBusy("near")
+        yield b""  # pragma: no cover
+
+    source = LiveStreamSource(busy, "far camera")
+    reader, _ = await _connect(source)
+    assert await asyncio.wait_for(reader.read(), 2) == b""
+    await _until(lambda: source.readers == 0)
+    await source.close()
+
+
+async def test_the_x1_cameras_offer_the_stream(hass: HomeAssistant, x1, socket_enabled) -> None:
+    """HLS / WebRTC through Home Assistant's stream, timestamped by the wall clock."""
+    from homeassistant.components.camera import CameraEntityFeature
+
+    component = hass.data["entity_components"]["camera"]
+    for key in ("camera_far", "camera_near"):
+        camera = component.get_entity(er.async_get(hass).async_get_entity_id("camera", DOMAIN, f"{SERIAL}_{key}"))
+        assert camera.supported_features & CameraEntityFeature.STREAM
+        assert camera.stream_options == {"use_wallclock_as_timestamps": True}
+        assert (await camera.stream_source()).startswith("tcp://127.0.0.1:")
+
+
+def test_only_the_x1_has_live_video() -> None:
+    assert [model for model in DEVICE_MODELS.values() if model.has_live_video] == [X1]

@@ -675,6 +675,7 @@ XTOOL_X1_WSV2 = XtoolDeviceModel(
     # ``side`` answers with a black picture, ``ldm`` (the laser distance
     # meter) with ``snap failed``.
     camera_names=("far", "near"),
+    has_live_video=True,
     # Studio sets left and right at 0-100 and the close-up light in
     # tenths of a percent, at most 500 (its 10-50 % setting).
     named_fill_lights=(("left", 100, 100), ("right", 100, 100), ("near", 1000, 500)),
