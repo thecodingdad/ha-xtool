@@ -518,6 +518,34 @@ def build_rest_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     return entities
 
 
+class XtoolSyncBlade(XtoolEntity, ButtonEntity):
+    """Turn the multi-function carriage so it identifies its blade.
+
+    The carriage turns, so the button is only available while it is
+    fitted.
+    """
+
+    _attr_translation_key = "sync_blade"
+    _attr_icon = "mdi:knife"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("sync_blade")
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        return (
+            super().available
+            and data is not None
+            and data.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE
+        )
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.sync_blade()
+        await self.coordinator.async_request_refresh()
+
+
 def build_rest_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     entities: list[ButtonEntity] = []
     model = coordinator.model
@@ -530,6 +558,8 @@ def build_rest_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(XtoolReboot(coordinator))
     if model.has_water_cooling:
         entities.append(XtoolTimeSync(coordinator))
+    if model.has_tool_heads:
+        entities.append(XtoolSyncBlade(coordinator))
     return entities
 
 

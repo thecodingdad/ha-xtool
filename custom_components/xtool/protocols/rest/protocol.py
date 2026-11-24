@@ -1119,6 +1119,13 @@ class RestProtocol(XtoolProtocol):
             progress_cb=progress_cb,
         )
 
+    async def sync_blade(self) -> None:
+        """Turn the multi-function carriage so it identifies its blade.
+
+        Until then ``/peripheral/knife_head`` reports ``driving: 0``.
+        """
+        await self._post_json("/peripheral/knife_head", {"action": "get_sync"})
+
 
 class RestProtocolF1V1(RestProtocol):
     """F-family + DT001 dialect — only the device-info bootstrap path

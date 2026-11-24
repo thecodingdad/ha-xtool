@@ -1218,7 +1218,7 @@ The V2 API consolidates all peripheral queries onto one path with a
 | `airassistV2` | Air-Assist V2 BLE accessory state |
 | `motion_control` | Low-level motion override |
 | `workhead_ID` | M1 Ultra fitted tools; needs body `{action:"get"}`. Reply `{driving, drived, drivingError, drivingLock}`. `driving` = quick-swap module (`0` none, `15` 10W laser module, `16` 20W laser module, `29` multi-function carriage, `31` inkjet module), `drived` = basic carriage tool (`41` none, `42` fine-point pen, `43` fine-point blade, `44` hot foil pen). Same IDs as the V1 firmware's `/peripheral/workhead_ID`. |
-| `knife_head` | M1 Ultra blade in the multi-function carriage; needs body `{action:"get"}`. `driving`: `0` none / not synced, `22` foil transfer tip, `23` cutting blade, `24` rotary blade. Refused with code 1 `reset is interrupt` until the axes are homed. |
+| `knife_head` | M1 Ultra blade in the multi-function carriage; needs body `{action:"get"}`. `driving`: `0` none / not synced, `22` foil transfer tip, `23` cutting blade, `24` rotary blade. The carriage identifies its blade only after `PUT` with `{action:"get_sync"}` (V1 firmware: `POST /peripheral/knife_head`), which turns it; both the read and the sync are refused with code 1 `reset is interrupt` until the axes are homed. |
 | `ext_purifier`, `gap`, `machine_lock` are pre-fanned out as the `addonStatus` aggregate api |
 
 Standalone peripheral paths (mostly carried over from V1):

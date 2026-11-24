@@ -181,3 +181,41 @@ def test_translations_cover_every_option() -> None:
             ("blade", tool_heads.BLADE_OPTIONS),
         ):
             assert set(sensors[key]["state"]) == set(options), (lang, key)
+
+
+async def test_sync_blade_turns_the_multi_function_carriage() -> None:
+    laser = FakeM1Ultra()
+    await _protocol(laser).sync_blade()
+    assert laser.requests[-1] == (
+        "/v1/peripheral/param", "PUT", {"type": "knife_head"}, {"action": "get_sync"},
+    )
+
+
+async def test_sync_blade_on_v1_firmware() -> None:
+    from custom_components.xtool.protocols.rest.protocol import RestProtocol
+
+    proto = RestProtocol("192.0.2.10")
+    proto._post_json = AsyncMock(return_value={})
+    await proto.sync_blade()
+    proto._post_json.assert_awaited_once_with("/peripheral/knife_head", {"action": "get_sync"})
+
+
+async def test_sync_blade_only_with_the_multi_function_carriage(
+    hass: HomeAssistant, config_entry,
+) -> None:
+    for version in ("V1", "V2"):
+        coordinator = build_coordinator(hass, _model(version))
+        coordinator.power_switch_entity_id = None
+        button = next(b for b in coordinator.build_buttons() if b.translation_key == "sync_blade")
+        state = XtoolDeviceState()
+        state.available = True
+        state.workhead_id = "laser_10w"
+        coordinator.async_set_updated_data(state)
+        assert not button.available, version
+        state.workhead_id = "multi_function_carriage"
+        coordinator.async_set_updated_data(state)
+        assert button.available, version
+        coordinator.protocol.sync_blade = AsyncMock()
+        coordinator.async_request_refresh = AsyncMock()
+        await button.async_press()
+        coordinator.protocol.sync_blade.assert_awaited_once()

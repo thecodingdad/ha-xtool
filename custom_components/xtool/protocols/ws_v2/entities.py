@@ -3359,6 +3359,34 @@ def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
     return []
 
 
+class WSV2SyncBlade(XtoolEntity, ButtonEntity):
+    """Turn the multi-function carriage so it identifies its blade.
+
+    The carriage turns, so the button is only available while it is
+    fitted.
+    """
+
+    _attr_translation_key = "sync_blade"
+    _attr_icon = "mdi:knife"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("sync_blade")
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        return (
+            super().available
+            and data is not None
+            and data.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE
+        )
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.sync_blade()
+        await self.coordinator.async_request_refresh()
+
+
 def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     # NOTE: WSV2Reboot and WSV2SyncTime are deliberately omitted —
     # `reboot` and `setTime` are not real keys on /v1/device/configs
@@ -3389,6 +3417,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2Autofocus(coordinator))
     if coordinator.model.has_platform_accessories:
         entities.append(WSV2ReconnectBluetoothAccessories(coordinator))
+    if coordinator.model.has_tool_heads and not coordinator.model.is_read_only:
+        entities.append(WSV2SyncBlade(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the

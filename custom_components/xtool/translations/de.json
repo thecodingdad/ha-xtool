@@ -1618,6 +1618,9 @@
       },
       "feeder_release": {
         "name": "Material freigeben"
+      },
+      "sync_blade": {
+        "name": "Klinge synchronisieren"
       }
     },
     "image": {

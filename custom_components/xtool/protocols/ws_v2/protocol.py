@@ -1446,6 +1446,13 @@ class WSV2Protocol(XtoolProtocol):
             data=body,
         )
 
+    async def sync_blade(self) -> None:
+        """Turn the multi-function carriage so it identifies its blade.
+
+        Until then ``knife_head`` reports ``driving: 0``.
+        """
+        await self.set_peripheral("knife_head", action="get_sync")
+
     async def set_processing_state(self, action: str) -> dict[str, Any]:
         """PUT ``/v1/processing/state?action=<pause|start|stop>``.
 

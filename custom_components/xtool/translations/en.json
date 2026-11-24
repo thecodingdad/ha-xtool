@@ -1618,6 +1618,9 @@
       },
       "feeder_release": {
         "name": "Release material"
+      },
+      "sync_blade": {
+        "name": "Sync blade"
       }
     },
     "image": {
