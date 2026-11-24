@@ -251,7 +251,10 @@ class XtoolDeviceModel:
     has_purifier_timeout: bool = False
     has_water_cooling: bool = False  # REST: F1 Ultra fiber-laser water loop
     has_z_temp: bool = False  # REST: M1 Ultra Z-axis NTC temperature
-    has_workhead_id: bool = False  # REST: M1 Ultra detects mounted tool head
+    has_workhead_id: bool = False  # REST: MetalFab detects mounted welding gun head
+    # M1 Ultra: quick-swap module, basic carriage tool and the blade in
+    # the multi-function carriage (``workhead_ID`` / ``knife_head``).
+    has_tool_heads: bool = False
     has_cpu_fan: bool = False  # REST: M1 Ultra CPU fan
     has_uv_fire: bool = False  # REST: F1U / M1U / P2S UV-based fire sensor
     # WS-V2 F2 Ultra UV: Status shows Focusing, Warming up (UV laser not
@@ -425,7 +428,9 @@ class XtoolDeviceState:
     water_temperature: float | None = None  # F1 Ultra
     water_flow: float | None = None  # F1 Ultra
     z_temperature: float | None = None  # M1 Ultra
-    workhead_id: str = ""  # M1 Ultra mounted tool head
+    workhead_id: str = ""  # mounted tool head (MetalFab raw ID, M1 Ultra tool_heads option)
+    basic_carriage: str | None = None  # M1 Ultra basic carriage tool
+    blade: str | None = None  # M1 Ultra blade in the multi-function carriage
     workhead_z_height: float | None = None  # M1 Ultra
     flame_level_hl: int | None = None  # config kv flameLevelHLSelect (1=high, 2=low)
     md_mode_enabled: bool | None = None  # config kv mdMode (Studio: "Access control")

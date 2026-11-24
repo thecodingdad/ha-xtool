@@ -590,7 +590,35 @@
         "name": "Z-Achsen-Temperatur"
       },
       "workhead_id": {
-        "name": "Werkzeug"
+        "name": "Werkzeug",
+        "state": {
+          "none": "Keins",
+          "laser_10w": "10W Laser Module",
+          "laser_20w": "20W Laser Module",
+          "multi_function_carriage": "Multi-function Carriage",
+          "inkjet": "Inkjet Module",
+          "other": "Anderes"
+        }
+      },
+      "basic_carriage": {
+        "name": "Basic Carriage",
+        "state": {
+          "none": "Keins",
+          "fine_point_pen": "Fine-point Pen",
+          "fine_point_blade": "Fine-point Blade",
+          "hot_foil_pen": "Hot Foil Pen",
+          "other": "Anderes"
+        }
+      },
+      "blade": {
+        "name": "Klinge",
+        "state": {
+          "none": "Keine / nicht synchronisiert",
+          "foil_transfer_tip": "Foil Transfer Tip",
+          "cutting_blade": "Cutting Blade",
+          "rotary_blade": "Rotary Blade",
+          "other": "Andere"
+        }
       },
       "workhead_z_height": {
         "name": "Werkzeug Z-Höhe"

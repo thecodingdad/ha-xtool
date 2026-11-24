@@ -13,6 +13,7 @@ import aiohttp
 from collections.abc import Callable
 
 from ...const import BRIGHTNESS_DEVICE_MAX, BRIGHTNESS_HA_MAX, XtoolStatus
+from .. import tool_heads
 from ..base import (
     DeviceInfo,
     FirmwareFile,
@@ -483,10 +484,35 @@ class RestProtocol(XtoolProtocol):
                     wid = inner.get("id") or inner.get("type") or inner.get("value")
                     if wid is not None:
                         state.workhead_id = str(wid)
+        if model is not None and (
+            getattr(model, "has_workhead_id", False)
+            or getattr(model, "has_tool_heads", False)
+        ):
             zh = await self._get_json("/peripheral/workhead_ZHeight?action=get")
             v = _peri_float(zh)
             if v is not None:
                 state.workhead_z_height = v
+        if (
+            model is not None
+            and getattr(model, "has_tool_heads", False)
+            and state.status != XtoolStatus.SLEEPING
+        ):
+            # Read as POST with ``action:"get"``, as confirmed on M1
+            # Ultra hardware. A POST keeps the M1 Ultra from going to
+            # sleep, so the reads wait while it sleeps.
+            wh = await self._post_json("/peripheral/workhead_ID", {"action": "get"})
+            head, multi = tool_heads.parse_workhead(wh)
+            if head is not None:
+                state.workhead_id = head
+                if head != tool_heads.MULTI_FUNCTION_CARRIAGE:
+                    state.blade = None
+            if multi is not None:
+                state.basic_carriage = multi
+            if state.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE:
+                kh = await self._post_json("/peripheral/knife_head", {"action": "get"})
+                module = tool_heads.parse_blade(kh)
+                if module is not None:
+                    state.blade = module
         if model is not None and getattr(model, "has_cpu_fan", False):
             await self._poll_peri_bool(state, "/peripheral/cpu_fan", "cpu_fan_running")
         if model is not None and getattr(model, "has_uv_fire", False):

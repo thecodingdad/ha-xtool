@@ -590,7 +590,35 @@
         "name": "Z-axis temperature"
       },
       "workhead_id": {
-        "name": "Workhead"
+        "name": "Workhead",
+        "state": {
+          "none": "None",
+          "laser_10w": "10W laser module",
+          "laser_20w": "20W laser module",
+          "multi_function_carriage": "Multi-function carriage",
+          "inkjet": "Inkjet module",
+          "other": "Other"
+        }
+      },
+      "basic_carriage": {
+        "name": "Basic carriage",
+        "state": {
+          "none": "None",
+          "fine_point_pen": "Fine-point pen",
+          "fine_point_blade": "Fine-point blade",
+          "hot_foil_pen": "Hot foil pen",
+          "other": "Other"
+        }
+      },
+      "blade": {
+        "name": "Blade",
+        "state": {
+          "none": "None / not synced",
+          "foil_transfer_tip": "Foil transfer tip",
+          "cutting_blade": "Cutting blade",
+          "rotary_blade": "Rotary blade",
+          "other": "Other"
+        }
       },
       "workhead_z_height": {
         "name": "Workhead Z height"

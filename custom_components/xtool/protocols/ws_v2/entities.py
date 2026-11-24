@@ -81,6 +81,7 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .. import tool_heads
 from .live_video import LiveStreamSource
 from .camera_correction import (
     CALIBRATED_AREA_MM,
@@ -361,6 +362,43 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             value_fn=lambda state, _: state.workhead_id or None,
         ),
         "has_workhead_id",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="workhead_id",
+            translation_key="workhead_id",
+            icon="mdi:tools",
+            device_class=SensorDeviceClass.ENUM,
+            options=tool_heads.TOOL_HEAD_OPTIONS,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.workhead_id or None,
+        ),
+        "has_tool_heads",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="basic_carriage",
+            translation_key="basic_carriage",
+            icon="mdi:toolbox",
+            device_class=SensorDeviceClass.ENUM,
+            options=tool_heads.BASIC_CARRIAGE_OPTIONS,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.basic_carriage,
+        ),
+        "has_tool_heads",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="blade",
+            translation_key="blade",
+            icon="mdi:knife",
+            device_class=SensorDeviceClass.ENUM,
+            options=tool_heads.BLADE_OPTIONS,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.blade,
+            available_fn=lambda state: state.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE,
+        ),
+        "has_tool_heads",
     ),
     (
         XtoolSensorEntityDescription(

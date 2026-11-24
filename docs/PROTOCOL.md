@@ -1217,6 +1217,8 @@ The V2 API consolidates all peripheral queries onto one path with a
 | `machine_lock` | USB safety-key presence — `{state: "on"/"off"}` (`on` = key inserted / armed, `off` = key removed / lockout). Studio reads this as `UsbKeyLockStatus`. Not a lid lock. |
 | `airassistV2` | Air-Assist V2 BLE accessory state |
 | `motion_control` | Low-level motion override |
+| `workhead_ID` | M1 Ultra fitted tools; needs body `{action:"get"}`. Reply `{driving, drived, drivingError, drivingLock}`. `driving` = quick-swap module (`0` none, `15` 10W laser module, `16` 20W laser module, `29` multi-function carriage, `31` inkjet module), `drived` = basic carriage tool (`41` none, `42` fine-point pen, `43` fine-point blade, `44` hot foil pen). Same IDs as the V1 firmware's `/peripheral/workhead_ID`. |
+| `knife_head` | M1 Ultra blade in the multi-function carriage; needs body `{action:"get"}`. `driving`: `0` none / not synced, `22` foil transfer tip, `23` cutting blade, `24` rotary blade. Refused with code 1 `reset is interrupt` until the axes are homed. |
 | `ext_purifier`, `gap`, `machine_lock` are pre-fanned out as the `addonStatus` aggregate api |
 
 Standalone peripheral paths (mostly carried over from V1):
@@ -1671,6 +1673,7 @@ emits these push frames (all without `transactionId`):
 | `/drawer/status` | `DRAWER` | Drawer transitions. **Note:** the `type` strings invert the obvious meaning — firmware emits `type:"OPEN"` when the drawer is pushed back into the slot, `type:"CLOSE"` when it is pulled out (matches the `state:"on"` / `state:"off"` polarity of the polled `drawer` peripheral). |
 | `/emergency_stop/status` | `EMERGENCY_STOP` | `type:"VOLTAGE_TRIGGER"` (e-stop pressed) / `"RESUME"` (released). Emitted by GS002 (F1) / GS003 (F1 Ultra V2) / GS005 (F1 Lite) / GS006 (F2 Ultra UV) and the rest of the F2 family. Newer firmware spelling. |
 | `/emergency/status` | `EMERGENCY_STOP` | Older spelling used **only** by HJ003 (MetalFab). Same `type` payload. Pairs with a `/work/mode MODE_CHANGE` push that sets `mode: "P_EMERGENCY_STOP"`. A consumer should subscribe to **both** URL variants. |
+| `/laser_head/status` | `LASER_HEAD` | M1 Ultra (40.41.018): `type:"MODE_REPORT"` with `info:{x, y}` every second; `type:"VALUE_CHANGE"` with `info:"drivingUnLock"` / `"driving"` / `"drivingLock"` while a head is swapped on the quick-release carriage. No push names the fitted head; read `workhead_ID` after `drivingLock`. |
 | `/board/link` | `BOARDS` | `type:"CONNECT"` — accessory board joined the device (e.g. `info:"weld_machine"`). |
 | `/move/status` | `CONTROLLER` | `type:"AXIS_HOME_FINISHED"` — homing per axis (`info:"x"` / `"y"` / `"z"` / `"xy"`). |
 | `/laserhead/status` | `LASER_HEAD` | `type:"BUSY"` / `"IDLE"` — laser-head working flag. |

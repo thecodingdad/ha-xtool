@@ -47,6 +47,7 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .. import tool_heads
 from .protocol import (
     CAMERA_EXPOSURE_MAX,
     CAMERA_EXPOSURE_MIN,
@@ -599,10 +600,32 @@ def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
         entities.append(_RestTempSensor(coordinator, "z_temperature", "mdi:thermometer", "z_temperature"))
     if model.has_workhead_id:
         entities.append(_RestStateSensor(coordinator, "workhead_id", "mdi:tools", "workhead_id"))
+    if model.has_workhead_id or model.has_tool_heads:
         entities.append(_RestNumericSensor(
             coordinator, "workhead_z_height", "mdi:axis-z-arrow",
             "workhead_z_height", unit=UnitOfLength.MILLIMETERS, precision=2,
         ))
+    if model.has_tool_heads:
+        entities.extend(
+            XtoolSensor(coordinator, XtoolSensorEntityDescription(
+                key=attr,
+                translation_key=attr,
+                icon=icon,
+                device_class=SensorDeviceClass.ENUM,
+                options=options,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                value_fn=lambda state, _, attr=attr: getattr(state, attr) or None,
+                available_fn=(
+                    (lambda state: state.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE)
+                    if attr == "blade" else None
+                ),
+            ))
+            for attr, icon, options in (
+                ("workhead_id", "mdi:tools", tool_heads.TOOL_HEAD_OPTIONS),
+                ("basic_carriage", "mdi:toolbox", tool_heads.BASIC_CARRIAGE_OPTIONS),
+                ("blade", "mdi:knife", tool_heads.BLADE_OPTIONS),
+            )
+        )
     if model.has_gyro:
         for axis in ("x", "y", "z"):
             entities.append(_RestNumericSensor(

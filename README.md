@@ -108,6 +108,7 @@ Only the entities the model and its connected accessories support are created.
 | Fire level | Flame-detection level |
 | Air-Assist level | Air-Assist gear (0-4) |
 | Workhead / Workhead Z height | Fitted workhead and its Z offset |
+| Workhead / Basic carriage / Blade | **M1 Ultra.** The quick-swap module (10W / 20W laser module, multi-function carriage, inkjet module), the tool in the basic carriage (fine-point pen, fine-point blade, hot foil pen) and, with the multi-function carriage fitted, its blade (cutting blade, rotary blade, foil transfer tip; *none* until the multi-function carriage identified it, unavailable without the multi-function carriage). Read while the laser is awake. |
 | Z-axis temperature / Water temperature / Water flow rate / Gyro X / Y / Z | As reported by the laser |
 | Print tool type / Hardware type | As reported by the laser |
 | AP2 filters / AP2 sensor D / S / Purifier speed | AP2 air cleaner: filter remaining, particle sensors, speed |
