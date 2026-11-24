@@ -447,7 +447,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             state_class=SensorStateClass.TOTAL_INCREASING,
             value_fn=lambda state, _: state.tool_runtime_seconds,
         ),
-        "has_runtime_stats",
+        "has_tool_stats",
     ),
     (
         XtoolSensorEntityDescription(
@@ -457,7 +457,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             entity_category=EntityCategory.DIAGNOSTIC,
             value_fn=lambda state, _: state.print_tool_type or None,
         ),
-        "has_runtime_stats",
+        "has_tool_stats",
     ),
     # --- Inkjet sensors (M2, gated on has_inkjet) ------------------------
     #

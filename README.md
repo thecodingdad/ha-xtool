@@ -110,7 +110,7 @@ Only the entities the model and its connected accessories support are created.
 | Workhead / Workhead Z height | Fitted workhead and its Z offset |
 | Workhead / Basic carriage / Blade | **M1 Ultra.** The quick-swap module (10W / 20W laser module, multi-function carriage, inkjet module), the tool in the basic carriage (fine-point pen, fine-point blade, hot foil pen) and, with the multi-function carriage fitted, its blade (cutting blade, rotary blade, foil transfer tip; *none* until synced with Sync blade, unavailable without the multi-function carriage). Read while the laser is awake. |
 | Z-axis temperature / Water temperature / Water flow rate / Gyro X / Y / Z | As reported by the laser |
-| Print tool type / Hardware type | As reported by the laser |
+| Print tool type / Hardware type | As reported by the laser (not on the M1 Ultra with V2 firmware, which does not report the tool type or tool runtime) |
 | AP2 filters / AP2 sensor D / S / Purifier speed | AP2 air cleaner: filter remaining, particle sensors, speed |
 | Ink level cyan / magenta / yellow / black | **M2.** Remaining ink |
 | *&lt;cartridge&gt;* ink / Moisturizing fluid 1 / 2 | **O1 Omni.** Remaining % per cartridge and tank |

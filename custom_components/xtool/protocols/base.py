@@ -268,7 +268,10 @@ class XtoolDeviceModel:
     has_display_screen: bool = False  # REST: F1 Ultra touchscreen brightness
     has_cooling_fan: bool = False  # WS-V2: built-in cooling-fan peripheral
     has_runtime_stats: bool = False  # WS-V2: /v1/device/statistics exposes
-    # last_job_time / working_seconds / standby_seconds / tool_runtime / print_tool_type
+    # last_job_time / working_seconds / standby_seconds
+    # WS-V2: the statistics also carry the tool runtime and the
+    # configs ``printToolType`` (the M1 Ultra's carry neither)
+    has_tool_stats: bool = False
     # WS-V2: Last job time only, from the job result push's ``timeUse``
     # (F2 Ultra UV; its statistics carry no time)
     has_job_result_time: bool = False

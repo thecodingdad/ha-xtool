@@ -372,7 +372,7 @@ XTOOL_M1_ULTRA_WSV2 = XtoolDeviceModel(
     has_tool_heads=True,
     has_z_temp=True,
     has_machine_lock=True,   # M1Ultra bundle exposes workingMode HANDLE/NORMAL
-    has_runtime_stats=True,  # M1Ultra bundle exposes standbyTime + printToolType
+    has_runtime_stats=True,  # standbyTime; no tool runtime or printToolType (40.41.018)
     has_button_event=True,   # M1Ultra bundle defines LONG_PRESS push handler
     firmware_content_id="xTool-m1-ultra-firmware",
     firmware_machine_type="MLM",
@@ -438,6 +438,7 @@ XTOOL_P2S_WSV2 = XtoolDeviceModel(
     has_laser_head_position=True,
     has_water_cooling=True,  # 55W CO2 glass tube — water tank + antifreeze
     has_runtime_stats=True,  # P2S bundle exposes standbyTime
+    has_tool_stats=True,
     has_button_event=True,   # P2S bundle defines SHORT_PRESS push handler
     firmware_content_id="xTool-p2s-firmware",
     firmware_machine_type="MXP",
@@ -469,6 +470,7 @@ XTOOL_P3_WSV2 = XtoolDeviceModel(
     has_distance_measure=True,
     has_fill_light=True,
     has_runtime_stats=True,  # P3 bundle exposes standbyTime
+    has_tool_stats=True,
     firmware_content_id="xTool-p3-firmware",
     firmware_machine_type="MXP",
     protocol_version="V2",
@@ -550,6 +552,7 @@ XTOOL_APPAREL_PRINTER_WSV2 = XtoolDeviceModel(
     has_inkjet_sensors=True,
     has_powder_loop=True,
     has_runtime_stats=True,  # DT001 bundle exposes standbyTime
+    has_tool_stats=True,
     # Inkjet DTF device — no laser, no flame alarm, no smoke extraction.
     firmware_content_id="xTool-apparelprinter-firmware-1.5",
     firmware_machine_type="MDT",
@@ -571,6 +574,7 @@ XTOOL_APPAREL_PRINTER_PLUS_WSV2 = XtoolDeviceModel(
     has_camera=True,
     has_inkjet_sensors=True,
     has_runtime_stats=True,
+    has_tool_stats=True,
     firmware_content_id="xTool-apparel-printer-plus-firmware",
     firmware_machine_type="MDT",
     protocol_version="V2",
@@ -611,6 +615,7 @@ XTOOL_M2_WSV2 = XtoolDeviceModel(
     # ``workingInfo``). Populates last_job_time / working_seconds /
     # standby_seconds / session_count.
     has_runtime_stats=True,
+    has_tool_stats=True,
     # M2's accessory topology is /v1/platform/accessories/list, not
     # the F-family's /v1/parts/control passthrough. Until the M2
     # accessory listing is wired properly the coordinator's

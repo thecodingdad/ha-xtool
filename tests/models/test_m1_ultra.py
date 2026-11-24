@@ -219,3 +219,12 @@ async def test_sync_blade_only_with_the_multi_function_carriage(
         coordinator.async_request_refresh = AsyncMock()
         await button.async_press()
         coordinator.protocol.sync_blade.assert_awaited_once()
+
+
+def test_no_tool_runtime_or_print_tool_type(hass: HomeAssistant, config_entry) -> None:
+    """The statistics carry neither, nor do the configs (see CONFIGS)."""
+    coordinator = build_coordinator(hass, _model("V2"))
+    keys = {s.translation_key for s in coordinator.build_sensors()}
+    assert {"working_time", "standby_time"} <= keys
+    assert "tool_runtime" not in keys
+    assert "print_tool_type" not in keys
