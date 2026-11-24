@@ -593,20 +593,20 @@
         "name": "Werkzeug",
         "state": {
           "none": "Keins",
-          "laser_10w": "10W Laser Module",
-          "laser_20w": "20W Laser Module",
-          "multi_function_carriage": "Multi-function Carriage",
-          "inkjet": "Inkjet Module",
+          "laser_10w": "10W Lasermodul",
+          "laser_20w": "20W Lasermodul",
+          "multi_function_carriage": "Multifunktionsschlitten",
+          "inkjet": "Tintenmodul",
           "other": "Anderes"
         }
       },
       "basic_carriage": {
-        "name": "Basic Carriage",
+        "name": "Basisschlitten",
         "state": {
           "none": "Keins",
-          "fine_point_pen": "Fine-point Pen",
-          "fine_point_blade": "Fine-point Blade",
-          "hot_foil_pen": "Hot Foil Pen",
+          "fine_point_pen": "Feinschreiber",
+          "fine_point_blade": "Feinspitzklinge",
+          "hot_foil_pen": "Heißfolienstift",
           "other": "Anderes"
         }
       },
@@ -614,9 +614,9 @@
         "name": "Klinge",
         "state": {
           "none": "Keine / nicht synchronisiert",
-          "foil_transfer_tip": "Foil Transfer Tip",
-          "cutting_blade": "Cutting Blade",
-          "rotary_blade": "Rotary Blade",
+          "foil_transfer_tip": "Folienübertragungsspitze",
+          "cutting_blade": "Schneideklinge",
+          "rotary_blade": "Rotationsklinge",
           "other": "Andere"
         }
       },
