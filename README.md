@@ -98,7 +98,7 @@ Only the entities the model and its connected accessories support are created.
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available: "Off" when the laser cannot be reached, "Not responding" when a linked Power switch is on but the laser does not answer. **F2 Ultra UV** also: Focusing, Warming up, Laser overheat |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available: "Off" when the laser cannot be reached, "Not responding" when a linked Power switch is on but the laser does not answer. **F2 Ultra UV** also: Focusing, Warming up, Laser overheat. **Apparel Printer (Plus)** also: Calibration / test print |
 | Task ID | Current or last job |
 | Task time | Elapsed time of the current or last job |
 | Last job time | Duration of the last finished job (**F2 Ultra UV**: kept across restarts) |
@@ -118,6 +118,10 @@ Only the entities the model and its connected accessories support are created.
 | Active alarms | **O1 Omni.** Number of alarms; the `alarms` attribute lists them as in xTool Studio |
 | UV lamp runtime / Air purifier runtime | **O1 Omni.** Lifetime totals |
 | Ambient temperature / humidity | **Apparel Printer, O1 Omni** |
+| Moisturizing liquid / Waste fluid | **Apparel Printer (Plus).** Moisturizing liquid Normal or Empty; Waste fluid Normal, Full or Removed |
+| Oven temperature | **Apparel Printer (Plus)** with the OS1 oven; unknown while the oven is off |
+| Knife cuts / Standard nozzle cleans / Deep nozzle cleans / Print-head collisions detected | **Apparel Printer (Plus).** Lifetime counters (diagnostic) |
+| Time since wiping maintenance / parts replacement, Wiping / Parts replacement reminder interval | **Apparel Printer (Plus).** What Studio's maintenance reminders use (diagnostic); an interval of -1 is off |
 | Laser backpack | **X1.** None, 30 W fiber, 60 W MOPA, 5 W UV or 5 W UV + 60 W MOPA (diagnostic) |
 | Engraving lens | **F2 Ultra UV.** Surface, Inner or None |
 
@@ -136,7 +140,11 @@ Only the entities the model and its connected accessories support are created.
 | Flame alarm / Beep / Gap check / Lock check enabled | The laser's settings |
 | Alarm | Any active alarm |
 | XCS compatibility mode | On while the XCS desktop app holds the laser's connection |
-| Waste ink tank full / installed, Air filter installed | **O1 Omni** |
+| Waste ink tank full / installed, Air filter installed | **O1 Omni**; Waste ink tank full also **Apparel Printer (Plus)** (unknown while the tank is removed) |
+| Top lid / Left lid / Right lid | **Apparel Printer (Plus).** Open or closed |
+| Wiping maintenance due / Parts replacement due | **Apparel Printer (Plus).** As Studio's reminders: due once the time since the last wiping or parts replacement reaches its reminder interval; never with the reminder off |
+| Oven processing / Oven feed active | **Apparel Printer (Plus)** with the OS1 oven. Oven processing stays on while the oven bakes after the print; Oven feed active (diagnostic) while it feeds or ejects |
+| Film buffer signal / Film position signal | **Apparel Printer (Plus).** The film sensors as the printer reports them (diagnostic) |
 | Feeder / Feeder front sensor / Feeder rear sensor | **X1.** The conveyor feeder is fitted; material is at its front or rear sensor |
 | Diode laser module / Inkjet module | **X1.** The module is fitted (diagnostic) |
 | Inkjet head capped / Toner installed / Inkjet head calibrated | **M2** |
@@ -302,7 +310,7 @@ Events fire once on each change, for automation triggers.
 |---|---|---|
 | Button | `short_press`, `long_press`, `double_press` | The laser's own button |
 | Job | `started`, `paused`, `resumed`, `cancelled`, `finished`, `failed`, `framing_started`, `framing_finished` | Job changes, with `task_id` and, where available, the `duration`. `failed`: the laser reported the job as failed, e.g. after a power cut |
-| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop`, `temperature`, `gyro`, `laser_head_fault`, `z_axis_fault`, `u_axis_fault`, `conveyor_fault`, `board_fault`, `camera_fault`, `dongle_fault`, `udisk_fault`, `machine_lock_md_fault` | Errors as the laser reports them (`tilt` / `moving`: D series; `emergency_stop` and the faults: V2 firmware) |
+| Error | `limit`, `laser_control`, `laser_module`, `tilt`, `moving`, `emergency_stop`, `temperature`, `gyro`, `laser_head_fault`, `z_axis_fault`, `u_axis_fault`, `conveyor_fault`, `board_fault`, `camera_fault`, `dongle_fault`, `udisk_fault`, `machine_lock_md_fault`, `print_head_collision` | Errors as the laser reports them (`tilt` / `moving`: D series; `emergency_stop` and the faults: V2 firmware; `print_head_collision`: Apparel Printer (Plus)) |
 | Fire warning | `triggered`, `cleared` | Flame alarm, for safety automations (**X1**: `triggered` on the X1's fire alarm) |
 
 Event entities show Unknown until their first event.
