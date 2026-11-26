@@ -35,6 +35,11 @@ def _push(protocol: WSV2Protocol, url: str, typ: str, info) -> None:
     ({"mode": "Work", "subMode": "working", "taskId": TASK}, XtoolStatus.PROCESSING),
     ({"mode": "Work", "subMode": "workPause", "taskId": TASK}, XtoolStatus.PAUSED),
     ({"mode": "P_WORK_DONE", "subMode": "", "taskId": TASK}, XtoolStatus.FINISHED),
+    # Modes of the P3's firmware 40.23.012 (its StatusController)
+    ({"mode": "P_INIT", "subMode": ""}, XtoolStatus.INITIALIZING),
+    ({"mode": "P_SECURE_CONFIRM", "subMode": ""}, XtoolStatus.IDLE),
+    ({"mode": "P_BOTTOM_BED_LEVELING", "subMode": ""}, XtoolStatus.MEASURING),
+    ({"mode": "P_WIFI_CONFIG", "subMode": ""}, XtoolStatus.WIFI_SETUP),
 ])
 async def test_the_polled_job_phase(cur_mode: dict, status: XtoolStatus) -> None:
     protocol = _protocol()
@@ -76,3 +81,12 @@ def test_the_mode_change_names_the_phase() -> None:
     _push(protocol, "work/mode_change", "MODE_CHANGE", {"mode": "Work", "subMode": "working", "taskId": TASK})
     assert protocol._latest["status"] is XtoolStatus.PROCESSING
     assert protocol._latest["task_id"] == TASK
+
+
+def test_no_water_sensors(hass, config_entry) -> None:
+    """Studio's P3 reads no water values; the chiller only raises alarms (#87)."""
+    from .conftest import build_coordinator
+
+    coordinator = build_coordinator(hass, DEVICE_MODELS["P3_V2"])
+    keys = [e.unique_id for e in (*coordinator.build_sensors(), *coordinator.build_binary_sensors())]
+    assert keys and not [key for key in keys if "water" in key]

@@ -259,7 +259,7 @@ data:
 
 ### Camera
 
-On a laser with several cameras, each camera and its settings have their own device, connected to the laser. Cameras on V2 firmware have no live video: their live view is built from photos (about 2.5 per second), and their state is Streaming while one is open. The cameras of the **X1** and the **P3** (V2 firmware; not yet tested on a P3) have: they offer Home Assistant's live stream (HLS or WebRTC, through its Stream integration and go2rtc) of the laser's own video, passed on without decoding, from one camera at a time as in Studio. Their pictures still come from photos.
+On a laser with several cameras, each camera and its settings have their own device, connected to the laser. Cameras on V2 firmware have no live video: their live view is built from photos (about 2.5 per second), and their state is Streaming while one is open. The cameras of the **X1** and the **P3** (V2 firmware) have: they offer Home Assistant's live stream (HLS or WebRTC, through its Stream integration and go2rtc) of the laser's own video, passed on without decoding, from one camera at a time as in Studio. Their pictures still come from photos. The **P3** has, as in Studio, an Overview camera (live; its picture is a frame of the live video, as the P3 takes no plain photo of it), a Side camera (live and photos) and a Close camera (photos only).
 
 | Entity | Description |
 |---|---|

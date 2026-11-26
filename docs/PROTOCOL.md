@@ -1201,7 +1201,7 @@ live on every existing V2-firmware device.
 | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|
 | `/v1/processing/state` | `PUT` | `{action: "start" \| "pause" \| "stop"}` | — | Job control: `start` (also used for resume), `pause`, `stop` (also used for cancel). |
-| `/v1/processing/progress` | `GET` | — | — | `{progress, workingTime, totalTime, …}` for the active job. The P3 answers `{time, total, value}`: `time` the elapsed seconds, `total` and `value` the progress. |
+| `/v1/processing/progress` | `GET` | — | — | `{progress, workingTime, totalTime, …}` for the active job. The P3 answers `{time, total, value}`: `time` the elapsed seconds; `value` stayed 0 through whole jobs on a P3, and Studio reads only `time` (to correct a job's time after a disconnect). |
 | `/v1/processing/upload/config` | `PUT` | — | `{fileType:"txt", autoStart:0, taskId?}` | Apply config after pushing a G-code blob via `file_stream`. |
 | `/v1/processing/frame/replace` | `PUT` | — | `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Replace the currently-loaded framing G-code. |
 
@@ -1407,10 +1407,19 @@ and `0`, and `GET /v1/platform/camera/list` answers code -1
 `getCameraList failed`. Studio's GS009 bundles never call these; they
 only take photos. Only the P3 bundle and the X1's extension call
 `/v1/platform/camera/live`; on the X1 the H.264 arrives on the
-`media_stream` socket itself, see [X1 live video](#live-video). Studio's
-live monitor names the P3's cameras `far` and `upside`; on a P3 the H.264
-arrives the same way, with the stream byte 0 for `far` and 2 for
-`upside`.
+`media_stream` socket itself, see [X1 live video](#live-video). On a P3 the H.264 arrives the same way, with the stream byte 0 for `far`
+and 2 for `upside`.
+
+**P3 cameras.** The firmware (40.23.012) lists four: `far` (overview,
+4608 × 3456 JPEG, id 0), `near` (close camera on the head, 2592 × 1944
+JPEG, id 1), `upside` (1920 × 1080 NV12, id 2) and `downside`
+(1920 × 1080 NV12, 10 fps, id 3). Studio's live monitor shows `far` as
+the front view and `upside` as the side view. It takes photos of `near`
+and `upside` with `GET /v1/camera/image` and `data:{stream:"near"|"upside"}`,
+which answers `{filename}` for a file transfer of type 5, and of `far`
+only straightened, through `GET /v1/camera/algorithm` with
+`function:"farAdjust"` and a measured thickness. `/v1/camera/snap`
+answers code -1 `get camera snap failed` on the P3.
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):
@@ -1554,6 +1563,14 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 | `P_ERROR` | Error state |
 | `P_EMERGENCY_STOP` | Emergency-stop button pressed (paired with the `/emergency/status EMERGENCY_STOP VOLTAGE_TRIGGER` push; cleared by `/emergency/status … RESUME`). |
 | `Work` | A job (P3), its phase in `subMode`: `workReady` loaded, `working` processing, `workPause` paused (Studio's P3 reads `<mode>.<subMode>`). |
+| `P_INIT` | Starting up (P3) |
+| `P_SECURE_CONFIRM` | Waiting for the pairing button (P3; the X1's `SecureConfirm`) |
+| `P_BOTTOM_BED_LEVELING` | Levelling the bottom bed (P3) |
+| `P_WIFI_CONFIG` | Wi-Fi setup (P3) |
+| `P_TESTING` | Factory test (P3) |
+| `P_WORK_BUSY` | Busy outside a job (P3): Studio sets it itself while it stitches photos of the close camera |
+
+The P3 modes are those of its firmware's status controller (40.23.012).
 
 `subMode` carries the working-mode classifier (e.g. `LASER_PLANE`,
 `KNIFE_CUT`, `INK_PRINT`, `DTF_PRINT`, `ROTATE_ATTACHMENT`,
@@ -3393,11 +3410,21 @@ multi-package response (or an empty body if no update).
 | P1 | `xTool-p1-firmware` | single (cloud rejects — kept for ID mapping) |
 | P2 | `xTool-p2-firmware` | single (machine_type `MXP`) |
 | P2S | `xTool-p2s-firmware` | single (machine_type `MXP`) |
-| P3 | `xTool-p3-firmware` | single (machine_type `MXP`) |
+| P3 | `xTool-p3-firmware` | single (machine_type `MXP`). Studio asks for it as one of several packages (`POST /efficacy/v1/packages/version/latest`, top-level `contentId` `xTool-p3-ext`); both queries answer 40.23.012 |
 | MetalFab (HJ003) | `xTool-hj003-firmware` | single (machine_type `MHJ`) |
 | Apparel Printer (DT001) | `xTool-apparelprinter-firmware-1.5` | single (machine_type `MDT`) |
 | Apparel Printer Plus (DT003) | `xTool-apparel-printer-plus-firmware` | single (machine_type `MDT`; ID from the DT003 bundle, not yet confirmed against the cloud) |
 | O1 Omni (DT002) | `xTool-dt002-firmware` | single (machine_type `DT002`; ID from the DT002 bundle, check not yet confirmed against the cloud) |
+
+Accessories (2026-11-26): the single-package query answers
+`xTool-bigPurifier-firmware` (SafetyPro AP2, 40.212.007),
+`xTool-backpackPurifier-firmware`, `xTool-dongle-firmware`,
+`xTool-ductFan2.0-firmware`, `xTool-feeder-firmware` and
+`xTool-SafetyFireBoxPro-firmware`. For `xTool-airpump1.0-firmware`,
+`xTool-airpump2.0-firmware`, `xTool-uvSensor-firmware` and
+`xTool-multiFunctionalBase-firmware`, which Studio uses too, it answers
+code 10000 `未知系统错误|资源id不对` ("wrong resource id"): no package is
+published under them, and Studio's packages query answers an empty list.
 | Bluetooth dongle (peripheral) | `xTool-dongle-firmware` | single |
 
 `xcs-ext-*` IDs that appear in some older XCS resources are XCS

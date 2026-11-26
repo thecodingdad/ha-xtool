@@ -180,9 +180,21 @@ class XtoolDeviceModel:
     # The cameras have live video: H.264 on the ``media_stream`` socket
     # after ``/v1/platform/camera/live`` (the X1), one camera at a time.
     has_live_video: bool = False
-    # (camera, live name) where ``/v1/platform/camera/live`` names a camera
-    # differently from its photos (the P3: Studio's far / upside).
+    # (camera, live name) for ``/v1/platform/camera/live``. When set,
+    # only these cameras have live video (the P3: Studio's monitor shows
+    # ``far`` and ``upside``, not the close camera).
     live_video_names: tuple[tuple[str, str], ...] = ()
+    # (camera, stream) for cameras whose photos Studio takes with
+    # ``GET /v1/camera/image`` and ``data:{stream}`` instead of
+    # ``/v1/camera/snap`` (the P3's ``near`` and ``upside``).
+    camera_photo_streams: tuple[tuple[str, str], ...] = ()
+    # Cameras without a photo route of their own: their picture comes
+    # from the live video (the P3's ``far``, which Studio only takes
+    # through its measuring algorithm).
+    camera_stills_from_live: tuple[str, ...] = ()
+    # The laser position is read with ``PUT`` and ``{action:"get_coord",
+    # waitTime:3000}``, as Studio's P3 does; a GET is refused (code -3).
+    laser_position_put: bool = False
     # The laser stores a calibration grid for its ``main`` camera
     # (``global_calib.json``); photos are straightened with it, as
     # Studio does (F2 Ultra UV).

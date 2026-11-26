@@ -462,13 +462,21 @@ XTOOL_P3_WSV2 = XtoolDeviceModel(
     has_lid_sensor=True,
     has_mode_switch=True,
     has_air_assist_state=True,
-    has_water_cooling=True,
+    # No water readings: Studio's P3 extension reads none, the chiller
+    # reports only its COOL_WATER_MACHINE alarms.
     has_camera=True,
-    camera_names=("overview", "closeup"),  # P3 retains the V1 dual-camera shape
-    # Studio's live monitor (its cameraMap: far, upside); the H.264 comes
-    # on the media_stream socket, as on the X1.
+    # The firmware lists far (overview), near (close), upside and
+    # downside. Studio's live monitor shows far (front view) and upside
+    # (side view); it takes photos of near and upside with
+    # /v1/camera/image, and of far only through its measuring algorithm,
+    # so the overview's picture comes from its live video. The H.264
+    # comes on the media_stream socket, as on the X1.
+    camera_names=("overview", "closeup", "side"),
     has_live_video=True,
-    live_video_names=(("overview", "far"), ("closeup", "upside")),
+    live_video_names=(("overview", "far"), ("side", "upside")),
+    camera_photo_streams=(("closeup", "near"), ("side", "upside")),
+    camera_stills_from_live=("overview",),
+    laser_position_put=True,
     has_camera_exposure=True,
     has_digital_lock=True,
     has_distance_measure=True,

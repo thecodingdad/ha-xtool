@@ -147,6 +147,8 @@ WSV2_PROTOCOL_FILE_TRANSFER = 33
 # socket, each one stream byte and then H.264 (Annex B).
 WSV2_PROTOCOL_MEDIA_STREAM = 34
 WSV2_PATH_CAMERA_LIVE = "/v1/platform/camera/live"
+# Photos of the P3's near / upside cameras, by stream name (Studio's P3)
+WSV2_PATH_CAMERA_IMAGE = "/v1/camera/image"
 
 # --- Studio file-transfer constants (verified against Studio v1.7.23
 # ``main.e_TJj9fA.js`` — ``Iv/Lv/Rv/zv/Bv/Vv/Wv`` blocks). ------------
@@ -358,6 +360,12 @@ WSV2_MODE_MAP: dict[str, XtoolStatus] = {
     "P_WORK_DONE":          XtoolStatus.FINISHED,
     "P_FINISH":             XtoolStatus.FINISHED,
     "P_MEASURE":            XtoolStatus.MEASURING,
+    # The P3's firmware (40.23.012): waiting for the pairing button (idle,
+    # as Studio counts the X1's SecureConfirm), bed levelling, Wi-Fi setup.
+    "P_INIT":               XtoolStatus.INITIALIZING,
+    "P_SECURE_CONFIRM":     XtoolStatus.IDLE,
+    "P_BOTTOM_BED_LEVELING": XtoolStatus.MEASURING,
+    "P_WIFI_CONFIG":        XtoolStatus.WIFI_SETUP,
     "P_UPGRADE":            XtoolStatus.FIRMWARE_UPDATE,
     "P_ERROR":              XtoolStatus.ERROR_LIMIT,
     "P_EMERGENCY_STOP":     XtoolStatus.ERROR_LIMIT,
@@ -378,8 +386,12 @@ def map_wsv2_mode(mode: Any, sub_mode: Any = "") -> XtoolStatus | None:
     """Status for a V2 ``mode`` / ``subMode`` pair."""
     mode_s = str(mode or "").upper()
     if mode_s == "WORK":
-        return _WSV2_WORK_SUB_MODES.get(str(sub_mode or "").upper())
-    return WSV2_MODE_MAP.get(mode_s)
+        status = _WSV2_WORK_SUB_MODES.get(str(sub_mode or "").upper())
+    else:
+        status = WSV2_MODE_MAP.get(mode_s)
+    if status is None and mode_s:
+        _LOGGER.debug("V2 mode %r (subMode %r) not mapped, status unchanged", mode, sub_mode)
+    return status
 
 
 # The P3 sends these pushes under other URLs.
@@ -1697,13 +1709,22 @@ class WSV2Protocol(XtoolProtocol):
         return blob or None
 
     async def _camera_snap(self, camera_name: str) -> bytes | None:
+        if camera_name in getattr(self._model, "camera_stills_from_live", ()):
+            return None
+        stream = dict(getattr(self._model, "camera_photo_streams", ())).get(camera_name)
         try:
-            snap = await self.request(
-                self.PATH_CAMERA_SNAP,
-                "GET",
-                params={"name": camera_name},
-                timeout=15.0,
-            )
+            if stream is not None:
+                # Studio's P3 cameraNearSnap / cameraUpsideSnap
+                snap = await self.request(
+                    WSV2_PATH_CAMERA_IMAGE, "GET", data={"stream": stream}, timeout=15.0,
+                )
+            else:
+                snap = await self.request(
+                    self.PATH_CAMERA_SNAP,
+                    "GET",
+                    params={"name": camera_name},
+                    timeout=15.0,
+                )
         except Exception as err:
             _LOGGER.debug("V2 camera_snap %s failed: %s", camera_name, err)
             return None
@@ -2865,7 +2886,10 @@ class WSV2Protocol(XtoolProtocol):
                 # ``laser_head`` requires an explicit action — Studio
                 # bundles always send `data:{action:"get_coord"}` for
                 # state queries, plain GET returns `code 1: failed`.
-                ptypes.append(("laser_head", {"action": "get_coord"}))
+                if getattr(model, "laser_position_put", False):
+                    ptypes.append(("laser_head", {"action": "get_coord", "waitTime": 3000}))
+                else:
+                    ptypes.append(("laser_head", {"action": "get_coord"}))
             if getattr(model, "has_distance_measure", False):
                 ptypes.append(("ir_measure_distance", None))
             if getattr(model, "has_display_screen", False):
@@ -2902,7 +2926,8 @@ class WSV2Protocol(XtoolProtocol):
                 continue
             try:
                 p = await self.request(
-                    "/v1/peripheral/param", "GET",
+                    "/v1/peripheral/param",
+                    "PUT" if ptype == "laser_head" and getattr(model, "laser_position_put", False) else "GET",
                     params={"type": ptype},
                     data=body,
                 )

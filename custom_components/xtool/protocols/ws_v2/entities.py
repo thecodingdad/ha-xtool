@@ -2368,9 +2368,10 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         self._last_snapshot_time = dt_util.utcnow() - MAX_SNAPSHOT_AGE
         self._live_viewers = 0
         self._live_source: LiveStreamSource | None = None
-        if coordinator.model.has_live_video:
+        live_names = dict(coordinator.model.live_video_names)
+        live_name = live_names.get(camera_name, None if live_names else camera_name)
+        if coordinator.model.has_live_video and live_name is not None:
             protocol = coordinator.protocol
-            live_name = dict(coordinator.model.live_video_names).get(camera_name, camera_name)
             self._live_source = LiveStreamSource(
                 lambda: protocol.live_video(live_name), f"{camera_name} camera",
                 self._stream_readers_changed,
@@ -2415,6 +2416,11 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
     @property
     def is_streaming(self) -> bool:
         return self._live_viewers > 0 or bool(self._live_source and self._live_source.readers)
+
+    @property
+    def use_stream_for_stills(self) -> bool:
+        """A camera without a photo route shows a frame of its video."""
+        return self._camera_name in self.coordinator.model.camera_stills_from_live
 
     async def stream_source(self) -> str | None:
         if self._live_source is None:
