@@ -1854,7 +1854,9 @@ Body shape for the three families that do have an F0F7 tunnel:
 ```
 
 Response carries the F0F7-framed reply under the same
-``data_b64`` field.
+``data_b64`` field. Studio rewrites `link` per device: `linkMotion` on
+the Apparel Printer (DT001), `linkDongle` on the Apparel Printer Plus
+(DT003); `uart485` everywhere else.
 
 **S1 is the exception.** It has no `/passthrough` and no
 `parts_control` channel — the BT-accessory surface reachable on
@@ -1916,7 +1918,9 @@ num,mac,type_hex,status;num,mac,type_hex,status;…
 
 - ``type_hex`` is the 2-char ``Te.*`` enum value
   (e.g. ``"34"`` = 0x34 = 52 = ``Purifier``).
-- ``status`` is ``"1"`` for connected.
+- ``status`` is ``"1"`` for connected. A paired accessory that is
+  switched off stays in the list with ``"0"`` (an AP2 on a DT001), and
+  answers no info M-code.
 
 The numeric ``type_id_raw`` resolves through the ``Te`` enum
 (see below).
@@ -2068,6 +2072,7 @@ bundles use this — they all share the ``Te.*`` enum:
 | 0x34 (52) | Purifier |
 | 0x3D (61) | AirPump |
 | 0x40 (64) | AirPumpV2 |
+| 0x45 (69) | LargePurifier (SafetyPro AP2, prefix `[69,115,96,1,0]`; seen as `45736000` on a DT001) |
 | 0x46 (70) | DuctFan |
 | 0x4A (74) | Dongle |
 | 0x4B (75) | UvSensor |
@@ -2089,7 +2094,7 @@ Studio's `bF` firmware-id → marketing-name dict:
 | `DuctFan` | xTool SafetyPro IF2 |
 | `DuctFanV3` | xTool SafetyPro IF2 2.0 |
 | `Purifier` | xTool SafetyPro AP2 |
-| `LargePurifier` | xTool SafetyPro AP2 (Large) |
+| `LargePurifier` | xTool SafetyPro AP2 (firmware `xTool-bigPurifier-firmware`) |
 | `LargePurifierV3` | xTool SafetyPro AP2 Max |
 | `BackpackPurifier` | xTool Backpack Purifier |
 | `AirPump` | xTool Smart Air Assist |

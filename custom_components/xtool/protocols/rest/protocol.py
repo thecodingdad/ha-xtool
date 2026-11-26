@@ -173,6 +173,7 @@ class RestProtocol(XtoolProtocol):
         self._port = port
         self._base_url = f"http://{host}:{port}"
         self._offline_until: float = 0.0
+        self._model: Any = None
 
     async def change_host(self, host: str) -> None:
         """Talk to the laser at another address from now on, without a reload."""
@@ -895,7 +896,7 @@ class RestProtocol(XtoolProtocol):
         )
         result = await self._post_json(
             "/passthrough",
-            data={"link": "uart485", "data_b64": encoded},
+            data={"link": getattr(self._model, "accessory_link", "uart485"), "data_b64": encoded},
             timeout=timeout,
         )
         if not isinstance(result, dict):

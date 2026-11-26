@@ -105,6 +105,7 @@ _TE_TYPE_ID_BY_NUMERIC: dict[int, str] = {
     0x34: "Purifier",
     0x3D: "AirPump",
     0x40: "AirPumpV2",
+    0x45: "LargePurifier",  # the SafetyPro AP2, Studio's LargePurifier
     0x46: "DuctFan",
     0x4A: "Dongle",
     0x4B: "UvSensor",
@@ -690,6 +691,10 @@ class XtoolCoordinator(DataUpdateCoordinator[XtoolDeviceState]):
         new_state: dict[str, AccessoryState] = {}
         loop_now = asyncio.get_event_loop().time()
         for row in rows:
+            # A paired accessory that is off: nothing to read (its row
+            # stays in the list, with status 0)
+            if row.get("status") == 0 and row.get("csv"):
+                continue
             type_id = _resolve_type_id(row)
             if type_id is None:
                 _LOGGER.debug(

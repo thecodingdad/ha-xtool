@@ -271,6 +271,10 @@ class XtoolDeviceModel:
     # the multi-function carriage (``workhead_ID`` / ``knife_head``).
     has_tool_heads: bool = False
     has_cpu_fan: bool = False  # REST: M1 Ultra CPU fan
+    # The ``link`` of the F0F7 accessory tunnel (``/passthrough``,
+    # ``/v1/parts/control``). Studio rewrites it per device: ``linkMotion``
+    # on the Apparel Printer, ``linkDongle`` on the Apparel Printer Plus.
+    accessory_link: str = "uart485"
     # REST: the CPU temperature (°C) in ``/cnc/status``'s ``CPU_TEMP``
     # (M1; Studio does not read it, the M1 reports it in every reply).
     has_cpu_temp: bool = False

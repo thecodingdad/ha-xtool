@@ -1612,7 +1612,7 @@ class WSV2Protocol(XtoolProtocol):
             result = await self.request(
                 "/v1/parts/control",
                 "POST",
-                data={"link": "uart485", "data_b64": encoded},
+                data={"link": getattr(self._model, "accessory_link", "uart485"), "data_b64": encoded},
                 timeout=timeout,
             )
         except Exception as err:

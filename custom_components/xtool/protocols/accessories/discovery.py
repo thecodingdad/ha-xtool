@@ -71,6 +71,7 @@ def parse_connected_list(text: str) -> list[dict[str, object]]:
                 "type_id_raw": type_id_raw,
                 "status": status,
                 "sn": mac_or_sn or None,
+                "csv": True,
             })
             continue
 
