@@ -74,6 +74,7 @@ import aiohttp
 from homeassistant.util.ssl import get_default_no_verify_context
 
 from ...const import XtoolStatus
+from .. import tool_heads
 from ..base import (
     DeviceInfo,
     FirmwareFile,
@@ -1444,6 +1445,13 @@ class WSV2Protocol(XtoolProtocol):
             params={"type": peripheral_type},
             data=body,
         )
+
+    async def sync_blade(self) -> None:
+        """Turn the multi-function carriage so it identifies its blade.
+
+        Until then ``knife_head`` reports ``driving: 0``.
+        """
+        await self.set_peripheral("knife_head", action="get_sync")
 
     async def set_processing_state(self, action: str) -> dict[str, Any]:
         """PUT ``/v1/processing/state?action=<pause|start|stop>``.
@@ -2830,6 +2838,16 @@ class WSV2Protocol(XtoolProtocol):
             if getattr(model, "has_purifier_timeout", False) or \
                getattr(model, "has_air_assist_state", False):
                 ptypes.append(("ext_purifier", None))
+            if getattr(model, "has_tool_heads", False) and not asleep:
+                # The firmware does not push which head is fitted, only
+                # that the carriage was unlocked and locked again
+                # (``/laser_head/status`` drivingUnLock / drivingLock),
+                # so the heads are read on every poll while awake. As
+                # on the M1 Ultra's V1 firmware, both reads need
+                # ``action:"get"``.
+                ptypes.append(("workhead_ID", {"action": "get"}))
+                if state.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE:
+                    ptypes.append(("knife_head", {"action": "get"}))
 
         for ptype, body in ptypes:
             if ptype in self._unsupported_peripheral_types:
@@ -2846,7 +2864,10 @@ class WSV2Protocol(XtoolProtocol):
                 # model. Cache it so we stop retrying every poll. The
                 # set is reset on each connect so a firmware upgrade
                 # gets re-probed.
-                if (
+                # ``knife_head`` is refused with code 1 while the axes
+                # are not homed ("reset is interrupt"), so a refusal
+                # does not mean the firmware lacks it.
+                if ptype != "knife_head" and (
                     "code -3" in msg
                     or "code -2" in msg
                     or "code 10" in msg
@@ -3144,6 +3165,20 @@ class WSV2Protocol(XtoolProtocol):
                 if isinstance(v, (int, float)):
                     state.fill_light_a = int(v)
                     state.fill_light_b = int(v)
+        elif ptype == "workhead_ID":
+            head, multi = tool_heads.parse_workhead(p)
+            if head is not None:
+                state.workhead_id = head
+                if head != tool_heads.MULTI_FUNCTION_CARRIAGE:
+                    state.blade = None
+            if multi is not None:
+                state.basic_carriage = multi
+        elif ptype == "knife_head":
+            # Read before this poll's ``workhead_ID`` answered: the
+            # carriage may have been swapped out meanwhile.
+            module = tool_heads.parse_blade(p)
+            if module is not None and state.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE:
+                state.blade = module
         elif ptype == "ext_purifier":
             v = p.get("speed") or p.get("value")
             if isinstance(v, (int, float)):

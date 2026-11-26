@@ -25,6 +25,8 @@ class XtoolSensorEntityDescription(SensorEntityDescription):
     """Generic description-driven sensor used by family entity factories."""
 
     value_fn: Callable[[XtoolDeviceState, XtoolCoordinator], str | int | float | None]
+    # Unavailable while this returns False (the reading does not apply).
+    available_fn: Callable[[XtoolDeviceState], bool] | None = None
 
 
 class XtoolSensor(XtoolRestoringSensor, SensorEntity):
@@ -40,6 +42,14 @@ class XtoolSensor(XtoolRestoringSensor, SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self._set_unique_id(f"{description.key}")
+
+    @property
+    def available(self) -> bool:
+        available_fn = self.entity_description.available_fn
+        data = self.coordinator.data
+        if available_fn is not None and data is not None and not available_fn(data):
+            return False
+        return super().available
 
     @property
     def native_value(self) -> str | int | float | None:

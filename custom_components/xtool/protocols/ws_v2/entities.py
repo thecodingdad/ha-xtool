@@ -81,6 +81,7 @@ from ...entity import (
 from ...event import XtoolEvent
 from ...sensor import XtoolSensor, XtoolSensorEntityDescription
 from ...update import XtoolFirmwareUpdate
+from .. import tool_heads
 from .live_video import LiveStreamSource
 from .camera_correction import (
     CALIBRATED_AREA_MM,
@@ -364,6 +365,43 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     ),
     (
         XtoolSensorEntityDescription(
+            key="workhead_id",
+            translation_key="workhead_id",
+            icon="mdi:tools",
+            device_class=SensorDeviceClass.ENUM,
+            options=tool_heads.TOOL_HEAD_OPTIONS,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.workhead_id or None,
+        ),
+        "has_tool_heads",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="basic_carriage",
+            translation_key="basic_carriage",
+            icon="mdi:toolbox",
+            device_class=SensorDeviceClass.ENUM,
+            options=tool_heads.BASIC_CARRIAGE_OPTIONS,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.basic_carriage,
+        ),
+        "has_tool_heads",
+    ),
+    (
+        XtoolSensorEntityDescription(
+            key="blade",
+            translation_key="blade",
+            icon="mdi:knife",
+            device_class=SensorDeviceClass.ENUM,
+            options=tool_heads.BLADE_OPTIONS,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            value_fn=lambda state, _: state.blade,
+            available_fn=lambda state: state.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE,
+        ),
+        "has_tool_heads",
+    ),
+    (
+        XtoolSensorEntityDescription(
             key="gyro_x",
             translation_key="gyro_x",
             icon="mdi:axis-x-arrow",
@@ -409,7 +447,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             state_class=SensorStateClass.TOTAL_INCREASING,
             value_fn=lambda state, _: state.tool_runtime_seconds,
         ),
-        "has_runtime_stats",
+        "has_tool_stats",
     ),
     (
         XtoolSensorEntityDescription(
@@ -419,7 +457,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             entity_category=EntityCategory.DIAGNOSTIC,
             value_fn=lambda state, _: state.print_tool_type or None,
         ),
-        "has_runtime_stats",
+        "has_tool_stats",
     ),
     # --- Inkjet sensors (M2, gated on has_inkjet) ------------------------
     #
@@ -3321,6 +3359,34 @@ def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
     return []
 
 
+class WSV2SyncBlade(XtoolEntity, ButtonEntity):
+    """Turn the multi-function carriage so it identifies its blade.
+
+    The carriage turns, so the button is only available while it is
+    fitted.
+    """
+
+    _attr_translation_key = "sync_blade"
+    _attr_icon = "mdi:knife"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("sync_blade")
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        return (
+            super().available
+            and data is not None
+            and data.workhead_id == tool_heads.MULTI_FUNCTION_CARRIAGE
+        )
+
+    async def async_press(self) -> None:
+        await self.coordinator.protocol.sync_blade()
+        await self.coordinator.async_request_refresh()
+
+
 def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     # NOTE: WSV2Reboot and WSV2SyncTime are deliberately omitted —
     # `reboot` and `setTime` are not real keys on /v1/device/configs
@@ -3351,6 +3417,8 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
         entities.append(WSV2Autofocus(coordinator))
     if coordinator.model.has_platform_accessories:
         entities.append(WSV2ReconnectBluetoothAccessories(coordinator))
+    if coordinator.model.has_tool_heads and not coordinator.model.is_read_only:
+        entities.append(WSV2SyncBlade(coordinator))
     # Z-axis homing button removed in v2.5.7: HA Core has no entity-
     # level action confirmation, only per-Lovelace-card
     # ``tap_action.confirmation``. The button physically moves the
