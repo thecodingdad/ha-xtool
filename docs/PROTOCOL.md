@@ -1201,7 +1201,7 @@ live on every existing V2-firmware device.
 | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|
 | `/v1/processing/state` | `PUT` | `{action: "start" \| "pause" \| "stop"}` | — | Job control: `start` (also used for resume), `pause`, `stop` (also used for cancel). |
-| `/v1/processing/progress` | `GET` | — | — | `{progress, workingTime, totalTime, …}` for the active job. |
+| `/v1/processing/progress` | `GET` | — | — | `{progress, workingTime, totalTime, …}` for the active job. The P3 answers `{time, total, value}`: `time` the elapsed seconds, `total` and `value` the progress. |
 | `/v1/processing/upload/config` | `PUT` | — | `{fileType:"txt", autoStart:0, taskId?}` | Apply config after pushing a G-code blob via `file_stream`. |
 | `/v1/processing/frame/replace` | `PUT` | — | `{fileType:"txt", loopPrint, gcodeType, uMoveSpeed}` | Replace the currently-loaded framing G-code. |
 

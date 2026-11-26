@@ -3061,9 +3061,12 @@ class WSV2Protocol(XtoolProtocol):
             except Exception:
                 prog = None
             if isinstance(prog, dict):
-                wt = prog.get("workingTime") or prog.get("totalTime")
+                # The P3 names the elapsed seconds ``time``
+                wt = prog.get("workingTime") or prog.get("totalTime") or prog.get("time")
                 if isinstance(wt, (int, float)):
                     state.task_time = int(wt)
+                    # Newer than a task time a push cached (the last job's)
+                    self._latest["task_time"] = int(wt)
 
         # 6. Alarms — alarm presence, slow cadence. Skip once cached as
         # unsupported (F1 / GS005 / HJ003 / M1Ultra / P2S / P3 / DT001
