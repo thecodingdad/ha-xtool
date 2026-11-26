@@ -172,7 +172,8 @@
           "focusing": "Fokussiert",
           "warming_up": "Aufwärmen",
           "laser_overheat": "Laser überhitzt",
-          "unknown": "Unbekannt"
+          "unknown": "Unbekannt",
+          "busy": "Beschäftigt"
         },
         "state_attributes": {
           "laser_position_x": {

@@ -98,7 +98,7 @@ Only the entities the model and its connected accessories support are created.
 
 | Entity | Description |
 |---|---|
-| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available: "Off" when the laser cannot be reached, "Not responding" when a linked Power switch is on but the laser does not answer. **F2 Ultra UV** also: Focusing, Warming up, Laser overheat |
+| Status | Off / Idle / Processing / Paused / Cleaning / Finished / Error / … Always available: "Off" when the laser cannot be reached, "Not responding" when a linked Power switch is on but the laser does not answer. **F2 Ultra UV** also: Focusing, Warming up, Laser overheat. **P3** also: Busy (while xTool Studio works with its cameras) |
 | Task ID | Current or last job |
 | Task time | Elapsed time of the current or last job |
 | Last job time | Duration of the last finished job (**F2 Ultra UV**: kept across restarts) |

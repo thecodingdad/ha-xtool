@@ -40,6 +40,8 @@ def _push(protocol: WSV2Protocol, url: str, typ: str, info) -> None:
     ({"mode": "P_SECURE_CONFIRM", "subMode": ""}, XtoolStatus.IDLE),
     ({"mode": "P_BOTTOM_BED_LEVELING", "subMode": ""}, XtoolStatus.MEASURING),
     ({"mode": "P_WIFI_CONFIG", "subMode": ""}, XtoolStatus.WIFI_SETUP),
+    # Studio's own camera work, not a job
+    ({"mode": "P_WORK_BUSY", "subMode": ""}, XtoolStatus.BUSY),
 ])
 async def test_the_polled_job_phase(cur_mode: dict, status: XtoolStatus) -> None:
     protocol = _protocol()

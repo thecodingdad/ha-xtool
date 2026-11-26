@@ -366,6 +366,9 @@ WSV2_MODE_MAP: dict[str, XtoolStatus] = {
     "P_SECURE_CONFIRM":     XtoolStatus.IDLE,
     "P_BOTTOM_BED_LEVELING": XtoolStatus.MEASURING,
     "P_WIFI_CONFIG":        XtoolStatus.WIFI_SETUP,
+    # Not a job: Studio puts the P3 in it while it stitches photos of the
+    # close camera, and shows it as a state of its own.
+    "P_WORK_BUSY":          XtoolStatus.BUSY,
     "P_UPGRADE":            XtoolStatus.FIRMWARE_UPDATE,
     "P_ERROR":              XtoolStatus.ERROR_LIMIT,
     "P_EMERGENCY_STOP":     XtoolStatus.ERROR_LIMIT,

@@ -72,6 +72,7 @@ class XtoolStatus(StrEnum):
     WORKING_API = "working_api"
     WORKING_BUTTON = "working_button"
     MEASURE_AREA = "measure_area"
+    BUSY = "busy"  # busy outside a job (the P3 while Studio uses its cameras)
     FOCUSING = "focusing"  # autofocus running
     WARMING_UP = "warming_up"  # UV laser not ready yet
     LASER_OVERHEAT = "laser_overheat"

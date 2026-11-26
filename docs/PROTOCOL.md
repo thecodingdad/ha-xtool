@@ -1568,7 +1568,7 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 | `P_BOTTOM_BED_LEVELING` | Levelling the bottom bed (P3) |
 | `P_WIFI_CONFIG` | Wi-Fi setup (P3) |
 | `P_TESTING` | Factory test (P3) |
-| `P_WORK_BUSY` | Busy outside a job (P3): Studio sets it itself while it stitches photos of the close camera |
+| `P_WORK_BUSY` | Busy outside a job (P3): Studio sets it itself while it stitches photos of the close camera, and shows it as a state of its own (`getCurrentStatus`) |
 
 The P3 modes are those of its firmware's status controller (40.23.012).
 

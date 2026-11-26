@@ -172,7 +172,8 @@
           "focusing": "Focusing",
           "warming_up": "Warming up",
           "laser_overheat": "Laser overheat",
-          "unknown": "Unknown"
+          "unknown": "Unknown",
+          "busy": "Busy"
         },
         "state_attributes": {
           "laser_position_x": {
