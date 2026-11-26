@@ -2155,6 +2155,13 @@ Other V1 models expose a single `GET /device/machineInfo` endpoint that returns 
 
 The M1 also uses different action paths for job control (`/cnc/cmd?cmd=<M-code>` for homing/light/lock, `/cnc/data?action=start|pause|stop` for processing) and fill-light (`/setfilllight?bright=<n>` GET-with-query instead of POST-body). The same legacy dialect applies to P1 (oldest Laserbox firmware).
 
+Studio's M1 reads a job's progress with `POST /cnc/data?query=progress`
+(`queryProcessPercent`), which answers `{progress}` in percent;
+`/cnc/data?action=progress` and `/progress` do not answer. Its camera
+photo is `GET :8329/snap?stream=0` (`captureImage`), a JPEG. Every
+`/cnc/status` reply carries `CPU_TEMP`, the CPU temperature in °C as a
+string; Studio does not read it.
+
 ### Ports
 
 | Port | Purpose |

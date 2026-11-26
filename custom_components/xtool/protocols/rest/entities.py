@@ -309,10 +309,11 @@ class XtoolCamera(XtoolEntity, Camera):
         stream_index: int,
         key: str,
         translation_key: str,
+        snap_path: str | None = None,
     ) -> None:
         XtoolEntity.__init__(self, coordinator)
         Camera.__init__(self)
-        self._stream_index = stream_index
+        self._snap_path = snap_path or f"/camera/snap?stream={stream_index}"
         self._attr_translation_key = translation_key
         self._set_unique_id(f"{key}")
         self._last_image: bytes | None = None
@@ -329,10 +330,7 @@ class XtoolCamera(XtoolEntity, Camera):
             # A photo wakes a sleeping P2; keep showing the last one
             return self._last_image
 
-        url = (
-            f"http://{self.coordinator.host}:{REST_CAMERA_PORT}"
-            f"/camera/snap?stream={self._stream_index}"
-        )
+        url = f"http://{self.coordinator.host}:{REST_CAMERA_PORT}{self._snap_path}"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -589,9 +587,31 @@ def build_rest_cameras(coordinator: XtoolCoordinator) -> list[Camera]:
             XtoolCamera(coordinator, idx, key, t_key)
             for idx, key, t_key in _REST_CAMERAS
         )
+    if model.single_camera_snap_path:
+        entities.append(XtoolCamera(coordinator, 0, "camera", "camera", model.single_camera_snap_path))
     if model.has_fire_record:
         entities.append(XtoolFireRecordCamera(coordinator))
     return entities
+
+
+TASK_PROGRESS_DESCRIPTION = XtoolSensorEntityDescription(
+    key="task_progress",
+    translation_key="task_progress",
+    icon="mdi:progress-clock",
+    native_unit_of_measurement="%",
+    suggested_display_precision=0,
+    value_fn=lambda state, _: state.task_progress,
+)
+CPU_TEMP_DESCRIPTION = XtoolSensorEntityDescription(
+    key="cpu_temp",
+    translation_key="cpu_temp",
+    icon="mdi:cpu-64-bit",
+    device_class=SensorDeviceClass.TEMPERATURE,
+    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+    state_class=SensorStateClass.MEASUREMENT,
+    entity_category=EntityCategory.DIAGNOSTIC,
+    value_fn=lambda state, _: state.cpu_temp,
+)
 
 
 def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
@@ -613,6 +633,13 @@ def build_rest_sensors(coordinator: XtoolCoordinator) -> list[SensorEntity]:
         if description.key not in skip_keys
     ]
     model = coordinator.model
+    if model.has_task_progress:
+        entities.append(XtoolSensor(coordinator, TASK_PROGRESS_DESCRIPTION))
+    if model.has_cpu_temp:
+        # Off until turned on, as on the P2
+        cpu_temp = XtoolSensor(coordinator, CPU_TEMP_DESCRIPTION)
+        cpu_temp._attr_entity_registry_enabled_default = False
+        entities.append(cpu_temp)
     if model.has_distance_measure:
         entities.append(XtoolLastDistance(coordinator))
     # Universal diagnostic sensors — backed by state fields the M1
@@ -1276,24 +1303,8 @@ def build_rest_events(coordinator: XtoolCoordinator) -> list[EventEntity]:
 # --- P2 --------------------------------------------------------------------
 
 _P2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
-    XtoolSensorEntityDescription(
-        key="task_progress",
-        translation_key="task_progress",
-        icon="mdi:progress-clock",
-        native_unit_of_measurement="%",
-        suggested_display_precision=0,
-        value_fn=lambda state, _: state.task_progress,
-    ),
-    XtoolSensorEntityDescription(
-        key="cpu_temp",
-        translation_key="cpu_temp",
-        icon="mdi:cpu-64-bit",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        state_class=SensorStateClass.MEASUREMENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda state, _: state.cpu_temp,
-    ),
+    TASK_PROGRESS_DESCRIPTION,
+    CPU_TEMP_DESCRIPTION,
     # Studio's Work info
     XtoolSensorEntityDescription(
         key="working_seconds",

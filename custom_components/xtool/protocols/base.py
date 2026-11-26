@@ -271,6 +271,15 @@ class XtoolDeviceModel:
     # the multi-function carriage (``workhead_ID`` / ``knife_head``).
     has_tool_heads: bool = False
     has_cpu_fan: bool = False  # REST: M1 Ultra CPU fan
+    # REST: the CPU temperature (°C) in ``/cnc/status``'s ``CPU_TEMP``
+    # (M1; Studio does not read it, the M1 reports it in every reply).
+    has_cpu_temp: bool = False
+    # REST: the job's progress from ``POST /cnc/data?query=progress``
+    # (``{progress}``, percent), Studio's M1 ``queryProcessPercent``.
+    has_task_progress: bool = False
+    # REST: one camera whose photo is ``GET :8329<path>`` (M1: Studio's
+    # ``captureImage``, ``/snap?stream=0``).
+    single_camera_snap_path: str = ""
     has_uv_fire: bool = False  # REST: F1U / M1U / P2S UV-based fire sensor
     # WS-V2 F2 Ultra UV: Status shows Focusing, Warming up (UV laser not
     # ready) and Laser overheat, read and pushed as Studio does.

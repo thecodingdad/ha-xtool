@@ -20,6 +20,9 @@ XTOOL_M1 = XtoolDeviceModel(
     has_z_axis=True,
     has_fill_light=True,
     has_mode_switch=True,
+    has_cpu_temp=True,
+    has_task_progress=True,
+    single_camera_snap_path="/snap?stream=0",
     firmware_content_id="xTool-m1-firmware",
     firmware_flash_strategy="m1_four_step",
 )

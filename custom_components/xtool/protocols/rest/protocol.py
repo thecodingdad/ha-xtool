@@ -1280,6 +1280,21 @@ class RestProtocolM1Legacy(RestProtocol):
             task_id = status_data.get("taskId")
             if task_id:
                 state.task_id = str(task_id)
+            # Degrees as a string, e.g. "37"
+            try:
+                state.cpu_temp = round(float(status_data["CPU_TEMP"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+
+        # Studio's queryProcessPercent, while a job runs
+        if state.status in (XtoolStatus.PROCESSING, XtoolStatus.PAUSED):
+            progress = await self._post_json("/cnc/data?query=progress")
+            try:
+                state.task_progress = max(0.0, min(100.0, float(progress["progress"])))
+            except (KeyError, TypeError, ValueError):
+                pass
+        else:
+            state.task_progress = None
 
         # 2 — Fill light brightness (device scale 0-255 → HA 0-100)
         fl = await self._get_json("/getfilllight")
