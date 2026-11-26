@@ -2343,6 +2343,13 @@ The REST `/cnc/status` JSON uses different codes than the S1's M222.
 Both can be normalised onto the same status set with a small lookup
 table (see `_REST_STATUS_MAP` in the bundles).
 
+The M1 (firmware 40.18.026) answers its state in an upper-case `STATUS`
+key instead, as a P_* code, which is what Studio's M1 reads:
+`{"CPU_TEMP":"37","WATER_TEMP":"0.000000","STATUS":"P_SLEEP","Purifier":"normal","taskId":"…"}`.
+Studio's codes: `P_IDLE`, `P_ONLINE_READY_WORK` (job loaded), `P_WORKING`,
+`P_HUNG` (paused), `P_FINISH`, `P_SLEEP`. Its `/device/runningStatus`
+answers `invalid request`.
+
 
 ---
 

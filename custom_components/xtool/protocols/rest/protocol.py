@@ -289,10 +289,11 @@ class RestProtocol(XtoolProtocol):
             mapped = _map_rest_status(status_data)
             if mapped is None:
                 _LOGGER.debug(
-                    "REST /cnc/status mode unmapped (mode=%r subMode=%r) — "
-                    "please report",
+                    "REST /cnc/status mode unmapped (mode=%r subMode=%r "
+                    "STATUS=%r) — please report",
                     status_data.get("mode"),
                     status_data.get("subMode"),
+                    status_data.get("STATUS"),
                 )
         if mapped is None:
             running = await self._get_json("/device/runningStatus")
@@ -1512,6 +1513,7 @@ _REST_MODE_MAP: dict[str, XtoolStatus] = {
     "P_WORK_DONE":          XtoolStatus.FINISHED,
     "P_FINISH":             XtoolStatus.FINISHED,
     "P_PAUSE":              XtoolStatus.PAUSED,
+    "P_HUNG":               XtoolStatus.PAUSED,  # the M1's pause (Studio's IS_PAUSE)
     "P_MEASURE":            XtoolStatus.MEASURING,
     "P_FRAMING":            XtoolStatus.FRAMING,
     "P_FRAME_READY":        XtoolStatus.FRAME_READY,
@@ -1521,10 +1523,18 @@ _REST_MODE_MAP: dict[str, XtoolStatus] = {
 
 
 def _map_rest_status(data: dict) -> XtoolStatus | None:
-    """Map REST /cnc/status response to XtoolStatus."""
+    """Map REST /cnc/status response to XtoolStatus.
+
+    The M1 answers its state as a ``STATUS`` P_* code, which is what
+    Studio's M1 reads (``getStatus``).
+    """
     mode = data.get("mode", "")
     sub_mode = data.get("subMode", "")
-    return _REST_STATUS_MAP.get(mode) or _REST_STATUS_MAP.get(sub_mode)
+    return (
+        _REST_STATUS_MAP.get(mode)
+        or _REST_STATUS_MAP.get(sub_mode)
+        or _REST_MODE_MAP.get(str(data.get("STATUS", "")).upper())
+    )
 
 
 def _map_rest_mode(mode: str) -> XtoolStatus | None:
