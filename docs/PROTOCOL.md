@@ -1527,6 +1527,8 @@ and without `type:"response"`. Frame schema:
 | `/gap/status` | `GAP` | `OPEN`/`CLOSE` | Cover transitions. **Inverted naming:** firmware emits `OPEN` when the cover is closed and `CLOSE` when it is opened (matches the `state:"on"` / `state:"off"` polarity of the polled `gap` peripheral). |
 | `/machine_lock/status` | `MACHINE_LOCK` | `OPEN`/`CLOSE` | USB safety-key edge — `OPEN` = key removed (lockout active), `CLOSE` = key inserted (system armed). Matches the `/peripheral/machine_lock` polarity. |
 
+The P3 (firmware 40.23.012) sends the same pushes under other URLs: `work/mode_change` (no leading slash) for `/work/mode`, with `info.timeUse` (seconds) when the mode changes to `P_WORK_DONE`, and `/work/status` for `/device/status`. It sends no `/work/result`.
+
 ### `P_*` mode enum (V2 work-state)
 
 Used in `/v1/device/runtime-infos.curMode.mode` and the
@@ -1548,6 +1550,7 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 | `P_UPGRADE` | Firmware upgrade in progress |
 | `P_ERROR` | Error state |
 | `P_EMERGENCY_STOP` | Emergency-stop button pressed (paired with the `/emergency/status EMERGENCY_STOP VOLTAGE_TRIGGER` push; cleared by `/emergency/status … RESUME`). |
+| `Work` | A job (P3), its phase in `subMode`: `workReady` loaded, `working` processing, `workPause` paused (Studio's P3 reads `<mode>.<subMode>`). |
 
 `subMode` carries the working-mode classifier (e.g. `LASER_PLANE`,
 `KNIFE_CUT`, `INK_PRINT`, `DTF_PRINT`, `ROTATE_ATTACHMENT`,

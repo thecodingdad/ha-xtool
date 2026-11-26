@@ -364,6 +364,31 @@ WSV2_MODE_MAP: dict[str, XtoolStatus] = {
 }
 
 
+# The P3 reports ``mode: "Work"`` with the job phase in ``subMode``, as
+# Studio's P3 getCurrentStatus reads it (``Work.workReady`` /
+# ``Work.working`` / ``Work.workPause``).
+_WSV2_WORK_SUB_MODES: dict[str, XtoolStatus] = {
+    "WORKREADY": XtoolStatus.PROCESSING_READY,
+    "WORKING":   XtoolStatus.PROCESSING,
+    "WORKPAUSE": XtoolStatus.PAUSED,
+}
+
+
+def map_wsv2_mode(mode: Any, sub_mode: Any = "") -> XtoolStatus | None:
+    """Status for a V2 ``mode`` / ``subMode`` pair."""
+    mode_s = str(mode or "").upper()
+    if mode_s == "WORK":
+        return _WSV2_WORK_SUB_MODES.get(str(sub_mode or "").upper())
+    return WSV2_MODE_MAP.get(mode_s)
+
+
+# The P3 sends these pushes under other URLs.
+_WSV2_PUSH_URL_ALIASES: dict[str, str] = {
+    "/work/mode_change": "/work/mode",
+    "/work/status": "/device/status",
+}
+
+
 # Map firmware-emitted button-press strings to the canonical
 # ``XtoolEvent`` button event types. The "SHOERT_PRESS" misspelling
 # was reported in live MetalFab traces (issue #3) — normalising here
@@ -1906,6 +1931,9 @@ class WSV2Protocol(XtoolProtocol):
 
     def _dispatch_push(self, event: dict[str, Any]) -> None:
         url = event.get("url") or ""
+        if url and not url.startswith("/"):
+            url = "/" + url
+        url = _WSV2_PUSH_URL_ALIASES.get(url, url)
         data = event.get("data") if isinstance(event.get("data"), dict) else {}
         module = data.get("module")
         typ = data.get("type")
@@ -1977,9 +2005,29 @@ class WSV2Protocol(XtoolProtocol):
                         self._latest["heater_connected"] = (
                             connect_state.strip().lower() == "connected"
                         )
-            mapped = WSV2_MODE_MAP.get(mode)
+            mapped = map_wsv2_mode(
+                mode, info.get("subMode") if isinstance(info, dict) else ""
+            )
             if mapped is not None:
                 self._latest["status"] = mapped
+            # The P3 sends no /work/result: the job's duration comes with
+            # the mode change to P_WORK_DONE.
+            if (
+                mode == "P_WORK_DONE"
+                and isinstance(info, dict)
+                and info.get("timeUse") is not None
+            ):
+                task_id = str(self._latest.get("task_id") or "")
+                try:
+                    secs = int(info["timeUse"])
+                    self._latest["task_time"] = secs
+                    self._latest["last_job_time_seconds"] = secs
+                except (TypeError, ValueError):
+                    secs = None
+                attrs: dict[str, Any] = {"task_id": task_id} if task_id else {}
+                if secs is not None:
+                    attrs["duration"] = secs
+                self._maybe_emit_job_event("finished", task_id, attrs or None)
 
         elif url == "/device/status" and module == "STATUS_CONTROLLER":
             info_str = str(info).lower() if info is not None else ""
@@ -2555,7 +2603,7 @@ class WSV2Protocol(XtoolProtocol):
                 mode = str(cur_mode.get("mode") or "").upper()
                 if mode:
                     self._device_mode = mode
-                mapped = WSV2_MODE_MAP.get(mode)
+                mapped = map_wsv2_mode(mode, cur_mode.get("subMode"))
                 if mapped is not None:
                     state.status = mapped
                     self._latest["status"] = mapped
