@@ -1621,9 +1621,6 @@
       },
       "sync_blade": {
         "name": "Sync blade"
-      },
-      "continue_job": {
-        "name": "Continue"
       }
     },
     "image": {

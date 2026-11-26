@@ -1621,9 +1621,6 @@
       },
       "sync_blade": {
         "name": "Klinge synchronisieren"
-      },
-      "continue_job": {
-        "name": "Fortsetzen"
       }
     },
     "image": {

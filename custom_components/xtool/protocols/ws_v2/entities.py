@@ -1947,8 +1947,6 @@ class WSV2PrintResumeJob(_WSV2PrintJobButton):
 
     def __init__(self, coordinator: XtoolCoordinator) -> None:
         super().__init__(coordinator, "mdi:play")
-        # It only continues: Studio starts a job from its own print page
-        self._attr_translation_key = "continue_job"
 
     async def _refusal(self) -> tuple[str, dict[str, str]] | None:
         return await self.coordinator.protocol.resume_refusal()

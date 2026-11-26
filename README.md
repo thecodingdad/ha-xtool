@@ -279,8 +279,7 @@ The P2's cameras are straightened with its own calibration. Each has Crop preset
 
 | Entity | Description |
 |---|---|
-| Pause / Resume job / Cancel | Job control |
-| Pause / Continue / Cancel | **O1 Omni.** Each available only while Studio's print page shows it: Pause while printing, Continue while paused (not during the O1's own head-clean pauses), Cancel in every job step but drying and cutting. Like Studio, Continue is refused with the lid open, a moisturizing fluid missing or running out, the waste ink tank missing or full, or while the white ink is stirred. Studio's ink-cartridge check is left to the printer. A job is started from Studio |
+| Pause / Resume job / Cancel | Job control. **O1 Omni:** each available only while Studio's print page shows it: Pause while printing, Resume while paused (not during the O1's own head-clean pauses), Cancel in every job step but drying and cutting. Like Studio, Resume is refused with the lid open, a moisturizing fluid missing or running out, the waste ink tank missing or full, or while the white ink is stirred; Studio's ink-cartridge check is left to the printer. On the O1, Resume only resumes: a job is started from Studio |
 | Home all axes / Home XY / Home Z / Home laser / Z-axis homing | Homing |
 | Measure distance | IR distance measurement |
 | Sync blade | **M1 Ultra.** Turns the multi-function carriage so it identifies its blade (shown in Blade); refused until the axes are homed. Only while the multi-function carriage is fitted |
