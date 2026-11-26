@@ -3229,10 +3229,11 @@ light blinks); `M9093` connected it within 2 s.
 reads it: `A<version>`; `J` 1 while it sprays (Studio sends its
 extinguish notice on the rising edge); `G` the gas cylinder, -1 without
 one, 0-3 the gas level Studio shows with one; `T` the gas remaining
-(raw); `S` error bits: 4 no gas cylinder, 8 gas insufficient, 16
-extinguisher drive abnormal, 32 the cylinder needs calibrating; `E:` the
-serial. `W` is not read by Studio. Calibration is `M9252 S0`. Its F0F7
-prefix on firmware with `/v1/parts/control` is `[82, 115, 111, 1, 0]`.
+(raw); `S` error bits: 4 no gas cylinder (Studio then shows no cylinder,
+whatever `G` says), 8 gas insufficient, 16 extinguisher drive abnormal,
+32 the cylinder needs calibrating; `W` the weight; `E:` the serial.
+Calibration is `M9252 S0`. Its F0F7 prefix is `[82, 115, 111, 1, 0]`,
+through `/v1/parts/control` and the legacy `/passthrough` alike.
 
 Pushes: `/v1/project/accessory/message` (REPORT) `{dev_id, message}` —
 an accessory's own report: the Fire Safety Set 2's `M9033` about every

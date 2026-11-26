@@ -612,6 +612,8 @@ def test_fire_box_report() -> None:
 @pytest.mark.parametrize(("report", "fields"), [
     ("A40.223 J1 S0 G2 T300", {"spraying": True, "gas_level": 2}),
     ("A40.223 J0 S4 G-1 T0", {"cylinder_installed": False, "gas_level": 0}),
+    # Studio: bit 4 of S means no cylinder, whatever G says
+    ("A40.223 J0 S4 G3 T410", {"cylinder_installed": False, "gas_level": 0}),
     ("A40.223 J0 S8 G0 T20", {"gas_low": True, "cylinder_installed": True, "gas_level": 0}),
     ("A40.223 J0 S16 G3 T410", {"drive_fault": True, "gas_low": False}),
     ("A40.223 J0 S40 G3 T410", {"calibration_needed": True, "gas_low": True, "drive_fault": False}),

@@ -56,6 +56,7 @@ FIRE_EXTINGUISHER_V1_5 = AccessoryDefinition(
 # Error bits of the ``S`` value, as Studio's error dialogs name them:
 # 4 no gas cylinder (also reported as ``G-1``), 8 gas insufficient,
 # 16 fire extinguisher drive abnormal, 32 the cylinder needs calibrating.
+_FIRE_BOX_NO_CYLINDER = 4
 _FIRE_BOX_GAS_LOW = 8
 _FIRE_BOX_DRIVE_FAULT = 16
 _FIRE_BOX_CALIBRATION = 32
@@ -68,14 +69,19 @@ def parse_fire_box_info(text: str) -> dict[str, object]:
     T<gas remaining> W<…> E:"<sn>"``, e.g.
     ``A40.223.004.5222.01.B02 J0 S0 G3 T410 W1190 E:"…"``. ``G`` is -1
     without a cylinder and 0-3 (the gas level Studio shows) with one;
-    ``J`` is 1 while it sprays. ``W`` is not read by Studio.
+    with bit 4 of ``S`` set there is no cylinder, whatever ``G`` says.
+    ``J`` is 1 while it sprays; ``W`` is the weight (Studio's ``weight``).
     """
     fields: dict[str, object] = {
         "version": text.split(" ", 1)[0].removeprefix("A") or None,
         "sn": quoted(text, "E:"),
     }
+    errors = num(text, "S")
     cylinder = num(text, "G")
-    if cylinder is not None:
+    if errors is not None and int(errors) & _FIRE_BOX_NO_CYLINDER:
+        fields["cylinder_installed"] = False
+        fields["gas_level"] = 0
+    elif cylinder is not None:
         installed = int(cylinder) in (0, 1, 2, 3)
         fields["cylinder_installed"] = installed
         fields["gas_level"] = int(cylinder) if installed else 0
@@ -85,7 +91,6 @@ def parse_fire_box_info(text: str) -> dict[str, object]:
     spraying = num(text, "J")
     if spraying is not None:
         fields["spraying"] = int(spraying) != 0
-    errors = num(text, "S")
     if errors is not None:
         bits = int(errors)
         fields["gas_low"] = bool(bits & _FIRE_BOX_GAS_LOW)
