@@ -639,10 +639,11 @@ XTOOL_M2_WSV2 = XtoolDeviceModel(
 # xTool O1 Omni Printer (model_id DT002) — UV / DTG printer, V2-only
 # (Studio ext.json: ``protocolVersion:"V2"``, ``channelType:"socket"``
 # for both USB and WIFI, ``machineType:"PRINT"``). Verified against a
-# live O1 on firmware 40.101.013.01.ht1. The first iteration is
-# read-only: status, consumables, doors, environment, queue, alarms
-# and the firmware-update check. No camera entity — the O1's
-# Pixel-Scan system is a CIS line scanner, not a live camera.
+# live O1 on firmware 40.101.013.01.ht1: status, consumables, doors,
+# environment, queue, alarms and the firmware-update check. Job
+# control and the fill light follow Studio's DT002 bundle and are not
+# checked on an O1 yet. No camera entity — the O1's Pixel-Scan system
+# is a CIS line scanner, not a live camera.
 XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
     model_id="DT002",
     name="xTool O1 Omni Printer",
@@ -655,8 +656,11 @@ XTOOL_O1_OMNI_WSV2 = XtoolDeviceModel(
     # Working / standby / UV lamp time from /v1/project/device/config/all,
     # last finished job's duration from the task history.
     has_lifetime_counters=True,
-    # Write paths (config PUT, job control) not verified yet.
+    # Its own Pause / Resume / Cancel and fill light instead of the
+    # shared WS-V2 controls, which the O1 does not have.
     is_read_only=True,
+    has_print_job_control=True,
+    has_switched_fill_light=True,
     # Alarm list is mostly door / cartridge / tank notices.
     has_generic_alarms=True,
     has_bt_accessories=False,

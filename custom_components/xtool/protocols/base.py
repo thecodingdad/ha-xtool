@@ -298,6 +298,13 @@ class XtoolDeviceModel:
     # tanks, front/rear doors, air filter, print-head temperatures,
     # print queue and the active-alarm list.
     has_ink_cartridges: bool = False
+    # DT002 (O1 Omni): Pause, Resume and Cancel as the buttons of
+    # Studio's print page, each available only while Studio shows it.
+    has_print_job_control: bool = False
+    # DT002 (O1 Omni): a fill light that is only switched on and off
+    # (``POST /v1/project/device/fill-light``), with the
+    # ``fillLightAutoOffTime`` config as its auto-off.
+    has_switched_fill_light: bool = False
     has_ambient_sensors: bool = False  # enclosure temperature + humidity
     # Last job time, working / standby time, UV lamp + air purifier runtime
     has_lifetime_counters: bool = False
@@ -310,7 +317,8 @@ class XtoolDeviceModel:
     has_machine_info_worktime: bool = False
     # Hides the shared WS-V2 controls (Beep + Cover-check switches,
     # exhaust post-run Number, Pause / Resume / Cancel buttons) on
-    # models whose write surface differs and isn't verified yet.
+    # models whose write surface differs; such a model brings its own
+    # controls, if any, through its own flags.
     is_read_only: bool = False
     # WS-V2 treats any alarm-list entry as a fire-warning edge. Set on
     # models whose alarm list mostly carries door / consumable notices
@@ -561,6 +569,11 @@ class XtoolDeviceState:
     queued_jobs: int | None = None
     air_purifier_runtime_seconds: int | None = None
     uv_lamp_runtime_seconds: int | None = None
+    # Which of Studio's print-page buttons it shows now
+    can_pause_job: bool = False
+    can_resume_job: bool = False
+    can_cancel_job: bool = False
+    fill_light_on: bool | None = None
 
     # REST IR LEDs
     ir_led_close: bool = False

@@ -1621,6 +1621,9 @@
       },
       "sync_blade": {
         "name": "Klinge synchronisieren"
+      },
+      "continue_job": {
+        "name": "Fortsetzen"
       }
     },
     "image": {
@@ -1872,6 +1875,39 @@
     },
     "feeder_laser_not_idle": {
       "message": "Das Förderband hat sich nicht bewegt: Der Laser ist nicht bereit."
+    },
+    "job_not_printing": {
+      "message": "Der Auftrag wurde nicht pausiert: Der Drucker druckt nicht."
+    },
+    "job_not_paused": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Kein Auftrag ist pausiert."
+    },
+    "job_none_to_cancel": {
+      "message": "Es gibt keinen Auftrag zum Abbrechen."
+    },
+    "job_lid_open": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Bitte zuerst den Deckel schließen."
+    },
+    "job_moisturizing_missing": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Befeuchtungsflüssigkeit {number} ist nicht eingesetzt."
+    },
+    "job_moisturizing_low": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Befeuchtungsflüssigkeit {number} reicht nicht aus."
+    },
+    "job_waste_tank_missing": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Der Resttintenbehälter ist nicht eingesetzt."
+    },
+    "job_waste_tank_full": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Der Resttintenbehälter ist voll."
+    },
+    "job_white_ink_stirring": {
+      "message": "Der Auftrag wurde nicht fortgesetzt: Die weiße Tinte wird gerührt, bitte in {seconds} s erneut versuchen."
+    },
+    "fill_light_busy": {
+      "message": "Das Arbeitslicht lässt sich nicht schalten, während der Drucker scannt, misst oder kalibriert."
+    },
+    "setting_locked_while_printing": {
+      "message": "Diese Einstellung lässt sich während eines Auftrags nicht ändern."
     }
   },
   "selector": {

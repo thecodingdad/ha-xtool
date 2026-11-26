@@ -2984,12 +2984,53 @@ automatic when `clean/start` follows within ~2 s.
 
 ### Write surface
 
-Not verified on hardware yet. The bundle drives jobs through
-`/v1/project/device/control` (POST, `action`), config through
-`PUT /v1/platform/device/config`, the fill light through
-`POST /v1/project/device/fill-light`, and exposes maintenance routes
-(`/v1/project/maintain/*`, pumps, `/v1/project/debug/mcode`) that
-should not be automated.
+Not verified on hardware yet; from Studio 1.11.9's DT002 bundle.
+
+| Studio | Frame |
+|---|---|
+| Pause (`pauseProcessing`) | `POST /v1/project/device/control`, `params:{action:"PAUSE"}` |
+| Continue (`continueProcess`) | the same with `action:"RESUME"` on a paused job, `"START"` on one waiting in `WorkReady` |
+| Cancel (`cancelProcessing`) | `POST /v1/project/task/cancel`, `data:{id:<task>}` |
+| Fill light (`setLightState`) | `POST /v1/project/device/fill-light`, `data:{action:"on"\|"off"}`; Studio never writes `brightness` |
+| Settings (`setConfigs`) | `PUT /v1/platform/device/config` with a flat body, e.g. `{fillLightAutoOffTime: 600}`; read with `GET` and `data:{kv:[keys]}` |
+
+**Print page.** Studio's `OperationButton` shows Pause in step
+`START_PROCESS` (mode `WorkPlay`), Continue in `PAUSE_PROCESS` /
+`ROLL_PAUSE_PROCESS` (`WorkPause` / `WorkRollPause`), Start in
+`WAIT_START` (`WorkReady`), Skip in `DRYING_PROCESS`, and Cancel in every
+step but `CUTTING` and `DRYING_PROCESS`. Its PRINT guard refuses pause
+and continue in `Initial`, `Clean`, `Scan`, `Motion`, `Calibration`,
+`Measure`, `Sleep`, `LowPower`, `Upgrade`, `Network`, `Error` and
+`Cutting`.
+
+**Checks before Continue** (`continueProcess`, in order): connected; the
+lid closed (`peripheral-status` `lid` false); the consumables
+(`detectConsumable`: the ink cartridges against a slot table per SKU,
+releasing the road of a sleeping head the job does not use; the
+moisturizing fluid of road 1, and of road 2 on SKUs 1-3, in place and
+`level` ≠ 1; the waste tank in place and `level` ≠ 2); no white-ink
+stirring pause (`ink-tank` `whiteStireStatus.active`, `remainSec`
+left). Roll and DTF jobs also check their accessories. Studio's SKUs:
+0 single UV, 1 single DTG, 2 dual UV, 3 UV + DTG.
+
+**Fill light.** Studio refuses it in `Scan`, `Measure` and
+`Calibration`. Its auto-off (`fillLightAutoOffTime`, seconds) is set as
+Always on (0) or 1-600 minutes, default 10; Studio locks its settings
+while `isInProcessing` (`WorkPlay`, `WorkReady`, `WorkPause`,
+`WorkDrying`, `WorkBaking`, and `Cutting` with jobs queued).
+
+**Standby and holiday mode** (device panel). Standby puts one print
+head to sleep, wake brings it back: `POST
+/v1/project/maintain/switch-moisturizing-ink` with `data:{inkRoad,
+switchStatus}`, 1 to sleep, 2 to wake (after an ink-level check). A
+sleeping head reports `work_state` 2 (moisturizing) in
+`printer-head-param`, i.e. it holds moisturizing fluid instead of ink.
+Holiday mode sends the sleep for every working head in turn, for a
+longer break. Not offered here.
+
+The bundle also exposes maintenance routes (`/v1/project/maintain/*`,
+`/v1/project/clean`, pumps, `/v1/project/debug/mcode`) that should not
+be automated.
 
 
 ## X1 protocol (JS001)
