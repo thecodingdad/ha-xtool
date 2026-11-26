@@ -1407,7 +1407,10 @@ and `0`, and `GET /v1/platform/camera/list` answers code -1
 `getCameraList failed`. Studio's GS009 bundles never call these; they
 only take photos. Only the P3 bundle and the X1's extension call
 `/v1/platform/camera/live`; on the X1 the H.264 arrives on the
-`media_stream` socket itself, see [X1 live video](#live-video).
+`media_stream` socket itself, see [X1 live video](#live-video). Studio's
+live monitor names the P3's cameras `far` and `upside`; on a P3 the H.264
+arrives the same way, with the stream byte 0 for `far` and 2 for
+`upside`.
 
 **Firmware infrastructure** (`/tmp/f1v2-fw/apps/root/lib/libmk-host.so`,
 class `streamService` + `rtc::impl::PeerConnection`):

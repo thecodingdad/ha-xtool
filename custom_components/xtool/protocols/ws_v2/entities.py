@@ -2333,7 +2333,7 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
     The state is Streaming only while a live view is open, and Idle
     otherwise.
 
-    On a model with ``has_live_video`` (the X1) the camera also offers
+    On a model with ``has_live_video`` (X1, P3) the camera also offers
     Home Assistant's stream (HLS / WebRTC): its ``stream_source`` is the
     laser's own H.264 on a local port (:mod:`.live_video`), repackaged
     by the stream integration and go2rtc, not decoded here.
@@ -2370,8 +2370,9 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         self._live_source: LiveStreamSource | None = None
         if coordinator.model.has_live_video:
             protocol = coordinator.protocol
+            live_name = dict(coordinator.model.live_video_names).get(camera_name, camera_name)
             self._live_source = LiveStreamSource(
-                lambda: protocol.live_video(camera_name), f"{camera_name} camera",
+                lambda: protocol.live_video(live_name), f"{camera_name} camera",
                 self._stream_readers_changed,
             )
             self._attr_supported_features = CameraEntityFeature.STREAM

@@ -465,6 +465,10 @@ XTOOL_P3_WSV2 = XtoolDeviceModel(
     has_water_cooling=True,
     has_camera=True,
     camera_names=("overview", "closeup"),  # P3 retains the V1 dual-camera shape
+    # Studio's live monitor (its cameraMap: far, upside); the H.264 comes
+    # on the media_stream socket, as on the X1.
+    has_live_video=True,
+    live_video_names=(("overview", "far"), ("closeup", "upside")),
     has_camera_exposure=True,
     has_digital_lock=True,
     has_distance_measure=True,

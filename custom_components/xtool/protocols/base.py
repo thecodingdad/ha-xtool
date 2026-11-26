@@ -180,6 +180,9 @@ class XtoolDeviceModel:
     # The cameras have live video: H.264 on the ``media_stream`` socket
     # after ``/v1/platform/camera/live`` (the X1), one camera at a time.
     has_live_video: bool = False
+    # (camera, live name) where ``/v1/platform/camera/live`` names a camera
+    # differently from its photos (the P3: Studio's far / upside).
+    live_video_names: tuple[tuple[str, str], ...] = ()
     # The laser stores a calibration grid for its ``main`` camera
     # (``global_calib.json``); photos are straightened with it, as
     # Studio does (F2 Ultra UV).

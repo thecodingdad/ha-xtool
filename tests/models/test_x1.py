@@ -1240,5 +1240,8 @@ async def test_the_x1_cameras_offer_the_stream(hass: HomeAssistant, x1, socket_e
         assert (await camera.stream_source()).startswith("tcp://127.0.0.1:")
 
 
-def test_only_the_x1_has_live_video() -> None:
-    assert [model for model in DEVICE_MODELS.values() if model.has_live_video] == [X1]
+def test_only_the_lasers_with_studios_live_monitor_have_live_video() -> None:
+    """Studio's live monitor runs on the X1 and the P3 only."""
+    assert [model for model in DEVICE_MODELS.values() if model.has_live_video] == [
+        DEVICE_MODELS["P3_V2"], X1,
+    ]
