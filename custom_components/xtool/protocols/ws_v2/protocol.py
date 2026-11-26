@@ -2989,54 +2989,7 @@ class WSV2Protocol(XtoolProtocol):
                 stats = None
             _LOGGER.debug("V2 %s raw: %s", self.PATH_STATISTICS, stats)
             if isinstance(stats, dict):
-                # Modern firmware (HJ003 / GS003 / F1U …) returns these
-                # exact field names per the Studio bundle's
-                # ``deviceInfo``/``getWorkingTime`` transformResult.
-                # `timeSystemWork` carries the device's total powered-on
-                # time; subtracting `timeModeWorking` gives standby.
-                v = stats.get("timeModeWorking")
-                if isinstance(v, (int, float)):
-                    try:
-                        self._latest["working_seconds"] = int(v)
-                    except (TypeError, ValueError):
-                        pass
-                tsw = stats.get("timeSystemWork")
-                tmw = stats.get("timeModeWorking")
-                if (
-                    isinstance(tsw, (int, float))
-                    and isinstance(tmw, (int, float))
-                ):
-                    try:
-                        self._latest["standby_seconds"] = max(0, int(tsw) - int(tmw))
-                    except (TypeError, ValueError):
-                        pass
-                online = stats.get("numOnlineWorking")
-                offline = stats.get("numOfflineWorking")
-                if (
-                    isinstance(online, (int, float))
-                    or isinstance(offline, (int, float))
-                ):
-                    try:
-                        self._latest["session_count"] = (
-                            int(online or 0) + int(offline or 0)
-                        )
-                    except (TypeError, ValueError):
-                        pass
-                # Legacy field names — kept as fallback for older
-                # firmware revisions whose bundles pre-date the rename.
-                for src, dst in (
-                    ("workingTime",     "working_seconds"),
-                    ("sessionCount",    "session_count"),
-                    ("standbyTime",     "standby_seconds"),
-                    ("toolRuntime",     "tool_runtime_seconds"),
-                    ("totalWorkTime",   "working_seconds"),
-                    ("totalStandbyTime", "standby_seconds"),
-                    ("toolUseTime",     "tool_runtime_seconds"),
-                    ("workCount",       "session_count"),
-                ):
-                    v = stats.get(src)
-                    if isinstance(v, (int, float)):
-                        self._latest[dst] = int(v)
+                self._apply_statistics(stats)
             self._statistics_has_time = isinstance(stats, dict) and any(
                 isinstance(stats.get(k), (int, float))
                 for k in ("timeModeWorking", "workingTime", "totalWorkTime")
@@ -3130,6 +3083,57 @@ class WSV2Protocol(XtoolProtocol):
             state.water_temperature, state.water_flow,
             state.alarm_present,
         )
+
+    def _apply_statistics(self, stats: dict[str, Any]) -> None:
+        """Cache statistics; model dialects can add their own counters."""
+        # Modern firmware (HJ003 / GS003 / F1U …) returns these
+        # exact field names per the Studio bundle's
+        # ``deviceInfo``/``getWorkingTime`` transformResult.
+        # `timeSystemWork` carries the device's total powered-on
+        # time; subtracting `timeModeWorking` gives standby.
+        v = stats.get("timeModeWorking")
+        if isinstance(v, (int, float)):
+            try:
+                self._latest["working_seconds"] = int(v)
+            except (TypeError, ValueError):
+                pass
+        tsw = stats.get("timeSystemWork")
+        tmw = stats.get("timeModeWorking")
+        if (
+            isinstance(tsw, (int, float))
+            and isinstance(tmw, (int, float))
+        ):
+            try:
+                self._latest["standby_seconds"] = max(0, int(tsw) - int(tmw))
+            except (TypeError, ValueError):
+                pass
+        online = stats.get("numOnlineWorking")
+        offline = stats.get("numOfflineWorking")
+        if (
+            isinstance(online, (int, float))
+            or isinstance(offline, (int, float))
+        ):
+            try:
+                self._latest["session_count"] = (
+                    int(online or 0) + int(offline or 0)
+                )
+            except (TypeError, ValueError):
+                pass
+        # Legacy field names — kept as fallback for older
+        # firmware revisions whose bundles pre-date the rename.
+        for src, dst in (
+            ("workingTime",     "working_seconds"),
+            ("sessionCount",    "session_count"),
+            ("standbyTime",     "standby_seconds"),
+            ("toolRuntime",     "tool_runtime_seconds"),
+            ("totalWorkTime",   "working_seconds"),
+            ("totalStandbyTime", "standby_seconds"),
+            ("toolUseTime",     "tool_runtime_seconds"),
+            ("workCount",       "session_count"),
+        ):
+            v = stats.get(src)
+            if isinstance(v, (int, float)):
+                self._latest[dst] = int(v)
 
     def _apply_peripheral_param(
         self,

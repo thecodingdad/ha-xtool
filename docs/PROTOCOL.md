@@ -1561,7 +1561,69 @@ Used in `/v1/device/runtime-infos.curMode.mode` and the
 job type the WS-V2 family (F1, F1 Ultra, F2 family, M1 Ultra, P2S,
 P3, MetalFab, Apparel Printer, …) can run.
 
+### Apparel Printer (DT001 / DT003) status
+
+From an Apparel Printer on firmware `40.100.028.00.ht6`, and Studio's
+DT001 extension (Studio 1.11.9); the DT003 extension reads the same.
+
+**Modes.** Besides the shared ones Studio's DT001 extension knows
+`P_CLEAN` (nozzle cleaning), `P_CALIBRATIPON` (sic; calibration and test
+prints), `P_STARTUP` and `Work`. A print runs as `Work` with `subMode`
+`workReady`, then `working`; `workPause` when paused.
+
+**Lids.** `GET /v1/device/runtime-infos` carries `gapState`, four
+integers, 1 = open: top, left and right lid, then the oven lid (Studio's
+names); `gapOpen` is set while any is open. Open/close tests on a DT001
+confirm the first three. Opening or closing one also pushes
+`data:{module:"GAP", type:"OPEN"|"CLOSE", info:"gap_top"|"gap_left"|"gap_right"}`
+with an empty `url`. The alarm list in the runtime info keeps lid
+entries after the lid closes.
+
+**CPU temperature.** `cpuTemp` is in °C on this printer (38 in the
+capture), not in thousandths as on the lasers.
+
+**Bottles.** `GET /v1/peripheral/water_bottle`: `clean_water_bottle`
+(the moisturizing liquid) `normal` / `empty`, `waste_water_bottle`
+`normal` / `full`, and `detach` when the waste tank is taken out (seen
+on the printer; Studio has no label for it).
+`GET /v1/peripheral/ink_bottle`: `ink_c` / `ink_k` / `ink_m` / `ink_w` /
+`ink_y`, each `normal` / `low` / `empty`.
+
+**Oven (OS1).** `GET /v1/device/roaster` answers `{connectState:
+"Connected"|"Disconnected", heaterTemp, heatingStatus, powderStatus,
+powderShakeSpeed, autoPreheatEnable, heaterSn, firmware}`; this firmware
+has no `/v1/peripheral/heater_temp`. While the oven is off,
+`connectState` is `Disconnected` and its other values are stale.
+
+**Busy flags.** The runtime info and the `/device/status`
+`DEVICE_STATUS` / `INFO` push carry `deviceBusyState.busyFlag`. On the
+printer, bit 262144 stays set while the oven processes, also after the
+printer is back in `P_IDLE`, and bit 32768 is set while the oven feeds
+or ejects (the command, not proof that the belt moves). Studio does not
+read these bits. `powderLoopRun` is independent and can stop before the
+baking ends.
+
+**Job time.** `/print_task/status` pushes `PRINT_TASK` / `TASK_INFO_REPORT`
+with `processingTime` in seconds during a print; `/work/result`'s
+`timeUse` is the print, without the baking after it.
+
+**Statistics and maintenance.** `GET /v1/device/workingInfo` answers
+`timeModeWorking`, `timeSystemWork`, `numWorking` and counters such as
+`numKnifeCut`, `cleanNozzleStandard`, `cleanNozzleDeep` and
+`bumpExceptions` (print-head collisions detected). Studio reads its
+maintenance reminders from the configs (`GET /v1/device/configs` with
+`kv`): it reminds of wiping when `worktimeFromLastCleanMatain` ≥
+`cleanRemindDay` days (in seconds), and of replacing parts when
+`worktimeFromLastFittingChange` ≥ `fittingRemindDay` days; `-1` turns a
+reminder off. Studio offers 1, 3, 7, 10 or 15 days for wiping and 90 days
+and more for parts.
+
+**Collision.** A print-head collision pushes `module:"HEAD_COLLISION",
+type:"CLOSE"`; Studio's alarm table lists `HEAD_COLLISION_CLOSE` as
+`bumpExceptions`. `CLOSE` is the contact, not its end.
+
 ### Behaviour matrix (per-firmware overrides)
+
 
 Some V2 device behaviour is gated by a per-model + per-firmware map
 (`base + per-model overrides`). Observed flags:

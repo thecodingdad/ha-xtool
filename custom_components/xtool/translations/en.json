@@ -172,7 +172,8 @@
           "focusing": "Focusing",
           "warming_up": "Warming up",
           "laser_overheat": "Laser overheat",
-          "unknown": "Unknown"
+          "unknown": "Unknown",
+          "calibrating": "Calibration / test print"
         },
         "state_attributes": {
           "laser_position_x": {
@@ -682,19 +683,18 @@
         }
       },
       "clean_water": {
-        "name": "Cleaning fluid",
+        "name": "Moisturizing liquid",
         "state": {
-          "empty": "Empty",
-          "low": "Low",
-          "normal": "Normal"
+          "normal": "Normal",
+          "empty": "Empty"
         }
       },
       "waste_water": {
         "name": "Waste fluid",
         "state": {
-          "empty": "Empty",
-          "low": "Low",
-          "normal": "Normal"
+          "normal": "Normal",
+          "full": "Full",
+          "detach": "Removed"
         }
       },
       "gyro_x": {
@@ -877,6 +877,33 @@
       },
       "accessory_safetyfireboxpro_gas_remaining": {
         "name": "Gas remaining"
+      },
+      "heater_temperature": {
+        "name": "Oven temperature"
+      },
+      "knife_cut_count": {
+        "name": "Knife cuts"
+      },
+      "print_head_collision_count": {
+        "name": "Print-head collisions detected"
+      },
+      "standard_clean_count": {
+        "name": "Standard nozzle cleans"
+      },
+      "deep_clean_count": {
+        "name": "Deep nozzle cleans"
+      },
+      "wiping_maintenance_elapsed": {
+        "name": "Time since wiping maintenance"
+      },
+      "fitting_replacement_elapsed": {
+        "name": "Time since parts replacement"
+      },
+      "wiping_reminder_interval": {
+        "name": "Wiping reminder interval"
+      },
+      "fitting_reminder_interval": {
+        "name": "Parts replacement reminder interval"
       }
     },
     "binary_sensor": {
@@ -920,10 +947,10 @@
         "name": "Water line"
       },
       "film_buffer_ready": {
-        "name": "Film buffer ready"
+        "name": "Film buffer signal"
       },
       "film_position_ready": {
-        "name": "Film position ready"
+        "name": "Film position signal"
       },
       "powder_loop_running": {
         "name": "Powder loop running"
@@ -1027,6 +1054,27 @@
       },
       "accessory_safetyfireboxpro_calibration_needed": {
         "name": "Cylinder calibration"
+      },
+      "oven_processing": {
+        "name": "Oven processing"
+      },
+      "oven_feed_active": {
+        "name": "Oven feed active"
+      },
+      "wiping_maintenance_due": {
+        "name": "Wiping maintenance due"
+      },
+      "fitting_replacement_due": {
+        "name": "Parts replacement due"
+      },
+      "top_lid_open": {
+        "name": "Top lid"
+      },
+      "left_lid_open": {
+        "name": "Left lid"
+      },
+      "right_lid_open": {
+        "name": "Right lid"
       }
     },
     "camera": {
@@ -1700,7 +1748,8 @@
               "safety_lock": "Safety lock",
               "air_pump": "Air pump",
               "short_circuit": "Short circuit",
-              "other": "Other"
+              "other": "Other",
+              "print_head_collision": "Print-head collision detected"
             }
           }
         }

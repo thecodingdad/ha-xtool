@@ -172,7 +172,8 @@
           "focusing": "Fokussiert",
           "warming_up": "Aufwärmen",
           "laser_overheat": "Laser überhitzt",
-          "unknown": "Unbekannt"
+          "unknown": "Unbekannt",
+          "calibrating": "Kalibrierung / Testdruck"
         },
         "state_attributes": {
           "laser_position_x": {
@@ -705,11 +706,10 @@
         "name": "Gemessene Stärke oder Distanz"
       },
       "clean_water": {
-        "name": "Reinigungsflüssigkeit",
+        "name": "Befeuchtungsflüssigkeit",
         "state": {
-          "empty": "Leer",
-          "low": "Niedrig",
-          "normal": "Normal"
+          "normal": "Normal",
+          "empty": "Leer"
         }
       },
       "cpu_temp": {
@@ -761,9 +761,9 @@
       "waste_water": {
         "name": "Abfallflüssigkeit",
         "state": {
-          "empty": "Leer",
-          "low": "Niedrig",
-          "normal": "Normal"
+          "normal": "Normal",
+          "full": "Voll",
+          "detach": "Entfernt"
         }
       },
       "accessory_largepurifier_filter_pre": {
@@ -877,6 +877,33 @@
       },
       "accessory_safetyfireboxpro_gas_remaining": {
         "name": "Restgas"
+      },
+      "heater_temperature": {
+        "name": "Ofentemperatur"
+      },
+      "knife_cut_count": {
+        "name": "Messerschnitte"
+      },
+      "print_head_collision_count": {
+        "name": "Erkannte Druckkopf-Kollisionen"
+      },
+      "standard_clean_count": {
+        "name": "Standard-Düsenreinigungen"
+      },
+      "deep_clean_count": {
+        "name": "Tiefe Düsenreinigungen"
+      },
+      "wiping_maintenance_elapsed": {
+        "name": "Zeit seit Wischwartung"
+      },
+      "fitting_replacement_elapsed": {
+        "name": "Zeit seit Teilewechsel"
+      },
+      "wiping_reminder_interval": {
+        "name": "Erinnerungsintervall Wischwartung"
+      },
+      "fitting_reminder_interval": {
+        "name": "Erinnerungsintervall Teilewechsel"
       }
     },
     "binary_sensor": {
@@ -981,10 +1008,10 @@
         }
       },
       "film_buffer_ready": {
-        "name": "Filmpuffer bereit"
+        "name": "Filmpuffer-Signal"
       },
       "film_position_ready": {
-        "name": "Filmposition bereit"
+        "name": "Filmpositions-Signal"
       },
       "heater_connected": {
         "name": "Heizung verbunden"
@@ -1027,6 +1054,27 @@
       },
       "accessory_safetyfireboxpro_calibration_needed": {
         "name": "Gasflaschen-Kalibrierung"
+      },
+      "oven_processing": {
+        "name": "Ofen in Betrieb"
+      },
+      "oven_feed_active": {
+        "name": "Ofen-Vorschub aktiv"
+      },
+      "wiping_maintenance_due": {
+        "name": "Wischwartung fällig"
+      },
+      "fitting_replacement_due": {
+        "name": "Teilewechsel fällig"
+      },
+      "top_lid_open": {
+        "name": "Deckel oben"
+      },
+      "left_lid_open": {
+        "name": "Deckel links"
+      },
+      "right_lid_open": {
+        "name": "Deckel rechts"
       }
     },
     "camera": {
@@ -1700,7 +1748,8 @@
               "laser_module": "Lasermodul",
               "tilt": "Neigung",
               "moving": "Bewegung",
-              "emergency_stop": "Not-Halt"
+              "emergency_stop": "Not-Halt",
+              "print_head_collision": "Druckkopf-Kollision erkannt"
             }
           }
         }
