@@ -249,6 +249,9 @@ class XtoolDeviceModel:
     # Wi-Fi signal sensor on its own (``has_laser_info`` adds it with the
     # F2 Ultra UV's lens and calibration sensors).
     has_wifi_signal: bool = False
+    # M2: the ``/v1/platform/wifi/info`` push (``rssiDbm``, ``ssid``,
+    # ``channel``, every few seconds); its sensors are off until turned on.
+    has_wifi_info: bool = False
     # X1 settings: exhaust fan speed and flame alarm sensitivity selects,
     # with the values Studio's settings offer.
     has_exhaust_fan_speed: bool = False
@@ -438,6 +441,8 @@ class XtoolDeviceState:
     cpu_temp: int | None = None
     engraving_lens: str | None = None  # WS-V2: none / small / big
     wifi_signal: int | None = None  # WS-V2: dBm
+    wifi_ssid: str | None = None
+    wifi_channel: int | None = None
     # How Home Assistant reaches the laser ("ethernet" or "wifi"), from
     # the laser's own interface report; None while unknown
     connection: str | None = None

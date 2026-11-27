@@ -68,6 +68,14 @@ M2_PATH_CAMERA_LIVE = "/v1/platform/camera/live"
 M2_PATH_DEVICE_CONTROL = "/v1/project/device/control"
 M2_PATH_STATISTICS = "/v1/project/process/statistics"
 M2_PATH_PROCESS_EVENT = "/v1/platform/device/process"
+M2_PATH_WIFI_INFO = "/v1/platform/wifi/info"
+# Process-event actions (Studio's start / ready / pause / resume / cancel /
+# finish) that are Job events; pause and resume come from the status.
+_M2_PROCESS_EVENTS: dict[str, str] = {
+    "start": "started",
+    "cancel": "cancelled",
+    "finish": "finished",
+}
 M2_PATH_COORDINATE = "/v1/project/device/coordinate"
 M2_PATH_CONTROL_HOME = "/v1/project/control/home"
 M2_PATH_ABSOLUTE_MOVE = "/v1/project/control/absolute-move"
@@ -81,6 +89,17 @@ M2_PATH_PERIPHERAL_PALLET = "/v1/project/peripheral/pallet"
 M2_PATH_PERIPHERAL_FILL_LIGHT = "/v1/project/peripheral/fill-light"
 M2_PATH_PERIPHERAL_AIR_PUMP = "/v1/project/peripheral/airPump-control"
 M2_PATH_PERIPHERAL_SMOKE_FAN = "/v1/project/peripheral/smokeFan-control"
+# The settings Studio's M2 reads (``getConfigs``); the firmware answers a
+# GET without a ``kv`` list with "in_data is not array".
+M2_CONFIG_KEYS = (
+    "fillLightBrightness smokeFanTimeout smokeFanRaiseKitTimeout beepEnable autoDectect "
+    "laserCleanTipEnable airPumpSpeedEngrave airPumpSpeedCutting flameSensitivity "
+    "laserEngravingCutoff3W laserEngravingCutoff10W laserEngravingCutoff20W "
+    "laserEngravingCutoff40W laserCuttingCutoff3W laserCuttingCutoff10W "
+    "laserCuttingCutoff20W laserCuttingCutoff40W automationId slantEnable "
+    "smokeFanEngraveSpeed smokeFanBitmapSpeed smokeFanCuttingSpeed smokeFanCleanTime "
+    "fillLightCleanTime cameraCleanTime raiseKitCleanTime"
+).split()
 
 # Inkjet (read-only surface — actions cap/clean deferred).
 M2_PATH_INKJET_INK_VOLUME = "/v1/project/inkjet/ink-volume"
@@ -176,6 +195,10 @@ class M2WSV2Protocol(WSV2Protocol):
         else:
             super().__init__(host, port)
         self._m2_poll_counter = 0
+        # After a job, until the statistics report its time (singleTime),
+        # with the time they reported before
+        self._awaiting_job_time = False
+        self._job_time_before: int | None = None
 
     # --- Status (overrides base _poll_runtime_status) ----------------------
 
@@ -232,7 +255,7 @@ class M2WSV2Protocol(WSV2Protocol):
 
     async def _poll_m2_configs(self) -> None:
         try:
-            cfg = await self.request(M2_PATH_CONFIG, "GET")
+            cfg = await self.request(M2_PATH_CONFIG, "GET", data={"kv": M2_CONFIG_KEYS})
         except Exception as err:
             _LOGGER.debug("M2 %s failed: %s", M2_PATH_CONFIG, err)
             return
@@ -265,6 +288,12 @@ class M2WSV2Protocol(WSV2Protocol):
         if single is not None:
             state.last_job_time_seconds = single
             self._latest["last_job_time_seconds"] = single
+            if self._awaiting_job_time and single != self._job_time_before:
+                # The laser reports no time while a job runs (Studio counts
+                # it itself); the finished job's time is its own.
+                state.task_time = single
+                self._latest["task_time"] = single
+                self._awaiting_job_time = False
         total = _to_int(stats.get("totalTime"))
         if total is not None:
             state.working_seconds = total
@@ -369,9 +398,11 @@ class M2WSV2Protocol(WSV2Protocol):
         # 5. Smoke-fan running state (every tick, defensive GET).
         await self._poll_m2_smoke_fan(state)
 
-        # 6/7. Configs + statistics — slow cadence.
+        # 6/7. Configs + statistics — slow cadence; the statistics also
+        # right after a job, for its time.
         if slow_tick:
             await self._poll_m2_configs()
+        if slow_tick or self._awaiting_job_time:
             await self._poll_m2_statistics(state)
 
         self._m2_poll_counter += 1
@@ -614,15 +645,16 @@ class M2WSV2Protocol(WSV2Protocol):
                 data={"brightness": value},
             )
 
-        # smoking_fan — on/off. Bundle only defines the URL
-        # (``setSmokeFanSpeed``); body shape borrowed from the
-        # ``weakLaser`` precedent (``{enable:!0}``) since Studio
-        # doesn't ship an explicit ``transformRequest``.
+        # smoking_fan — Studio's turnOnExhaustFan / turnOffExhaustFan send
+        # setSmokeFanSpeed with ``{speed: 1000}`` / ``{speed: 0}``. The
+        # laser reports no fan state, so it shows what was sent last.
         if peripheral_type == "smoking_fan" and action in ("on", "off"):
-            return await self.request(
+            reply = await self.request(
                 M2_PATH_PERIPHERAL_SMOKE_FAN, "POST",
-                data={"enable": action == "on"},
+                data={"speed": 1000 if action == "on" else 0},
             )
+            self._latest["smoking_fan_running"] = action == "on"
+            return reply
 
         # air_pump — same best-effort body shape as smoking_fan.
         if peripheral_type == "air_pump" and action in ("on", "off"):
@@ -701,7 +733,38 @@ class M2WSV2Protocol(WSV2Protocol):
             for url, payload in event["data"].items():
                 self._dispatch_m2_report(url, payload)
             return
+        if isinstance(event.get("data"), list):
+            # NOTIFY / NOTIFY-RECORD: a list of notices
+            for notice in event["data"]:
+                if isinstance(notice, dict):
+                    self._dispatch_m2_notice(notice)
+            return
         super()._dispatch_push(event)
+
+    def _dispatch_m2_notice(self, notice: dict[str, Any]) -> None:
+        """One ``{name, level, info, content}`` notice, as Studio's
+        handleProcessingEvent reads ``/v1/platform/device/process``."""
+        name = notice.get("name")
+        if name != M2_PATH_PROCESS_EVENT:
+            _LOGGER.debug("V2 notice %s: %r", name, notice.get("info"))
+            return
+        content = notice.get("content") or notice.get("info")
+        if not isinstance(content, dict):
+            return
+        task_id = str(content.get("taskId") or self._latest.get("task_id") or "")
+        if content.get("taskId"):
+            self._latest["task_id"] = task_id
+        action = str(content.get("action"))
+        if action == "start":
+            self._awaiting_job_time = False
+        elif action == "finish":
+            self._awaiting_job_time = True
+            self._job_time_before = self._latest.get("last_job_time_seconds")
+        kind = _M2_PROCESS_EVENTS.get(action)
+        if kind is not None:
+            self._maybe_emit_job_event(
+                kind, task_id, {"task_id": task_id} if task_id else None,
+            )
 
     def _dispatch_m2_report(self, url: str, payload: Any) -> None:
         """Dispatch a single M2 REPORT ``(url, payload)`` pair."""
@@ -763,9 +826,17 @@ class M2WSV2Protocol(WSV2Protocol):
                         self._latest["firmware_version"] = str(fw_ver)
             return
 
-        # /v1/platform/wifi/info + any other unhandled URL —
-        # log-only for now. Wire the WiFi diagnostic sensors in a
-        # follow-up once the entity surface lands.
+        if url == M2_PATH_WIFI_INFO:
+            # Every few seconds: {rssiDbm, ssid, channel, freq, …}
+            if isinstance(payload, dict):
+                for src, dst in (("rssiDbm", "wifi_signal"), ("channel", "wifi_channel")):
+                    value = payload.get(src)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        self._latest[dst] = int(value)
+                if isinstance(payload.get("ssid"), str) and payload["ssid"]:
+                    self._latest["wifi_ssid"] = payload["ssid"]
+            return
+
         _LOGGER.debug("M2 REPORT unhandled url=%s payload=%r", url, payload)
 
     # --- Camera snap ------------------------------------------------------

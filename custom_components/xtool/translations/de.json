@@ -878,6 +878,12 @@
       },
       "accessory_safetyfireboxpro_gas_remaining": {
         "name": "Restgas"
+      },
+      "wifi_ssid": {
+        "name": "WLAN-Netz"
+      },
+      "wifi_channel": {
+        "name": "WLAN-Kanal"
       }
     },
     "binary_sensor": {

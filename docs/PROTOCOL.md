@@ -2706,7 +2706,7 @@ shown verbatim where they exist.
 | `/v1/platform/device/machine-info` | GET | — | — | `{firmware:{version,…}, sn, …}` — Studio's ``deviceInfo`` adds `version=firmware.version`, `snCode=sn` and an `accessoriesFirmware:[{contentId:"xTool-m2-firmware", contentVersion:version}]` block on top |
 | `/v1/platform/device/machine-info/name` | PUT | — | new device name string | OK |
 | `/v1/platform/device/capabilities` | GET | — | — | feature-flags blob (identity passthrough) |
-| `/v1/platform/device/config` | GET | optional `{action:"START"}`, optional `data:{kv:[<keys>]}` selector | — | Flat dict; the JS002 bundle `Urt` array enumerates the full key set: `fillLightBrightness, smokeFanTimeout, beepEnable, autoDectect` (typo — the gap/cover-check toggle), `laserCleanTipEnable, airPumpSpeedEngrave, airPumpSpeedCutting, flameSensitivity` (enum `1=LOW / 2=HIGH`), `laserEngravingCutoff{3,10,20,40}W, laserCuttingCutoff{3,10,20,40}W, automationId, slantEnable, smokeFanEngraveSpeed, smokeFanBitmapSpeed, smokeFanCuttingSpeed, smokeFanCleanTime, backPlaneCleanTime, fillLightCleanTime, cameraCleanTime` |
+| `/v1/platform/device/config` | GET | `data:{kv:[<keys>]}` (firmware 40.141.012 answers `in_data is not array` without; Studio's `getConfigs` asks 26 keys) | — | Flat dict; the JS002 bundle `Urt` array enumerates the full key set: `fillLightBrightness, smokeFanTimeout, beepEnable, autoDectect` (typo — the gap/cover-check toggle), `laserCleanTipEnable, airPumpSpeedEngrave, airPumpSpeedCutting, flameSensitivity` (enum `1=LOW / 2=HIGH`), `laserEngravingCutoff{3,10,20,40}W, laserCuttingCutoff{3,10,20,40}W, automationId, slantEnable, smokeFanEngraveSpeed, smokeFanBitmapSpeed, smokeFanCuttingSpeed, smokeFanCleanTime, backPlaneCleanTime, fillLightCleanTime, cameraCleanTime` |
 | `/v1/platform/device/config` | PUT | — | per-key body, e.g. `{smokeFanTimeout:<n>}` | OK |
 | `/v1/platform/device/alarm` | GET / (push event) | — | — | alarm list; also fires as `ALARM_INFO` push |
 
@@ -2715,7 +2715,7 @@ shown verbatim where they exist.
 | Endpoint | Frame method | Params | Request body | Response |
 |---|---|---|---|---|
 | `/v1/platform/device/state` | (push event) | — | — | `DEVICE_STATE` push event — `{curMode:{mode,desc,subMode,taskId}}`. M2 reuses the WS-V2 `P_*` mode enum (`P_IDLE`, `P_PROCESSING`, `P_FRAMING`, `P_PAUSE`, `P_FINISH`, …) |
-| `/v1/platform/device/process` | (push event) | — | — | `PROCESS_EVENT` push — `{content:{action, taskId}}` where `action` ∈ `START` / `READY` / `PAUSE` / `RESUME` / `CANCEL` / `FINISH` (bundle enum `V8`). Status transitions still come from `DEVICE_STATE`; this event carries the taskId + user-visible action label |
+| `/v1/platform/device/process` | (push event) | — | — | `PROCESS_EVENT` — `{content:{action, taskId}}`, `action` ∈ `start` / `ready` / `pause` / `resume` / `cancel` / `finish` (Studio's enum). Firmware 40.141.012 sends it as a `NOTIFY-RECORD` frame whose `data` is a list of `{name, content}`. Status transitions still come from `DEVICE_STATE`. The laser reports no elapsed time while a job runs (Studio counts it itself); the statistics' `singleTime` is the finished job's time once it is updated |
 | `/v1/platform/device/state/sync` | POST | optional `{name:"far"}` | — | full state snapshot — `{curMode:{mode,desc,subMode,taskId}}`. Does **not** include `cpuTemp` (M2 firmware has no CPU-temp source) |
 | `/v1/project/process/statistics` | GET | — | — | Lifetime counters — `{standbyTime, totalTime, singleTime, count}`. `standbyTime` / `totalTime` are seconds (may arrive string-encoded to avoid 32-bit overflow — parse with `int(x)` tolerating both). `singleTime` = last job duration in seconds. `count` = completed-job counter. Studio's `workingInfo` route displays these on the device home screen |
 | `/v1/project/running/status` | GET | — | — | running-state blob (used by ``getRunningStatus``) |
@@ -2745,7 +2745,8 @@ shown verbatim where they exist.
 | `/v1/project/peripheral/fill-light` | GET | `?name=far\|near\|left\|right` | — | brightness blob (four-channel light) |
 | `/v1/project/peripheral/fill-light` | PUT | `?name=far\|near\|left\|right` | `{brightness:<n>}` | OK |
 | `/v1/project/peripheral/airPump-control` | POST | — | speed / control body | OK — Studio's ``setAirPumpSpeed`` |
-| `/v1/project/peripheral/smokeFan-control` | POST | — | speed / control body | OK — Studio's ``setSmokeFanSpeed`` |
+| `/v1/project/peripheral/smokeFan-control` | POST | — | `{speed: 1000}` on, `{speed: 0}` off | OK — Studio's ``setSmokeFanSpeed`` (its turnOnExhaustFan / turnOffExhaustFan); no state is read back |
+| `/v1/platform/wifi/info` | (push event) | — | — | REPORT every few seconds (seen on an M2 on firmware 40.141.012): `{rssiDbm, ssid, channel, freq, …}`. Studio does not read it |
 
 #### Laser head / motion
 

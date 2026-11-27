@@ -123,7 +123,7 @@ Only the entities the model and its connected accessories support are created.
 | Laser backpack | **X1.** None, 30 W fiber, 60 W MOPA, 5 W UV or 5 W UV + 60 W MOPA (diagnostic) |
 | Engraving lens | **F2 Ultra UV.** Surface, Inner or None |
 
-**Diagnostic:** IP address, Laser power, Laser module, SD card, Workspace size, Active connections (clients connected to the laser, such as XCS), Origin offset X / Y, Last distance (IR measurement), Riser base (**S1**), Inkjet head serial / firmware and toner serial (**M2**), Wi-Fi signal (**F2 Ultra UV, X1**), and on the **F2 Ultra UV** Connection (Ethernet or Wi-Fi) and Calibration (when Studio last calibrated the camera; the stored offsets as attributes, never changed).
+**Diagnostic:** IP address, Laser power, Laser module, SD card, Workspace size, Active connections (clients connected to the laser, such as XCS), Origin offset X / Y, Last distance (IR measurement), Riser base (**S1**), Inkjet head serial / firmware and toner serial (**M2**), Wi-Fi signal (**F2 Ultra UV, X1**; **M2**: also Wi-Fi network and channel, all three off until turned on), and on the **F2 Ultra UV** Connection (Ethernet or Wi-Fi) and Calibration (when Studio last calibrated the camera; the stored offsets as attributes, never changed).
 
 ### Binary Sensor
 

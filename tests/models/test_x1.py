@@ -411,6 +411,20 @@ def test_a_process_event_in_an_object() -> None:
     assert protocol._pending_events == [("job", "finished", {"task_id": "T-9"})]
 
 
+async def test_the_finished_jobs_time_from_the_statistics() -> None:
+    """The X1 reports no time while a job runs; ``singleTime`` is the finished job's."""
+    protocol = _protocol()
+    state = XtoolDeviceState()
+    await protocol.poll_state(state)
+    assert state.last_job_time_seconds == 0
+    protocol._dispatch_push(_notice("/v1/platform/device/process", content={"action": "finish", "taskId": "T-7"}))
+    protocol.replies[("GET", "/v1/project/process/statistics")] = {
+        "count": 14, "singleTime": 95, "standbyTime": 18022, "totalTime": 4829,
+    }
+    await protocol.poll_state(state)
+    assert (state.task_time, state.last_job_time_seconds) == (95, 95)
+
+
 def test_other_process_notices_fire_no_event() -> None:
     protocol = _protocol()
     for action in ("ready", "pausing", "pause", "resume"):

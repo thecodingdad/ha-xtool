@@ -200,12 +200,6 @@ _X1_JOB_ACTIONS: dict[str, str] = {
 # Job events from the process notices: Studio's process actions (its
 # ``Xg`` enum) start, cancel and finish. Pause and resume follow from
 # the state push.
-_X1_PROCESS_EVENTS: dict[str, str] = {
-    "start": "started",
-    "cancel": "cancelled",
-    "finish": "finished",
-}
-
 # Laser backpack ``type`` → sensor state (Studio's badges B1-B4: 5 W UV,
 # 30 W fiber, 60 W MOPA, 5 W UV + 60 W MOPA).
 _X1_BACKPACKS: dict[str, str] = {
@@ -284,6 +278,8 @@ class X1WSV2Protocol(M2WSV2Protocol):
 
         if self._x1_poll_counter % self._SLOW_POLL_EVERY == 0:
             await self._poll_slow(state)
+        elif self._awaiting_job_time:
+            await self._poll_m2_statistics(state)
         self._x1_poll_counter += 1
 
         self._apply_latest_to_state(state)
@@ -791,21 +787,7 @@ class X1WSV2Protocol(M2WSV2Protocol):
         if name == X1_PATH_ALARM:
             self._dispatch_x1_alarms(notice.get("info"))
             return
-        if name != M2_PATH_PROCESS_EVENT:
-            _LOGGER.debug("X1 notice %s: %r", name, notice.get("info"))
-            return
-        # Studio's handleProcessingEvent reads ``content``, else ``info``.
-        content = notice.get("content") or notice.get("info")
-        if not isinstance(content, dict):
-            return
-        task_id = str(content.get("taskId") or self._latest.get("task_id") or "")
-        if content.get("taskId"):
-            self._latest["task_id"] = task_id
-        kind = _X1_PROCESS_EVENTS.get(str(content.get("action")))
-        if kind is not None:
-            self._maybe_emit_job_event(
-                kind, task_id, {"task_id": task_id} if task_id else None,
-            )
+        self._dispatch_m2_notice(notice)
 
     def _dispatch_x1_alarms(self, alarms: Any) -> None:
         """Studio's handleAlarmEvent: ``[{info: {code, message}, level}]``.

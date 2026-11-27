@@ -17,6 +17,7 @@ for the V1 REST equivalents whose patterns we mirror.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import time
 from datetime import timedelta
 from functools import partial
@@ -242,6 +243,26 @@ _WIFI_SIGNAL_DESCRIPTION = XtoolSensorEntityDescription(
     entity_category=EntityCategory.DIAGNOSTIC,
     value_fn=lambda state, _: state.wifi_signal,
 )
+# M2: from the Wi-Fi push; off until turned on
+_WIFI_INFO_DESCRIPTIONS = (
+    dataclasses.replace(_WIFI_SIGNAL_DESCRIPTION, entity_registry_enabled_default=False),
+    XtoolSensorEntityDescription(
+        key="wifi_ssid",
+        translation_key="wifi_ssid",
+        icon="mdi:wifi",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda state, _: state.wifi_ssid,
+    ),
+    XtoolSensorEntityDescription(
+        key="wifi_channel",
+        translation_key="wifi_channel",
+        icon="mdi:wifi-cog",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda state, _: state.wifi_channel,
+    ),
+)
 _POSITION_X_DESCRIPTION = XtoolSensorEntityDescription(
     key="position_x",
     translation_key="laser_position_x",
@@ -278,6 +299,7 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
     ),
     (_WIFI_SIGNAL_DESCRIPTION, "has_laser_info"),
     (_WIFI_SIGNAL_DESCRIPTION, "has_wifi_signal"),
+    *((description, "has_wifi_info") for description in _WIFI_INFO_DESCRIPTIONS),
     (_POSITION_X_DESCRIPTION, "has_laser_head_position"),
     (_POSITION_X_DESCRIPTION, "has_xy_position"),
     (_POSITION_Y_DESCRIPTION, "has_laser_head_position"),

@@ -668,7 +668,7 @@ class WSV2Protocol(XtoolProtocol):
     _LATEST_STATE_FIELDS: tuple[str, ...] = (
         "status", "task_id", "task_time", "cover_open", "machine_lock",
         "last_job_time_seconds", "focus_thickness", "engraving_lens",
-        "wifi_signal", "connection", "flame_alarm_record",
+        "wifi_signal", "wifi_ssid", "wifi_channel", "connection", "flame_alarm_record",
         "cooling_fan_running", "smoking_fan_running", "smoking_fan_installed",
         "uv_fire_alarm",
         "water_pump_running", "water_line_ok", "water_temperature",
