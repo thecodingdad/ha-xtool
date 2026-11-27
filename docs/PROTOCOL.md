@@ -38,8 +38,10 @@ USB, `needConnectAlive: false`, no heartbeat).
 | `rest` | `V1` | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 (GS006), F2 Ultra (GS004-CLASS-4), F2 Ultra Single (GS007-CLASS-4), F2 Ultra UV (GS009-CLASS-4), M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) — V1-firmware path | HTTP REST (JSON) | 8080 (main), 8087 (firmware), 8329 (camera) |
 | `ws_v2` | `V2` | V2-firmware line — see [WS-V2 firmware activation thresholds](#ws-v2-firmware-activation-thresholds) below; includes Retail Marker (GS008), F2 Ultra UV Class 1 (GS009-CLASS-1), and M2 (JS002, multi-tool laser + inkjet — see [M2 protocol](#m2-protocol)) all added in Studio v1.7.23; O1 Omni (DT002, UV / DTG printer — see [O1 Omni protocol](#o1-omni-protocol-dt002)); X1 (JS001, see [X1 protocol](#x1-protocol-js001)) | TLS WebSocket request/response API + push events; three concurrent channels (`function=instruction` / `file_stream` / `media_stream`) | 28900 (wss); M2 additionally serves a live camera stream on 8089 |
 
-V1- and V2-firmware lines for the same hardware coexist — discovery +
-the port-28900 probe pick the right family at config-flow time. See
+V1- and V2-firmware lines for the same hardware coexist. Studio's
+discover worker tells them apart by the reply alone: the encrypted V2
+reply means V2 firmware, the legacy UDP (or HTTP) reply V1. It never
+probes port 28900, which a V1 firmware can open too (F1 40.51.013). See
 [WS-V2 protocol](#ws-v2-protocol-tls-websocket-rpc--push) below for the
 full V2 wire contract.
 

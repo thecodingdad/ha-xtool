@@ -96,7 +96,6 @@ WSV2_HEARTBEAT_TIMEOUT = 11.0
 # avoids cutting off slow first-responses while the device's TLS
 # stack + parity validator warm up.
 WSV2_REQUEST_TIMEOUT = 10.0
-WSV2_PROBE_TIMEOUT = 4.0
 WSV2_FILE_UPLOAD_TIMEOUT = 600.0
 # First-message handshake. Studio's worker stamps every connection with
 # this ``socketFirstMessageCode`` (default ``bWFrZWJsb2NrLXh0b29s`` =
@@ -503,51 +502,6 @@ def _ssl_context() -> ssl.SSLContext:
     would otherwise trigger on the event loop.
     """
     return get_default_no_verify_context()
-
-
-async def probe_v2(host: str, timeout: float = WSV2_PROBE_TIMEOUT) -> bool:
-    """Quick port probe to detect whether a host speaks V2.
-
-    Opens a TLS WebSocket to ``wss://<host>:28900/websocket?…&function=instruction``
-    and waits for any frame. Returns True on success, False on any error
-    or timeout. No state is held — callers create a real protocol instance
-    afterwards.
-
-    The parity handshake (`/v1/user/parity`) is *not* sent here — Studio
-    itself does not probe; it learns the device family via the binding
-    flow. A reachable TLS WS on port 28900 is enough to disambiguate V2
-    from the legacy REST family on port 8080.
-    """
-    url = (
-        f"wss://{host}:{WSV2_PORT}{WSV2_PATH}"
-        f"?id={_CLIENT_SESSION_ID}&function=instruction"
-    )
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(
-                url,
-                ssl=_ssl_context(),
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                heartbeat=None,
-                max_msg_size=0,
-            ) as ws:
-                # Some V2 firmware emits a hello frame within ~1 s; some
-                # only respond to a request. Either signal counts.
-                try:
-                    msg = await asyncio.wait_for(ws.receive(), timeout=timeout)
-                except asyncio.TimeoutError:
-                    # Connection succeeded but no frame within window.
-                    # Treat as "probably V2" — we successfully opened the
-                    # TLS WS, which V1 devices (HTTP-only port 8080) can't
-                    # do.
-                    return True
-                return msg.type in (
-                    aiohttp.WSMsgType.TEXT,
-                    aiohttp.WSMsgType.BINARY,
-                )
-    except Exception as err:
-        _LOGGER.debug("V2 probe failed for %s: %s", host, err)
-        return False
 
 
 class _PendingRequest:

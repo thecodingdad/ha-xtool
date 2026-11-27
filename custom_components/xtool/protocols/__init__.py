@@ -45,7 +45,6 @@ from .ws_v2 import (
     WSV2PairingFailed,
     WSV2PairingRequired,
     WSV2Protocol,
-    probe_v2,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -155,7 +154,9 @@ async def validate_connection(
 
     1. UDP discovery → device name.
     2. ``candidates = detect_models(name)``  (1..N entries)
-    3. Pick V2 candidate if probe_v2() succeeds; else V1; else V2-only.
+    3. Pick the protocol the discovery reply came in, as Studio's
+       discover worker does: the encrypted reply means V2, the legacy
+       one V1. A model with only one protocol takes that one.
     4. Connect with that candidate's protocol_class and confirm.
 
     Returns a populated :class:`ConnectionInfo` on success or one of the
@@ -182,26 +183,17 @@ async def validate_connection(
         (m for m in candidates if m.protocol_version == "V2"), None
     )
 
-    chosen: XtoolDeviceModel | None = None
-    # The UDP discovery already tells us "V1" vs "V2"; trust it and skip
-    # the port-28900 TLS probe in that case. Fall back to the probe only
-    # when the V1 leg of UDP answered (some V2 firmware revisions also
-    # answer the legacy plain probe — keeping the fallback catches them).
-    udp_says_v2 = (
-        getattr(discovered, "protocol_version", "V1") == "V2"
-    )
-    if v2_candidate is not None and (udp_says_v2 or await probe_v2(host)):
-        chosen = v2_candidate
+    # When a laser answers both, discovery keeps the V2 reply. No probe
+    # of port 28900: a V1 firmware can answer it too (F1 40.51.013, #91).
+    if discovered.protocol_version == "V2":
+        chosen = v2_candidate or v1_candidate
+    else:
+        chosen = v1_candidate or v2_candidate
+    if chosen is not None:
         _LOGGER.info(
-            "xTool %s at %s answered V2 probe — using V2 protocol",
-            chosen.model_id, host,
+            "xTool %s at %s answered the %s discovery — using %s",
+            chosen.model_id, host, discovered.protocol_version, chosen.protocol_version,
         )
-    elif v1_candidate is not None:
-        chosen = v1_candidate
-    elif v2_candidate is not None:
-        # V2-only model (no V1 sibling). Probe failed but try anyway —
-        # either it answers or the connect below fails cleanly.
-        chosen = v2_candidate
 
     if chosen is None or chosen.protocol_class is None:
         _LOGGER.warning(

@@ -140,22 +140,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: XtoolConfigEntry) -> boo
             f"Unknown xTool model {device_name!r} — cannot pick a protocol"
         )
 
-    # Auto-upgrade legacy V1 entries that were created before the
-    # v2.2.0 V2 split. If a ``_V2`` sibling exists in DEVICE_MODELS
-    # and the device answers a port-28900 TLS probe, switch in-place.
-    # Without this, a V1 entry on V2-firmware hardware keeps hitting
-    # the port-8080 REST endpoints firmware no longer serves and
-    # entities never populate.
+    # A V1 entry on a laser that now has V2 firmware (updated since it
+    # was set up) switches to V2 when the laser answers the V2
+    # discovery, as Studio tells them apart. Without this it keeps
+    # asking the port-8080 REST routes the firmware no longer serves.
     if model.protocol_version == "V1":
         v2_model = DEVICE_MODELS.get(f"{model.model_id}_V2")
         if v2_model is not None and v2_model.protocol_class is not None:
+            from .discovery import identify_host
+
             try:
-                from .protocols import probe_v2
-                v2_alive = await probe_v2(host)
+                found = await identify_host(host)
             except Exception as err:
-                _LOGGER.debug("V2 probe failed for %s: %s", host, err)
-                v2_alive = False
-            if v2_alive:
+                _LOGGER.debug("Discovery of %s failed: %s", host, err)
+                found = None
+            if found is not None and found.protocol_version == "V2":
                 _LOGGER.info(
                     "xTool %s at %s: legacy V1 config entry on a V2-firmware "
                     "device — upgrading to V2 protocol",

@@ -132,6 +132,8 @@ def no_address_search_on_the_network(monkeypatch):
 
     if hasattr(discovery, "discover_v1"):
         monkeypatch.setattr(discovery, "discover_v1", AsyncMock(return_value=[]))
+    # A V1 entry asks discovery whether its laser has V2 firmware now
+    monkeypatch.setattr(discovery, "identify_host", AsyncMock(return_value=None))
 
 
 @pytest.fixture

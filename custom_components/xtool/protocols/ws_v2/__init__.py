@@ -31,19 +31,16 @@ from .models import (
 )
 from .protocol import (
     WSV2_HEARTBEAT_SECONDS,
-    WSV2_PROBE_TIMEOUT,
     WSV2_PATH,
     WSV2_PORT,
     WSV2PairingFailed,
     WSV2PairingRequired,
     WSV2Protocol,
-    probe_v2,
 )
 
 __all__ = [
     "WSV2_HEARTBEAT_SECONDS",
     "WSV2_MODELS",
-    "WSV2_PROBE_TIMEOUT",
     "WSV2_PATH",
     "WSV2_PORT",
     "WSV2PairingFailed",
@@ -66,5 +63,4 @@ __all__ = [
     "XTOOL_P2S_WSV2",
     "XTOOL_P3_WSV2",
     "XTOOL_X1_WSV2",
-    "probe_v2",
 ]
