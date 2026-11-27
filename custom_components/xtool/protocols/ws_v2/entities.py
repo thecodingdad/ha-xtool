@@ -1256,6 +1256,47 @@ class _WSV2ConfigNumber(XtoolEntity, NumberEntity):
         )
 
 
+class WSV2FillLightAutoOff(XtoolEntity, NumberEntity):
+    """Studio's fill-light auto-off (O1): 1-600 minutes, 0 for Always on.
+
+    The printer keeps seconds; Studio shows and sets whole minutes and
+    locks the setting while a job runs.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "fill_light_auto_off"
+    _attr_icon = "mdi:lightbulb-auto-outline"
+    _attr_native_min_value = 0
+    _attr_native_max_value = 600
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("fill_light_auto_off")
+
+    @property
+    def native_value(self) -> int | None:
+        data = self.coordinator.data
+        seconds = None if data is None else data.fill_light_auto_off
+        if seconds is None:
+            return None
+        if seconds == 0:
+            return 0
+        return min(600, max(1, _js_round(seconds / 60)))
+
+    async def async_set_native_value(self, value: float) -> None:
+        protocol = self.coordinator.protocol
+        refusal = protocol.setting_refusal()
+        if refusal is not None:
+            raise _refused(refusal)
+        seconds = int(round(value)) * 60
+        await self.coordinator.async_write(
+            {"fill_light_auto_off": seconds}, protocol.set_fill_light_auto_off(seconds),
+        )
+
+
 class _WSV2ConfigSelect(XtoolEntity, SelectEntity):
     """Select backed by one config key, with the values Studio writes."""
 
@@ -1750,6 +1791,39 @@ class WSV2NamedFillLight(XtoolEntity, LightEntity, RestoreEntity):
         await self._write(0)
 
 
+class WSV2SwitchedFillLight(XtoolEntity, LightEntity):
+    """A fill light Studio only switches on and off (O1).
+
+    Refused while the printer scans or measures, as in Studio.
+    """
+
+    _attr_color_mode = ColorMode.ONOFF
+    _attr_supported_color_modes = {ColorMode.ONOFF}
+    _attr_translation_key = "fill_light"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_unique_id("fill_light")
+
+    @property
+    def is_on(self) -> bool | None:
+        data = self.coordinator.data
+        return None if data is None else data.fill_light_on
+
+    async def _switch(self, on: bool) -> None:
+        protocol = self.coordinator.protocol
+        refusal = protocol.fill_light_refusal()
+        if refusal is not None:
+            raise _refused(refusal)
+        await self.coordinator.async_write({"fill_light_on": on}, protocol.set_fill_light(on))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._switch(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._switch(False)
+
+
 # --- Buttons ------------------------------------------------------------
 
 
@@ -1817,6 +1891,80 @@ class WSV2CancelJob(_WSV2Button):
 
     async def _action(self) -> None:
         await self.coordinator.protocol.set_processing_state("stop")
+
+
+def _refused(refusal: tuple[str, dict[str, str]]) -> HomeAssistantError:
+    key, placeholders = refusal
+    return HomeAssistantError(
+        translation_domain=DOMAIN, translation_key=key, translation_placeholders=placeholders,
+    )
+
+
+class _WSV2PrintJobButton(_WSV2Button):
+    """A button of Studio's print page (O1): available while Studio shows it."""
+
+    _job_action = ""
+
+    def __init__(self, coordinator: XtoolCoordinator, icon: str) -> None:
+        super().__init__(coordinator, f"{self._job_action}_job", icon)
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data
+        return super().available and bool(
+            data and getattr(data, f"can_{self._job_action}_job"),
+        )
+
+    async def _refusal(self) -> tuple[str, dict[str, str]] | None:
+        return self.coordinator.protocol.job_refusal(self._job_action)
+
+    async def _send(self) -> None:
+        raise NotImplementedError
+
+    async def _action(self) -> None:
+        refusal = await self._refusal()
+        if refusal is not None:
+            raise _refused(refusal)
+        await self._send()
+
+
+class WSV2PrintPauseJob(_WSV2PrintJobButton):
+    """Pause, while the printer prints."""
+
+    _job_action = "pause"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "mdi:pause")
+
+    async def _send(self) -> None:
+        await self.coordinator.protocol.pause_job()
+
+
+class WSV2PrintResumeJob(_WSV2PrintJobButton):
+    """Continue a paused job, after Studio's checks (lid, fluids, stirring)."""
+
+    _job_action = "resume"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "mdi:play")
+
+    async def _refusal(self) -> tuple[str, dict[str, str]] | None:
+        return await self.coordinator.protocol.resume_refusal()
+
+    async def _send(self) -> None:
+        await self.coordinator.protocol.resume_job()
+
+
+class WSV2PrintCancelJob(_WSV2PrintJobButton):
+    """Cancel the job, in every step but drying and cutting."""
+
+    _job_action = "cancel"
+
+    def __init__(self, coordinator: XtoolCoordinator) -> None:
+        super().__init__(coordinator, "mdi:stop")
+
+    async def _send(self) -> None:
+        await self.coordinator.protocol.cancel_job()
 
 
 class WSV2ReconnectBluetoothAccessories(_WSV2Button):
@@ -3268,6 +3416,8 @@ def build_wsv2_numbers(coordinator: XtoolCoordinator) -> list[NumberEntity]:
     model = coordinator.model
     if model.is_read_only:
         entities = []
+    if model.has_switched_fill_light:
+        entities.append(WSV2FillLightAutoOff(coordinator))
     if getattr(model, "has_focus_control", False) and not model.is_read_only:
         entities.append(WSV2FocusHeight(coordinator))
     # ``air_assist_gear_cut`` + ``air_assist_gear_engrave`` migrated
@@ -3351,6 +3501,8 @@ def build_wsv2_selects(coordinator: XtoolCoordinator) -> list[SelectEntity]:
 
 def build_wsv2_lights(coordinator: XtoolCoordinator) -> list[LightEntity]:
     model = coordinator.model
+    if model.has_switched_fill_light:
+        return [WSV2SwitchedFillLight(coordinator)]
     if model.named_fill_lights:
         return [
             WSV2NamedFillLight(coordinator, name, full, highest)
@@ -3401,7 +3553,13 @@ def build_wsv2_buttons(coordinator: XtoolCoordinator) -> list[ButtonEntity]:
     # them with `code 1: failed`. The classes are kept in this module
     # for future use if a real wire path is identified.
     entities: list[ButtonEntity] = []
-    if not coordinator.model.is_read_only:
+    if coordinator.model.has_print_job_control:
+        entities.extend([
+            WSV2PrintPauseJob(coordinator),
+            WSV2PrintResumeJob(coordinator),
+            WSV2PrintCancelJob(coordinator),
+        ])
+    elif not coordinator.model.is_read_only:
         entities.extend([
             WSV2PauseJob(coordinator),
             WSV2ResumeJob(coordinator),

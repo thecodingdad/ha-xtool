@@ -1873,6 +1873,39 @@
     },
     "feeder_laser_not_idle": {
       "message": "The feeder did not move: the laser is not idle."
+    },
+    "job_not_printing": {
+      "message": "The job was not paused: the printer is not printing."
+    },
+    "job_not_paused": {
+      "message": "The job did not continue: no job is paused."
+    },
+    "job_none_to_cancel": {
+      "message": "There is no job to cancel."
+    },
+    "job_lid_open": {
+      "message": "The job did not continue: close the lid first."
+    },
+    "job_moisturizing_missing": {
+      "message": "The job did not continue: moisturizing fluid {number} is not in place."
+    },
+    "job_moisturizing_low": {
+      "message": "The job did not continue: moisturizing fluid {number} is insufficient."
+    },
+    "job_waste_tank_missing": {
+      "message": "The job did not continue: the waste ink tank is not in place."
+    },
+    "job_waste_tank_full": {
+      "message": "The job did not continue: the waste ink tank is full."
+    },
+    "job_white_ink_stirring": {
+      "message": "The job did not continue: the white ink is being stirred, try again in {seconds} s."
+    },
+    "fill_light_busy": {
+      "message": "The fill light cannot be switched while the printer scans, measures or calibrates."
+    },
+    "setting_locked_while_printing": {
+      "message": "This setting cannot be changed while a job runs."
     }
   },
   "selector": {

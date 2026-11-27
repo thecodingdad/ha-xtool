@@ -34,7 +34,7 @@ Home Assistant integration for xTool laser cutters, engravers, fiber-laser welde
 | V1 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2, F2 Ultra, F2 Ultra Single, F2 Ultra UV, M1, M1 Ultra, MetalFab (HJ003), P1, P2, P2S, P3, Apparel Printer (DT001), Apparel Printer Plus (DT003) |
 | V2 firmware | F1, F1 Ultra, F1 Ultra V2 (GS003), F1 Lite (GS005), F2 family, F2 Ultra UV Class 1 (GS009-CLASS-1), Retail Marker (GS008), M1 Ultra, M2 (JS002), P2S, P3, MetalFab, Apparel Printer, Apparel Printer Plus (DT003), O1 Omni (DT002), X1 (JS001) |
 
-Whether a laser runs V1 or V2 firmware is detected automatically. O1 Omni (DT002) support is read-only for now: status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check.
+Whether a laser runs V1 or V2 firmware is detected automatically. The O1 Omni (DT002) shows status, consumables, doors, environment, print queue, alarms, job events and the firmware-update check; its only controls are Pause, Continue and Cancel and the fill light, as in xTool Studio (not yet tested on an O1).
 
 **X1 (JS001).** Pairs with a button press (see [Pairing](#pairing-newer-v2-firmware)): the X1 waits only about 15 seconds for it, so start the setup standing at the laser. Checked on an X1 with firmware 40.140.003.01.ht18; job events and the job buttons follow Studio but have not run during a job yet. The X1 shows a connected SafetyPro AP2 and Fire Safety Set 2 as their own devices: the AP2 with its filters, Air cleaner running and a Purifier level select (Off, 1-4 or Auto, as Studio sets it; Auto lets it follow the laser), the Fire Safety Set 2 read only. A fire alarm of the X1 fires the Fire warning event. With **Enable firmware updates** on, new firmware for the X1 and for its AP2 and Fire Safety Set 2 is installed as Studio installs it (the X1 restarts to install its own; the update finishes once it is back and idle). Checked on an X1: 40.140.003.01.ht18 to 40.140.003.21 (a 350 MB package) took about 6 minutes from Home Assistant. Accessory firmware has not been installed yet: none newer has been released for the AP2 or the Fire Safety Set 2.
 
@@ -193,6 +193,7 @@ The F2 Ultra UV (Class 1) has it on every unit. Until the laser has reported its
 | Air-assist post-run / Exhaust post-run | How long it runs after a job |
 | Sleep timeout / Sleep timeout (cover open) | Idle time before the laser sleeps |
 | IR-light auto-off / Purifier auto-off | Auto-off delays |
+| Fill-light auto-off | **O1 Omni.** Minutes until the fill light turns off (1-600, 0 = always on), as Studio sets it; locked while a job runs |
 | Camera exposure | Camera exposure |
 | Camera thumbnail refresh interval | **V2 firmware cameras.** How often the picture on the device page refreshes (5 s to 10 min); each refresh takes a photo for every open screen showing it |
 | Crop width / height / center X / center Y | **F2 Ultra UV** main camera: the part of the work surface shown, in mm (default: the calibrated 200 × 200 mm; 0 = as wide as the photo reaches) |
@@ -255,7 +256,7 @@ data:
 
 | Entity | Description |
 |---|---|
-| Fill light | Dimmable work light (0-100 %) |
+| Fill light | Dimmable work light (0-100 %). On the **O1 Omni** only on and off, as Studio switches it; refused while the O1 scans, measures or calibrates |
 | Fill light front / Fill light back | **F2 family.** The two fill lights, each on its own |
 | Fill light left / right / close | **X1.** The three lights Studio uses for photos, each on its own. The close light goes up to 50 %, as in Studio |
 
@@ -280,7 +281,7 @@ The P2's cameras are straightened with its own calibration. Each has Crop preset
 
 | Entity | Description |
 |---|---|
-| Pause / Resume job / Cancel | Job control |
+| Pause / Resume job / Cancel | Job control. **O1 Omni:** each available only while Studio's print page shows it: Pause while printing, Resume while paused (not during the O1's own head-clean pauses), Cancel in every job step but drying and cutting. Like Studio, Resume is refused with the lid open, a moisturizing fluid missing or running out, the waste ink tank missing or full, or while the white ink is stirred; Studio's ink-cartridge check is left to the printer. On the O1, Resume only resumes: a job is started from Studio |
 | Home all axes / Home XY / Home Z / Home laser / Z-axis homing | Homing |
 | Measure distance | IR distance measurement |
 | Sync blade | **M1 Ultra.** Turns the multi-function carriage so it identifies its blade (shown in Blade); refused until the axes are homed. Only while the multi-function carriage is fitted |

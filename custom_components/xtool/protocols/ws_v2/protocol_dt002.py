@@ -51,8 +51,19 @@ short head clean (``WorkPause`` → ``Clean`` → ``WorkPause`` →
 :attr:`XtoolStatus.CLEANING` so those maintenance pauses do not read as
 user pauses.
 
-This first iteration is read-only: no config writes, job control or
-firmware flashing.
+Writes, as Studio's DT002 bundle sends them (not yet checked on an O1):
+
+- Pause / Continue: ``POST /v1/project/device/control`` with
+  ``params:{action:"PAUSE"|"RESUME"}`` (``processingControl``); Cancel:
+  ``POST /v1/project/task/cancel`` with ``data:{id:<task>}``. Each is
+  offered only while Studio's print page shows its button, and Continue
+  runs Studio's checks first.
+- Fill light: ``POST /v1/project/device/fill-light`` with
+  ``data:{action:"on"|"off"}`` (Studio only switches it; it never sets
+  the ``brightness`` the GET reports); its auto-off is the
+  ``fillLightAutoOffTime`` config (seconds, 0 = always on).
+
+No other config writes and no firmware flashing.
 """
 
 from __future__ import annotations
@@ -60,6 +71,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 from typing import Any
 
 from ...const import XtoolStatus
@@ -80,6 +92,11 @@ DT002_PATH_TEMP_HUMIDITY = "/v1/project/device/temp-humity"
 DT002_PATH_PRINTER_HEAD = "/v1/project/device/printer-head-param"
 DT002_PATH_TASK_LIST = "/v1/project/task/list"
 DT002_PATH_CONFIG_ALL = "/v1/project/device/config/all"
+DT002_PATH_FILL_LIGHT = "/v1/project/device/fill-light"
+DT002_PATH_CONFIG = "/v1/platform/device/config"
+DT002_PATH_CONTROL = "/v1/project/device/control"
+DT002_PATH_TASK_CANCEL = "/v1/project/task/cancel"
+DT002_FILL_LIGHT_AUTO_OFF_KEY = "fillLightAutoOffTime"
 
 # Push routing keys.
 DT002_PUSH_STATE = "/v1/platform/device/state"
@@ -139,6 +156,25 @@ _PROCESS_ACTION_EVENTS: dict[str, str] = {
 }
 _AUTO_CLEAN_GRACE_SECONDS = 2.0
 DT002_PUSH_CLEAN_START = "/v1/project/clean/start"
+DT002_PUSH_CLEAN_RESULT = "/v1/project/clean/result"
+
+# The buttons of Studio's print page (``OperationButton``): Pause while
+# printing, Continue while paused, Cancel in every job step but drying
+# and cutting. Studio's PRINT guard refuses both in every other mode.
+_PAUSE_MODES = frozenset({"WorkPlay"})
+_RESUME_MODES = frozenset({"WorkPause", "WorkRollPause"})
+_CANCEL_MODES = frozenset({"WorkReady", "WorkPlay", "WorkPause", "WorkRollPause", "WorkBaking"})
+# A head clean in these is the firmware's own, mid-job
+_JOB_MODES = frozenset({"WorkPlay", "WorkPause", "WorkRollPause"})
+# Studio's ``isInProcessing``: its settings are locked then
+_PROCESSING_MODES = frozenset({"WorkPlay", "WorkReady", "WorkPause", "WorkDrying", "WorkBaking"})
+# Studio's busy table for the fill light
+_FILL_LIGHT_BUSY_MODES = frozenset({"Scan", "Measure", "Calibration"})
+# Studio's SKUs with a second ink road (DOUBLE_UV, SINGLE_DTG,
+# DOUBLE_UV_DTG); SINGLE_UV is 0
+_SKUS_WITH_TWO_ROADS = frozenset({1, 2, 3})
+
+Refusal = tuple[str, dict[str, str]]
 
 # Cartridge colour codes: ``serial[6:8]`` = <ink type><colour>.
 _INK_TYPE_NAMES: dict[str, str] = {"U": "UV", "D": "DTG"}
@@ -183,6 +219,35 @@ def _num(value: Any) -> float | None:
     return float(value)
 
 
+def maintenance_refusal(maint: dict[str, Any], sku: int | None) -> Refusal | None:
+    """Studio's moisturizing-fluid and waste-tank checks before a job continues.
+
+    The fluid of ink road 1, and of road 2 on the SKUs that have one,
+    must be in place and not insufficient (``level`` 1); the waste tank
+    in place and not full (``level`` 2). Studio also refuses when the
+    data is missing; here only what the printer reports counts.
+    """
+    moisturizing = maint.get("moisturizing")
+    if isinstance(moisturizing, list):
+        roads = (0, 1) if sku in _SKUS_WITH_TWO_ROADS else (0,)
+        for index in roads:
+            entry = moisturizing[index] if index < len(moisturizing) else None
+            if not isinstance(entry, dict):
+                continue
+            number = {"number": str(index + 1)}
+            if entry.get("exist") is False:
+                return "job_moisturizing_missing", number
+            if entry.get("level") == 1:
+                return "job_moisturizing_low", number
+    waste = maint.get("waste")
+    if isinstance(waste, dict):
+        if waste.get("exist") is False:
+            return "job_waste_tank_missing", {}
+        if waste.get("level") == 2:
+            return "job_waste_tank_full", {}
+    return None
+
+
 class DT002WSV2Protocol(WSV2Protocol):
     """WS-V2 protocol with the O1 Omni (DT002) URL surface."""
 
@@ -195,7 +260,8 @@ class DT002WSV2Protocol(WSV2Protocol):
         "print_head_temperatures", "active_alarms",
         "job_name", "job_progress", "job_time_remaining",
         "queued_jobs", "air_purifier_runtime_seconds",
-        "uv_lamp_runtime_seconds",
+        "uv_lamp_runtime_seconds", "can_pause_job", "can_resume_job",
+        "can_cancel_job", "fill_light_on",
     )
 
     def __init__(self, host: str, port: int | None = None) -> None:
@@ -214,6 +280,13 @@ class DT002WSV2Protocol(WSV2Protocol):
         # Pause-event debounce (see ``_PROCESS_ACTION_EVENTS``).
         self._pending_pause: asyncio.TimerHandle | None = None
         self._user_paused = False
+        # The firmware's state-machine mode, as pushed
+        self._dt002_mode: str | None = None
+        # The firmware's own head clean during a job, until it goes on
+        self._job_cleaning = False
+        self._clean_done: asyncio.TimerHandle | None = None
+        # Studio's SKU (0 single UV, 1 single DTG, 2 dual UV, 3 UV + DTG)
+        self._sku: int | None = None
 
     # --- Push-cache drain -----------------------------------------------
 
@@ -239,6 +312,11 @@ class DT002WSV2Protocol(WSV2Protocol):
         if isinstance(data, dict):
             info.device_name = str(data.get("deviceName") or "")
             info.serial_number = str(data.get("sn") or "")
+            sku = data.get("sku")
+            if isinstance(sku, str) and sku.strip().isdigit():
+                sku = int(sku)
+            if isinstance(sku, int) and not isinstance(sku, bool):
+                self._sku = sku
             firmware = data.get("firmware")
             if isinstance(firmware, dict):
                 info.main_firmware = str(firmware.get("version") or "")
@@ -315,8 +393,12 @@ class DT002WSV2Protocol(WSV2Protocol):
         peripherals = await self._get(DT002_PATH_PERIPHERAL_STATUS)
         if isinstance(peripherals, dict):
             self._apply_peripheral_status(peripherals)
+        light = await self._get(DT002_PATH_FILL_LIGHT)
+        if isinstance(light, dict) and isinstance(light.get("on"), bool):
+            self._latest["fill_light_on"] = light["on"]
 
         if tick % _CONSUMABLES_POLL_EVERY == 0:
+            await self._poll_fill_light_auto_off()
             ink = await self._get(DT002_PATH_INK_TANK)
             if isinstance(ink, dict):
                 self._apply_ink_tank(ink)
@@ -344,6 +426,23 @@ class DT002WSV2Protocol(WSV2Protocol):
                 self._apply_counters(cfg)
 
         self._apply_latest_to_state(state)
+
+    async def _poll_fill_light_auto_off(self) -> None:
+        """``fillLightAutoOffTime``, read as Studio does (GET with a ``kv`` list)."""
+        if DT002_PATH_CONFIG in self._unsupported_endpoints:
+            return
+        try:
+            config = await self.request(
+                DT002_PATH_CONFIG, "GET", data={"kv": [DT002_FILL_LIGHT_AUTO_OFF_KEY]},
+            )
+        except Exception as err:
+            if "code 404" in str(err):
+                self._unsupported_endpoints.add(DT002_PATH_CONFIG)
+            _LOGGER.debug("DT002 %s failed: %s", DT002_PATH_CONFIG, err)
+            return
+        value = config.get(DT002_FILL_LIGHT_AUTO_OFF_KEY) if isinstance(config, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            self._latest["fill_light_auto_off"] = int(value)
 
     # --- Parsers (shared by poll replies and pushes) ---------------------
 
@@ -496,12 +595,14 @@ class DT002WSV2Protocol(WSV2Protocol):
             estimate = task.get("estimateTime")
             if isinstance(estimate, int):
                 self._latest["job_time_remaining"] = max(0, estimate - elapsed)
+        self._update_job_actions()
 
     def _clear_task(self) -> None:
         self._active_task = {}
         self._latest["job_name"] = None
         self._latest["job_progress"] = None
         self._latest["job_time_remaining"] = None
+        self._update_job_actions()
 
     def _apply_counters(self, cfg: dict[str, Any]) -> None:
         for src, dst in (
@@ -554,13 +655,19 @@ class DT002WSV2Protocol(WSV2Protocol):
             if isinstance(payload, dict):
                 mode = payload.get("mode")
                 if isinstance(mode, str):
+                    previous, self._dt002_mode = self._dt002_mode, mode
                     if mode == "Clean":
                         self._cancel_pending_pause()
+                        if previous in _JOB_MODES:
+                            self._job_cleaning = True
+                    elif mode not in _RESUME_MODES:
+                        self._end_job_clean()
                     status = DT002_MODE_MAP.get(mode)
                     if status is None:
                         _LOGGER.debug("DT002 unknown mode %r", mode)
                         status = XtoolStatus.UNKNOWN
                     self._latest["status"] = status
+                    self._update_job_actions()
             return
         if url == DT002_PUSH_ALARM:
             self._apply_alarms(payload)
@@ -644,6 +751,7 @@ class DT002WSV2Protocol(WSV2Protocol):
             task_id = str(content.get("taskId") or "")
             if task_id:
                 self._latest["task_id"] = task_id
+                self._update_job_actions()
             action = str(content.get("action") or "")
             if action == "pause":
                 self._schedule_pause_event(task_id)
@@ -670,6 +778,15 @@ class DT002WSV2Protocol(WSV2Protocol):
         if url == DT002_PUSH_CLEAN_START:
             # Automatic mid-print head clean — swallow the pause before it.
             self._cancel_pending_pause()
+            if self._dt002_mode in _JOB_MODES or self._dt002_mode == "Clean":
+                self._job_cleaning = True
+                self._update_job_actions()
+            return
+        if url == DT002_PUSH_CLEAN_RESULT:
+            # The firmware goes on printing right after; a job still
+            # paused a moment later can be continued.
+            if self._job_cleaning:
+                self._schedule_clean_done()
             return
         if url == DT002_PUSH_TASK_LIST_UPDATE:
             # Queue changed — force the next poll to refresh it.
@@ -688,19 +805,162 @@ class DT002WSV2Protocol(WSV2Protocol):
         self._pending_pause = loop.call_later(
             _AUTO_CLEAN_GRACE_SECONDS, self._emit_user_pause, task_id,
         )
+        self._update_job_actions()
 
     def _cancel_pending_pause(self) -> None:
         if self._pending_pause is not None:
             self._pending_pause.cancel()
             self._pending_pause = None
+            self._update_job_actions()
 
     def _emit_user_pause(self, task_id: str) -> None:
         self._pending_pause = None
         self._user_paused = True
+        self._update_job_actions()
         self._maybe_emit_job_event(
             "paused", task_id, {"task_id": task_id} if task_id else None,
         )
+        self._notify_from_timer()
+
+    def _notify_from_timer(self) -> None:
+        """Show what a timer changed at once, as a push would."""
+        notify = self._push_notify
+        if notify is not None:
+            try:
+                notify()
+            except Exception as err:
+                _LOGGER.debug("DT002 push_notify callback failed: %s", err)
+
+    def _schedule_clean_done(self) -> None:
+        if self._clean_done is not None:
+            self._clean_done.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._end_job_clean()
+            return
+        self._clean_done = loop.call_later(_AUTO_CLEAN_GRACE_SECONDS, self._clean_done_timer)
+
+    def _clean_done_timer(self) -> None:
+        self._clean_done = None
+        self._end_job_clean()
+        self._notify_from_timer()
+
+    def _end_job_clean(self) -> None:
+        if self._clean_done is not None:
+            self._clean_done.cancel()
+            self._clean_done = None
+        if self._job_cleaning:
+            self._job_cleaning = False
+            self._update_job_actions()
+
+    # --- Job control (Studio's print page) --------------------------------
+
+    def _job_task_id(self) -> str:
+        return str(self._active_task.get("id") or self._latest.get("task_id") or "")
+
+    def _update_job_actions(self) -> None:
+        """Which of Studio's print-page buttons it would show now.
+
+        A pause the firmware makes for its own head clean is not one to
+        continue: Continue waits until no clean follows the pause.
+        """
+        mode = self._dt002_mode
+        has_task = bool(self._job_task_id())
+        settling = self._pending_pause is not None or self._job_cleaning
+        self._latest["can_pause_job"] = has_task and mode in _PAUSE_MODES
+        self._latest["can_resume_job"] = has_task and mode in _RESUME_MODES and not settling
+        self._latest["can_cancel_job"] = has_task and (
+            mode in _CANCEL_MODES or (mode == "Clean" and self._job_cleaning)
+        )
+
+    def job_refusal(self, action: str) -> Refusal | None:
+        """Why Studio would not offer ``action`` (pause, resume, cancel) now."""
+        if action == "pause" and not self._latest.get("can_pause_job"):
+            return "job_not_printing", {}
+        if action == "resume" and not self._latest.get("can_resume_job"):
+            return "job_not_paused", {}
+        if action == "cancel" and not self._latest.get("can_cancel_job"):
+            return "job_none_to_cancel", {}
+        return None
+
+    async def resume_refusal(self) -> Refusal | None:
+        """Studio's checks before Continue (``continueProcess``), read fresh.
+
+        In Studio's order: the lid is closed, the moisturizing fluid and
+        the waste tank are in order, and no white-ink stirring pause is
+        running. Studio also checks the ink cartridges against its slot
+        table per SKU and job, and roll or DTF accessories; those are
+        left to the printer, which checks them too.
+        """
+        refusal = self.job_refusal("resume")
+        if refusal is not None:
+            return refusal
+        peripherals = await self._get(DT002_PATH_PERIPHERAL_STATUS)
+        if isinstance(peripherals, dict):
+            self._apply_peripheral_status(peripherals)
+            if peripherals.get("lid") is True:
+                return "job_lid_open", {}
+        maint = await self._get(DT002_PATH_MAINTENANCE_TANK)
+        if isinstance(maint, dict):
+            self._apply_maintenance_tank(maint)
+            refusal = maintenance_refusal(maint, self._sku)
+            if refusal is not None:
+                return refusal
+        ink = await self._get(DT002_PATH_INK_TANK)
+        if isinstance(ink, dict):
+            self._apply_ink_tank(ink)
+            stirring = ink.get("whiteStireStatus")
+            if isinstance(stirring, dict) and stirring.get("active") is True:
+                remain = _num(stirring.get("remainSec"))
+                seconds = math.ceil(remain) if remain is not None and remain >= 0 else 0
+                return "job_white_ink_stirring", {"seconds": str(seconds)}
+        return None
+
+    async def pause_job(self) -> dict[str, Any]:
+        """Studio's pauseProcessing: ``processingControl`` with ``PAUSE``."""
+        return await self.request(DT002_PATH_CONTROL, "POST", params={"action": "PAUSE"})
+
+    async def resume_job(self) -> dict[str, Any]:
+        """Studio's continueProcess on a paused job: ``processingControl`` with ``RESUME``."""
+        return await self.request(DT002_PATH_CONTROL, "POST", params={"action": "RESUME"})
+
+    async def cancel_job(self) -> dict[str, Any]:
+        """Studio's cancelProcessing: ``cancelTask`` with the job's id."""
+        return await self.request(DT002_PATH_TASK_CANCEL, "POST", data={"id": self._job_task_id()})
+
+    # --- Fill light -------------------------------------------------------
+
+    def fill_light_refusal(self) -> Refusal | None:
+        """Studio's busy table: no fill light while scanning or measuring."""
+        if self._dt002_mode in _FILL_LIGHT_BUSY_MODES:
+            return "fill_light_busy", {}
+        return None
+
+    async def set_fill_light(self, on: bool) -> dict[str, Any]:
+        """Studio's setLightState: on or off, nothing else."""
+        result = await self.request(
+            DT002_PATH_FILL_LIGHT, "POST", data={"action": "on" if on else "off"},
+        )
+        self._latest["fill_light_on"] = on
+        return result
+
+    def setting_refusal(self) -> Refusal | None:
+        """Studio locks its device settings while a job runs (``isInProcessing``)."""
+        mode = self._dt002_mode
+        if mode in _PROCESSING_MODES or (mode == "Cutting" and self._latest.get("queued_jobs")):
+            return "setting_locked_while_printing", {}
+        return None
+
+    async def set_fill_light_auto_off(self, seconds: int) -> dict[str, Any]:
+        """``fillLightAutoOffTime`` in seconds, 0 = always on (Studio's setConfigs)."""
+        result = await self.request(
+            DT002_PATH_CONFIG, "PUT", data={DT002_FILL_LIGHT_AUTO_OFF_KEY: seconds},
+        )
+        self._latest["fill_light_auto_off"] = seconds
+        return result
 
     async def disconnect(self) -> None:
         self._cancel_pending_pause()
+        self._end_job_clean()
         await super().disconnect()

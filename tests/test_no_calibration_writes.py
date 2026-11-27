@@ -178,11 +178,7 @@ async def _press_everything(entity: Any) -> None:
             pass
 
 
-# Supported read-only, so it has no controls to use
-READ_ONLY_MODELS = {"DT002_V2"}
-
-
-@pytest.mark.parametrize("model_key", sorted(set(DEVICE_MODELS) - READ_ONLY_MODELS))
+@pytest.mark.parametrize("model_key", sorted(DEVICE_MODELS))
 async def test_no_control_writes_calibration(
     hass: HomeAssistant, config_entry: MockConfigEntry, model_key: str
 ) -> None:
