@@ -1287,13 +1287,17 @@ class RestProtocolM1Legacy(RestProtocol):
             except (KeyError, TypeError, ValueError):
                 pass
 
-        # Studio's queryProcessPercent, while a job runs
+        # Studio's queryProcessPercent, while a job runs: a fraction
+        # (0.917 is 91.7 %)
         if state.status in (XtoolStatus.PROCESSING, XtoolStatus.PAUSED):
             progress = await self._post_json("/cnc/data?query=progress")
             try:
-                state.task_progress = max(0.0, min(100.0, float(progress["progress"])))
+                state.task_progress = max(0.0, min(100.0, float(progress["progress"]) * 100))
             except (KeyError, TypeError, ValueError):
                 pass
+        elif state.status == XtoolStatus.FINISHED:
+            # The last reading comes before the end (0.917)
+            state.task_progress = 100.0
         else:
             state.task_progress = None
 

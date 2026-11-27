@@ -71,20 +71,26 @@ async def test_the_cpu_temperature_from_the_status() -> None:
     assert state.cpu_temp == 37
 
 
-@pytest.mark.parametrize(("code", "progress"), [("P_WORKING", 42.0), ("P_HUNG", 42.0), ("P_IDLE", None)])
+@pytest.mark.parametrize(("code", "progress"), [
+    ("P_WORKING", 91.7), ("P_HUNG", 91.7), ("P_FINISH", 100.0), ("P_IDLE", None),
+])
 async def test_the_progress_while_a_job_runs(code: str, progress: float | None) -> None:
     """Studio's queryProcessPercent: POST /cnc/data?query=progress → {progress}."""
     from custom_components.xtool.protocols.base import XtoolDeviceState
 
     protocol, sent = _m1({
         "/cnc/status": {**M1_CNC_STATUS, "STATUS": code},
-        "/cnc/data?query=progress": {"progress": "42"},
+        # A fraction, as an M1 on 40.18.026 answers (#89)
+        "/cnc/data?query=progress": {"progress": "0.917"},
     })
     state = XtoolDeviceState()
     state.task_progress = 10.0
     await protocol.poll_state(state)
-    assert state.task_progress == progress
-    assert (("POST", "/cnc/data?query=progress") in sent) is (progress is not None)
+    if progress is None:
+        assert state.task_progress is None
+    else:
+        assert state.task_progress == pytest.approx(progress)
+    assert (("POST", "/cnc/data?query=progress") in sent) is (code in ("P_WORKING", "P_HUNG"))
 
 
 def test_the_m1_entities(hass, config_entry) -> None:
