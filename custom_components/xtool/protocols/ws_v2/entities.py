@@ -2392,11 +2392,12 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
         self._live_source: LiveStreamSource | None = None
         live_names = dict(coordinator.model.live_video_names)
         live_name = live_names.get(camera_name, None if live_names else camera_name)
+        self._live_name = live_name
         if coordinator.model.has_live_video and live_name is not None:
             protocol = coordinator.protocol
             self._live_source = LiveStreamSource(
                 lambda: protocol.live_video(live_name), f"{camera_name} camera",
-                self._stream_readers_changed,
+                self._stream_readers_changed, self._live_taken_over,
             )
             self._attr_supported_features = CameraEntityFeature.STREAM
             # The laser's H.264 has no timestamps of its own
@@ -2441,8 +2442,12 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
 
     @property
     def use_stream_for_stills(self) -> bool:
-        """A camera without a photo route shows a frame of its video."""
-        return self._camera_name in self.coordinator.model.camera_stills_from_live
+        """A camera without a photo route shows a frame of its video, but
+        only while no other camera is live: a still starts the stream, which
+        would take the video over from the camera being watched."""
+        if self._camera_name not in self.coordinator.model.camera_stills_from_live:
+            return False
+        return self.coordinator.protocol.live_camera in (None, self._live_name)
 
     async def stream_source(self) -> str | None:
         if self._live_source is None:
@@ -2452,6 +2457,13 @@ class _WSV2Camera(_CameraDeviceEntity, Camera):
     def _stream_readers_changed(self) -> None:
         if self.hass is not None:
             self.async_write_ha_state()
+
+    def _live_taken_over(self) -> None:
+        """Another camera went live: stop this one's stream, so Home
+        Assistant does not keep opening it again. Opening it again
+        takes the laser's video back."""
+        if self.stream is not None and self.hass is not None:
+            self.hass.async_create_task(self.stream.stop(), f"xTool {self._camera_name} stream stop")
 
     async def _corrected(self, image: bytes) -> bytes:
         """Return the photo straightened, as the model needs."""

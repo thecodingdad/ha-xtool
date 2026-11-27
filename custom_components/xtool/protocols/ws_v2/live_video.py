@@ -24,6 +24,10 @@ _START_NAL_TYPES = frozenset((5, 7))
 _READER_BACKLOG = 64
 
 
+class LiveVideoTakenOver(Exception):
+    """Another camera of the laser went live: this one's video ended."""
+
+
 def starts_stream(unit: bytes) -> bool:
     """True when a decoder can start at this access unit (an SPS or IDR in it)."""
     index = unit.find(b"\x00\x00\x01")
@@ -40,7 +44,8 @@ class LiveStreamSource:
     ``video`` opens the laser's video (an iterator of H.264 access
     units, closed to stop it). A reader that joins while the video
     runs gets it from the next access unit a decoder can start at.
-    ``on_readers`` is called whenever the number of readers changes.
+    ``on_readers`` is called whenever the number of readers changes,
+    ``on_taken_over`` when another camera took the laser's video over.
     """
 
     def __init__(
@@ -48,10 +53,12 @@ class LiveStreamSource:
         video: Callable[[], AsyncIterator[bytes]],
         name: str,
         on_readers: Callable[[], None] | None = None,
+        on_taken_over: Callable[[], None] | None = None,
     ) -> None:
         self._video = video
         self._name = name
         self._on_readers = on_readers
+        self._on_taken_over = on_taken_over
         self._server: asyncio.Server | None = None
         self._readers: set[asyncio.Queue[bytes | None]] = set()
         self._pump: asyncio.Task[None] | None = None
@@ -125,9 +132,12 @@ class LiveStreamSource:
                             _end(queue)
                         else:
                             queue.put_nowait(data)
+        except LiveVideoTakenOver:
+            _LOGGER.debug("Live video %s ended: another camera went live", self._name)
+            if self._on_taken_over is not None:
+                self._on_taken_over()
         except Exception as err:  # noqa: BLE001
-            # Another camera live, or the laser gone: the readers end and
-            # connect again later.
+            # The laser gone: the readers end and connect again later.
             _LOGGER.debug("Live video %s ended: %s", self._name, err)
         for queue in list(self._readers):
             _end(queue)

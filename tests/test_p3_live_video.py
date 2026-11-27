@@ -51,7 +51,8 @@ def test_the_close_camera_has_no_live_video(hass: HomeAssistant, config_entry) -
 def test_only_the_overview_shows_a_frame_of_its_video(
     hass: HomeAssistant, config_entry, camera: str, stills_from_live: bool,
 ) -> None:
-    _, entity = _camera(hass, camera)
+    coordinator, entity = _camera(hass, camera)
+    coordinator.protocol.live_camera = None
     assert entity.use_stream_for_stills is stills_from_live
 
 
@@ -89,3 +90,23 @@ async def test_the_overview_asks_for_no_photo() -> None:
     protocol.request = AsyncMock()
     assert await protocol._camera_snap("overview") is None
     protocol.request.assert_not_awaited()
+
+
+async def test_a_camera_taken_over_stops_its_stream(hass: HomeAssistant, config_entry) -> None:
+    """Home Assistant's stream would open it again and again (#87); opening it again takes over."""
+    _, entity = _camera(hass, "side")
+    entity.hass = hass
+    entity.stream = AsyncMock()
+    entity._live_taken_over()
+    await hass.async_block_till_done()
+    entity.stream.stop.assert_awaited_once()
+
+
+@pytest.mark.parametrize(("live", "stills_from_live"), [(None, True), ("far", True), ("upside", False)])
+def test_the_overview_takes_no_still_from_another_cameras_video(
+    hass: HomeAssistant, config_entry, live: str | None, stills_from_live: bool,
+) -> None:
+    """A still starts the stream; it must not take the video from the Side camera being watched."""
+    coordinator, entity = _camera(hass, "overview")
+    coordinator.protocol.live_camera = live
+    assert entity.use_stream_for_stills is stills_from_live

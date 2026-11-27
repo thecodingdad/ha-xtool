@@ -67,6 +67,7 @@ import ssl
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -75,6 +76,7 @@ from homeassistant.util.ssl import get_default_no_verify_context
 
 from ...const import XtoolStatus
 from .. import tool_heads
+from .live_video import LiveVideoTakenOver
 from ..base import (
     DeviceInfo,
     FirmwareFile,
@@ -146,6 +148,8 @@ WSV2_PROTOCOL_FILE_TRANSFER = 33
 # socket, each one stream byte and then H.264 (Annex B).
 WSV2_PROTOCOL_MEDIA_STREAM = 34
 WSV2_PATH_CAMERA_LIVE = "/v1/platform/camera/live"
+# How long a camera going live waits for the one it takes over to stop
+LIVE_TAKEOVER_SECONDS = 5.0
 # Photos of the P3's near / upside cameras, by stream name (Studio's P3)
 WSV2_PATH_CAMERA_IMAGE = "/v1/camera/image"
 
@@ -536,7 +540,17 @@ class WSV2PairingFailed(ConnectionError):
 
 
 class LiveVideoBusy(RuntimeError):
-    """Another camera of the laser is live: it streams one at a time."""
+    """This camera is live already: the laser streams it once."""
+
+
+@dataclass
+class _LiveSession:
+    """The camera that is live, until another one takes over."""
+
+    camera: str
+    done: asyncio.Event = field(default_factory=asyncio.Event)
+    ws: Any = None
+    taken_over: bool = False
 
 
 class _ParityFailed(Exception):
@@ -807,7 +821,7 @@ class WSV2Protocol(XtoolProtocol):
         # channels only clash if 256+ downloads race simultaneously.
         self._file_channel_counter = 0
         # The camera whose live video runs, if one does
-        self._live_camera: str | None = None
+        self._live: _LiveSession | None = None
         self._latest: dict[str, Any] = {}
         self._connected = False
         self._connect_lock = asyncio.Lock()
@@ -943,6 +957,11 @@ class WSV2Protocol(XtoolProtocol):
 
     # ── live video ────────────────────────────────────────────────────
 
+    @property
+    def live_camera(self) -> str | None:
+        """The camera that is live now, by its live name."""
+        return self._live.camera if self._live is not None else None
+
     async def live_video(self, camera_name: str) -> AsyncIterator[bytes]:
         """The camera's live H.264 (Annex B), as Studio's live monitor gets it.
 
@@ -950,14 +969,24 @@ class WSV2Protocol(XtoolProtocol):
         the frames of the ``media_stream`` socket (same session id), each
         one stream byte and an access unit; ``action: stop`` when the
         caller closes the iterator. One camera at a time: the laser
-        takes one media socket per client, and a second one closes the
-        first. Raises :class:`LiveVideoBusy` while another camera is live.
+        takes one media socket per client. As in Studio's live monitor,
+        a camera that asks while another is live takes over: the other's
+        video stops and ends with :class:`LiveVideoTakenOver`. Raises
+        :class:`LiveVideoBusy` for the camera that is live already.
         """
-        if self._live_camera is not None:
-            raise LiveVideoBusy(self._live_camera)
+        current = self._live
+        if current is not None:
+            if current.camera == camera_name:
+                raise LiveVideoBusy(camera_name)
+            current.taken_over = True
+            if current.ws is not None:
+                await current.ws.close()
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(LIVE_TAKEOVER_SECONDS):
+                    await current.done.wait()
         if not self._connected or self._session is None:
             await self.connect()
-        self._live_camera = camera_name
+        session = self._live = _LiveSession(camera_name)
         url = (
             f"wss://{self.host}:{self._port}{WSV2_PATH}"
             f"?id={_CLIENT_SESSION_ID}&function=media_stream"
@@ -966,6 +995,7 @@ class WSV2Protocol(XtoolProtocol):
             async with self._session.ws_connect(
                 url, ssl=_ssl_context(), heartbeat=None, max_msg_size=0,
             ) as ws:
+                session.ws = ws
                 await self.request(
                     WSV2_PATH_CAMERA_LIVE, "POST", params={"name": camera_name, "action": "start"},
                 )
@@ -978,6 +1008,8 @@ class WSV2Protocol(XtoolProtocol):
                         for frame_type, payload in frames:
                             if frame_type == WSV2_PROTOCOL_MEDIA_STREAM and len(payload) > 1:
                                 yield payload[1:]
+                    if session.taken_over:
+                        raise LiveVideoTakenOver(camera_name)
                 finally:
                     with contextlib.suppress(Exception):
                         await self.request(
@@ -985,7 +1017,9 @@ class WSV2Protocol(XtoolProtocol):
                             params={"name": camera_name, "action": "stop"},
                         )
         finally:
-            self._live_camera = None
+            if self._live is session:
+                self._live = None
+            session.done.set()
 
     # ── connection lifecycle ──────────────────────────────────────────
 

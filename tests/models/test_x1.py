@@ -24,7 +24,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.xtool.const import DOMAIN, XtoolStatus
 from custom_components.xtool.protocols import DEVICE_MODELS, detect_models
 from custom_components.xtool.protocols.base import XtoolDeviceState
-from custom_components.xtool.protocols.ws_v2.live_video import LiveStreamSource
+from custom_components.xtool.protocols.ws_v2.live_video import LiveStreamSource, LiveVideoTakenOver
 from custom_components.xtool.protocols.ws_v2.protocol import LiveVideoBusy
 
 from custom_components.xtool.protocols.accessories.fire_extinguisher import parse_fire_box_info
@@ -1100,8 +1100,12 @@ def _media_frame(payload: bytes) -> bytes:
 
 
 class _MediaSocket:
-    def __init__(self, messages: list[bytes]) -> None:
+    """Sends its messages; with ``stay_open`` it then waits until closed."""
+
+    def __init__(self, messages: list[bytes], stay_open: bool = False) -> None:
         self._messages = messages
+        self._stay_open = stay_open
+        self._closed = asyncio.Event()
 
     async def __aenter__(self):
         return self
@@ -1109,23 +1113,31 @@ class _MediaSocket:
     async def __aexit__(self, *exc) -> bool:
         return False
 
+    async def close(self) -> None:
+        self._closed.set()
+
     async def __aiter__(self):
         import aiohttp
 
         for data in self._messages:
+            if self._closed.is_set():
+                return
             yield SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=data)
+        if self._stay_open:
+            await self._closed.wait()
 
 
 class _MediaSession:
     """Opens the media socket; its messages are the frames given."""
 
-    def __init__(self, messages: list[bytes]) -> None:
+    def __init__(self, messages: list[bytes], stay_open: bool = False) -> None:
         self.messages = messages
+        self.stay_open = stay_open
         self.urls: list[str] = []
 
     def ws_connect(self, url: str, **kwargs) -> _MediaSocket:
         self.urls.append(url)
-        return _MediaSocket(self.messages)
+        return _MediaSocket(self.messages, self.stay_open)
 
 
 @pytest.mark.parametrize(("camera", "stream_byte"), [("far", b"\x00"), ("near", b"\x01")])
@@ -1144,17 +1156,46 @@ async def test_live_video_yields_the_h264_the_x1_sends(camera: str, stream_byte:
     ]
 
 
-async def test_one_camera_live_at_a_time() -> None:
+async def test_a_camera_going_live_takes_over() -> None:
+    """One camera at a time; as in Studio's live monitor, the newest one goes live (#87)."""
     protocol = _protocol()
-    protocol._session = _MediaSession([_media_frame(b"\x00" + unit) for unit in H264])
-    far = protocol.live_video("far")
-    await far.__anext__()
-    with pytest.raises(LiveVideoBusy):
-        await protocol.live_video("near").__anext__()
-    await far.aclose()
+    protocol._session = _MediaSession([_media_frame(b"\x00" + unit) for unit in H264], stay_open=True)
+    far: list[bytes] = []
+
+    async def watch_far() -> None:
+        async for unit in protocol.live_video("far"):
+            far.append(unit)
+
+    watching = asyncio.create_task(watch_far())
+    await _until(lambda: len(far) == len(H264))
     near = protocol.live_video("near")
     assert await near.__anext__() == H264[0]
+    with pytest.raises(LiveVideoTakenOver):
+        await watching
+    assert [params for _, url, params, _ in protocol.sent if url == "/v1/platform/camera/live"] == [
+        {"name": "far", "action": "start"},
+        {"name": "far", "action": "stop"},
+        {"name": "near", "action": "start"},
+    ]
+    # The camera that is live already is not opened twice
+    with pytest.raises(LiveVideoBusy):
+        await protocol.live_video("near").__anext__()
     await near.aclose()
+
+
+async def test_a_stream_taken_over_says_so(socket_enabled) -> None:
+    """Its camera then stops Home Assistant's stream, which would open it again and again."""
+
+    async def taken_over() -> AsyncIterator[bytes]:
+        raise LiveVideoTakenOver("far")
+        yield b""  # pragma: no cover
+
+    told: list[bool] = []
+    source = LiveStreamSource(taken_over, "far camera", on_taken_over=lambda: told.append(True))
+    reader, _ = await _connect(source)
+    assert await asyncio.wait_for(reader.read(), 2) == b""
+    assert told == [True]
+    await source.close()
 
 
 class _Video:
@@ -1231,10 +1272,10 @@ async def test_a_second_reader_starts_at_a_key_frame(socket_enabled) -> None:
 
 
 async def test_readers_end_when_the_video_ends(socket_enabled) -> None:
-    """Another camera live (or the laser gone): the readers are closed and may connect again."""
+    """The laser gone: the readers are closed and may connect again."""
 
     async def busy() -> AsyncIterator[bytes]:
-        raise LiveVideoBusy("near")
+        raise ConnectionError("the laser is gone")
         yield b""  # pragma: no cover
 
     source = LiveStreamSource(busy, "far camera")
