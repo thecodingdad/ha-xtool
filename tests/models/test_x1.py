@@ -148,7 +148,7 @@ EXPECTED_STATES = {
     "sensor.position_x": "0.0",
     "sensor.position_y": "0.0",
     "sensor.session_count": "13",
-    "sensor.standby_seconds": "18022",
+    "sensor.standby_seconds": "5.00611111111111",  # 18022 s, shown in hours
     "sensor.status": "idle",
     "sensor.wifi_signal": "-55",
     "sensor.working_seconds": "1.315",

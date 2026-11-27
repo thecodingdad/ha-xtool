@@ -156,6 +156,7 @@ WSV2_SENSOR_DESCRIPTIONS: tuple[XtoolSensorEntityDescription, ...] = (
         translation_key="task_time",
         icon="mdi:timer",
         native_unit_of_measurement=UnitOfTime.SECONDS,
+        device_class=SensorDeviceClass.DURATION,
         value_fn=lambda state, _: state.task_time or None,
     ),
     XtoolSensorEntityDescription(
@@ -188,6 +189,7 @@ _LAST_JOB_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     icon="mdi:timer-check",
     entity_category=EntityCategory.DIAGNOSTIC,
     native_unit_of_measurement=UnitOfTime.SECONDS,
+    device_class=SensorDeviceClass.DURATION,
     value_fn=lambda state, _: state.last_job_time_seconds or None,
 )
 _WORKING_TIME_DESCRIPTION = XtoolSensorEntityDescription(
@@ -210,6 +212,8 @@ _STANDBY_TIME_DESCRIPTION = XtoolSensorEntityDescription(
     icon="mdi:timer-sand",
     entity_category=EntityCategory.DIAGNOSTIC,
     native_unit_of_measurement=UnitOfTime.SECONDS,
+    device_class=SensorDeviceClass.DURATION,
+    suggested_unit_of_measurement=UnitOfTime.HOURS,
     state_class=SensorStateClass.TOTAL_INCREASING,
     value_fn=lambda state, _: state.standby_seconds,
 )
@@ -466,6 +470,8 @@ _GATED_SENSOR_DESCRIPTIONS: tuple[
             icon="mdi:tools",
             entity_category=EntityCategory.DIAGNOSTIC,
             native_unit_of_measurement=UnitOfTime.SECONDS,
+            device_class=SensorDeviceClass.DURATION,
+            suggested_unit_of_measurement=UnitOfTime.HOURS,
             state_class=SensorStateClass.TOTAL_INCREASING,
             value_fn=lambda state, _: state.tool_runtime_seconds,
         ),
